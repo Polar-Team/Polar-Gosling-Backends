@@ -1,0 +1,29 @@
+[project]
+name = "mothergoose"
+version = "0.1.0"
+description = "Backend server for Polar Gosling Orchestration of Nest tasks and Apex or Nadir handlers"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+authors = [
+      {name = "Daniel Dalavurak",email = "morsh110792@yahoo.com"}
+]
+dependencies = [
+    "black>=25.1.0",
+    "debugpy>=1.8.14",
+    "fastapi>=0.115.12",
+    "flake8>=7.2.0",
+    "grpcio>=1.71.0",
+    "grpcio-tools>=1.71.0",
+    "pylint>=3.3.7",
+    "pytest>=8.3.5",
+    "testcontainers>=4.10.0",
+]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+    "integration",
+]
+

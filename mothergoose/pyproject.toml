@@ -8,15 +8,19 @@ authors = [
       {name = "Daniel Dalavurak",email = "morsh110792@yahoo.com"}
 ]
 dependencies = [
-    "black>=25.1.0",
-    "debugpy>=1.8.14",
     "fastapi>=0.115.12",
-    "flake8>=7.2.0",
     "grpcio>=1.71.0",
     "grpcio-tools>=1.71.0",
-    "pylint>=3.3.7",
-    "pytest>=8.3.5",
-    "testcontainers>=4.10.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.5",
+  "pylint>=3.3.7",
+  "testcontainers>=4.10.0",
+  "flake8>=7.2.0",
+  "debugpy>=1.8.14",
+  "black>=23.9.24",
 ]
 
 [tool.pytest.ini_options]

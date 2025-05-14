@@ -251,12 +251,16 @@ name = "mothergoose"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "black" },
-    { name = "debugpy" },
     { name = "fastapi" },
-    { name = "flake8" },
     { name = "grpcio" },
     { name = "grpcio-tools" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "black" },
+    { name = "debugpy" },
+    { name = "flake8" },
     { name = "pylint" },
     { name = "pytest" },
     { name = "testcontainers" },
@@ -264,12 +268,16 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "black", specifier = ">=25.1.0" },
-    { name = "debugpy", specifier = ">=1.8.14" },
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "flake8", specifier = ">=7.2.0" },
     { name = "grpcio", specifier = ">=1.71.0" },
     { name = "grpcio-tools", specifier = ">=1.71.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "black", specifier = ">=23.9.24" },
+    { name = "debugpy", specifier = ">=1.8.14" },
+    { name = "flake8", specifier = ">=7.2.0" },
     { name = "pylint", specifier = ">=3.3.7" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "testcontainers", specifier = ">=4.10.0" },

@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+src/app/__init__.py
+src/app/main.py
+src/mothergoose.egg-info/PKG-INFO
+src/mothergoose.egg-info/SOURCES.txt
+src/mothergoose.egg-info/dependency_links.txt
+src/mothergoose.egg-info/requires.txt
+src/mothergoose.egg-info/top_level.txt

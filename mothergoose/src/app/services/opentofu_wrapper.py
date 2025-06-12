@@ -3,9 +3,11 @@ import os
 from accessify import protected, private
 from typing import Optional, List
 
+from ..util.logging import log
 from ..schema.tofu_schemas import OpenTofuBackendOptions
 
 
+@log
 class OpenTofuWrapper:
     """Class for wrapper OpenTofu handles"""
 

@@ -1,13 +1,15 @@
+"""OpenTofuWrapper class for managing OpenTofu operations."""
+
 import subprocess
 import os
 from accessify import protected, private
 from typing import Optional, List
 
-from ..util.logging import log
+from ..util.logging import logged
 from ..schema.tofu_schemas import OpenTofuBackendOptions
 
 
-@log
+@logged
 class OpenTofuWrapper:
     """Class for wrapper OpenTofu handles"""
 
@@ -37,14 +39,14 @@ class OpenTofuWrapper:
     @protected
     def _init(self) -> None:
         self.backend_options
-        self._run(["init"])
+        self.__run(["init"])
 
     @protected
     def _plan(self, out_file: Optional[str] = None) -> str:
         args = ["plan"]
         if out_file:
             args += ["-out", out_file]
-            result = self._run(args, capture_output=True)
+            result = self.__run(args, capture_output=True)
         return result.stdout
 
     @protected
@@ -54,7 +56,7 @@ class OpenTofuWrapper:
             args.append(plan_file)
             if auto_approve:
                 args.append("-auto-approve")
-                result = self._run(args, capture_output=True)
+                result = self.__run(args, capture_output=True)
         return result.stdout
 
     @protected
@@ -62,5 +64,5 @@ class OpenTofuWrapper:
         args = ["destroy"]
         if auto_approve:
             args.append("-auto-approve")
-            result = self._run(args, capture_output=True)
+            result = self.__run(args, capture_output=True)
         return result.stdout

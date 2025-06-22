@@ -1,8 +1,7 @@
-from dataclasses import dataclass
+from pydantic import BaseModel
 
 
-@dataclass
-class OpenTofuBackendOptions:
+class OpenTofuBackendOptions(BaseModel):
     """Data schema for OpenTofu backend options."""
 
     lock_address: str

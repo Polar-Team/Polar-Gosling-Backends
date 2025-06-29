@@ -1,54 +1,35 @@
 """OpenTofuBinary download and update module."""
 
-import subprocess
-import os
-import shutil
-import tempfile
-import requests
-import tarfile
 import json
+import os
 import platform
-from accessify import private, protected
-from abc import ABC, abstractmethod
+import shutil
+import subprocess
+import tarfile
+import tempfile
+from abc import ABC
 
-from ..util.requests_session import with_requests_session
+from accessify import private, protected
+
 from ..util.class_access import only_called_by
 from ..util.logging import logged
+from ..util.requests_session import with_requests_session
 
 
 class OpenTofuBinary(ABC):
     """Abstract base class for OpenTofu binary management."""
 
-    @abstractmethod
-    def get_latest_version(self):
-        """Get the latest version of OpenTofu."""
-        pass
+    def _get_latest_version(self):
+        """Get the latest version of OpenTofu from GitHub."""
 
-    @abstractmethod
-    def get_current_version(self):
-        """Get the current version of OpenTofu."""
-        pass
+        url = "https://api.github.com/repos/opentofu/opentofu/releases/latest"
+        with self.session.get(url) as response:
+            release_info = json.loads(response.content)
+            return release_info["tag_name"].lstrip("v")
 
-
-@logged
-@with_requests_session(
-    retries=3,
-    backoff_factor=0.5,
-    timeout=10,
-    status_forcelist=(502, 503, 504),
-)
-class OpenTofuDownload(OpenTofuBinary):
-    """Class to handle the OpenTofu binary download process."""
-
-    def __init__(self, install_dir=None, version=None):
-        """Initialize the OpenTofuDownloaded class."""
-
-        version = version or self.get_latest_version()
-        self.install_dir = install_dir or f"/mnt/tofu_binary/{version}"
-
-    @private
-    def get_current_version(self):
+    def _get_current_version(self):
         """Get the current version of OpenTofu from the installed binary."""
+
         tofu_path = os.path.join(self.install_dir, "tofu")
         if not os.path.exists(tofu_path):
             self.error("OpenTofu binary not found.")
@@ -58,16 +39,23 @@ class OpenTofuDownload(OpenTofuBinary):
         )
         return result.stdout.strip().split()[-1]
 
-    def get_latest_version(self):
-        """Get the latest version of OpenTofu from GitHub."""
 
-        url = "https://api.github.com/repos/opentofu/opentofu/releases/latest"
-        with self.session.get(url) as response:
-            release_info = json.loads(response.content)
-            return release_info["tag_name"].lstrip("v")
+@logged
+@with_requests_session(
+    retries=3,
+    timeout=3,
+)
+class OpenTofuDownload(OpenTofuBinary):
+    """Class to handle the OpenTofu binary download process."""
 
-    @protected
-    def _get_download_url(self):
+    def __init__(self, install_dir=None, version=None):
+        """Initialize the OpenTofuDownloaded class."""
+
+        version = version or self._get_latest_version()
+        self.install_dir = install_dir or f"/mnt/tofu_binary/{version}"
+
+    @private
+    def __get_download_url(self):
         """Function to get tofu download url from github"""
 
         if (system := platform.system().lower()) == "linux":
@@ -78,16 +66,16 @@ class OpenTofuDownload(OpenTofuBinary):
             else:
                 self.error(f"Unsupported architecture: {arch}")
                 raise RuntimeError(f"Unsupported architecture: {arch}")
-            dpath = f"download/v{self.get_latest_version()}/tofu_{
-                self.get_latest_version()
+            dpath = f"download/v{self._get_latest_version()}/tofu_{
+                self._get_latest_version()
             }_{system}_{arch}.tar.gz"
             return f"https://github.com/opentofu/opentofu/releases/{dpath}"
         elif ((system := platform.system().lower()) == "windows") and (
             os.environ["PY_TEST"] == "True"
         ):
             arch = "amd64"
-            dpath = f"download/v{self.get_latest_version()}/tofu_{
-                self.get_latest_version()
+            dpath = f"download/v{self._get_latest_version()}/tofu_{
+                self._get_latest_version()
             }_{system}_{arch}.zip"
             return f"https://github.com/opentofu/opentofu/releases/{dpath}"
         else:
@@ -100,8 +88,8 @@ class OpenTofuDownload(OpenTofuBinary):
                 f"You tried {system}."
             )
 
-    @protected
-    def _download_and_extract(self, url, extract_to):
+    @private
+    def __download_and_extract(self, url, extract_to):
         if ((system := platform.system().lower()) == "windows") and (
             os.environ["PY_TEST"] == "True"
         ):
@@ -110,7 +98,9 @@ class OpenTofuDownload(OpenTofuBinary):
             self.info(f"Using test environment for {system}...")
             zip_path = os.path.join(extract_to, "tofu.zip")
             self.info(f"Downloading OpenTofu from {url}...")
-            self.session.get(url, zip_path)
+            response = self.session.get(url)
+            with open(zip_path, "wb") as file:
+                file.write(response.content)
             self.info("Extracting...")
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(extract_to)
@@ -119,9 +109,12 @@ class OpenTofuDownload(OpenTofuBinary):
             os.environ["PY_TEST"] == "True"
         ):
             tar_path = os.path.join(extract_to, "tofu.tar.gz")
-            print(f"Downloading OpenTofu from {url}...")
-            self.session.get(url, tar_path)
-            print("Extracting...")
+            self.info(f"Downloading OpenTofu from {url}...")
+            response = self.session.get(url)
+            with open(tar_path, "wb") as file:
+                response = self.session.get(url)
+                file.write(response.content)
+            self.info("Extracting...")
             with tarfile.open(tar_path, "r:gz") as tar_ref:
                 tar_ref.extractall(extract_to)
             os.remove(tar_path)
@@ -131,17 +124,24 @@ class OpenTofuDownload(OpenTofuBinary):
         url = self.__get_download_url()
         with tempfile.TemporaryDirectory() as tmpdir:
             self.__download_and_extract(url, tmpdir)
-            tofu_path = os.path.join(tmpdir, "tofu")
-            dest_path = os.path.join(self.install_dir, "tofu")
+            if ((system := platform.system().lower()) == "windows") and (
+                os.environ["PY_TEST"] == "True"
+            ):
+                self.debug(f"Using test environment for {system}...")
+                tofu_path = os.path.join(tmpdir, "tofu.exe")
+                dest_path = os.path.join(self.install_dir, "tofu.exe")
+            else:
+                tofu_path = os.path.join(tmpdir, "tofu")
+                dest_path = os.path.join(self.install_dir, "tofu")
             shutil.copy2(tofu_path, dest_path)
             os.chmod(dest_path, 0o755)
-            print(f"OpenTofu updated at {dest_path}")
+            self.info(f"OpenTofu updated at {dest_path}")
 
     def tests_get_download_url(self):
         """Test the download URL generation."""
 
         if os.environ["PY_TEST"] == "True":
-            return self._get_download_url()
+            return self.__get_download_url()
         else:
             return None
 
@@ -150,9 +150,17 @@ class OpenTofuDownload(OpenTofuBinary):
 
         if os.environ["PY_TEST"] == "True":
             with tempfile.TemporaryDirectory() as tmpdir:
-                url = self._get_download_url()
-                self._download_and_extract(url, tmpdir)
+                url = self.__get_download_url()
+                self.__download_and_extract(url, tmpdir)
                 return os.listdir(tmpdir)
+        else:
+            return None
+
+    def tests_store_downloaded_bin(self):
+        """Test the download and extraction process."""
+
+        if os.environ["PY_TEST"] == "True":
+            return self._store_downloaded_bin()
         else:
             return None
 

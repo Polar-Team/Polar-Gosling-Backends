@@ -24,6 +24,11 @@ def with_requests_session(
             self.session.mount("http://", adapter)
             self.session.mount("https://", adapter)
 
+            if timeout is not None:
+                self.session.timeout = timeout
+            else:
+                self.session.timeout = 10
+
             try:
                 return func(self, *args, **kwargs)
             finally:

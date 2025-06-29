@@ -90,6 +90,8 @@ class OpenTofuDownload(OpenTofuBinary):
 
     @private
     def __download_and_extract(self, url, extract_to):
+        """Function to download and extract tofu binary from github."""
+
         if ((system := platform.system().lower()) == "windows") and (
             os.environ["PY_TEST"] == "True"
         ):
@@ -121,6 +123,8 @@ class OpenTofuDownload(OpenTofuBinary):
 
     @protected
     def _store_downloaded_bin(self):
+        """Function for storing tofu bin in install dir."""
+
         url = self.__get_download_url()
         with tempfile.TemporaryDirectory() as tmpdir:
             self.__download_and_extract(url, tmpdir)
@@ -172,3 +176,24 @@ class OpenTofuUpdate(OpenTofuBinary):
     def __init__(self, version="1.9.1", install_dir=None):
         self.version = version
         self.install_dir = install_dir or "/usr/local/bin"
+
+
+@logged
+@with_requests_session(
+    retries=3,
+    timeout=3,
+)
+class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
+    """Class to handle the OpenTofu binary download process from other sources."""
+
+    def __init__(self, url: str, install_dir: str = None):
+        """Initialize the OpenTofuDownloaded class."""
+
+        self.install_dir = install_dir or "/mnt/tofu_binary/tofu_other_source"
+        self.url = url
+
+    @protected
+    def _store_downloaded_bin(self):
+        """Function for storing tofu bin in the working bin directory."""
+        raise NotImplementedError(
+            "This method should be implemented in subclasses.")

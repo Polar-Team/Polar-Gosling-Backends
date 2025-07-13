@@ -5,8 +5,8 @@ import os
 from accessify import protected, private
 from typing import Optional, List
 
-from ..util.logging import logged
-from ..schema.tofu_schemas import OpenTofuBackendOptions
+from app.util.logging import logged
+from app.schema.tofu_schemas import OpenTofuBackendOptions
 
 
 @logged

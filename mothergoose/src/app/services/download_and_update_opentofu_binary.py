@@ -11,9 +11,9 @@ from abc import ABC
 
 from accessify import private, protected
 
-from ..util.class_access import only_called_by
-from ..util.logging import logged
-from ..util.requests_session import with_requests_session
+from app.util.class_access import only_called_by
+from app.util.logging import logged
+from app.util.requests_session import with_requests_session
 
 
 class OpenTofuBinary(ABC):
@@ -48,14 +48,16 @@ class OpenTofuBinary(ABC):
 class OpenTofuDownload(OpenTofuBinary):
     """Class to handle the OpenTofu binary download process."""
 
+    __test__ = False
+
     def __init__(self, install_dir=None, version=None):
-        """Initialize the OpenTofuDownloaded class."""
+        """Initialize the OpenTofuDownload class."""
 
         version = version or self._get_latest_version()
         self.install_dir = install_dir or f"/mnt/tofu_binary/{version}"
 
-    @private
-    def __get_download_url(self):
+    @protected
+    def _get_download_url(self):
         """Function to get tofu download url from github"""
 
         if (system := platform.system().lower()) == "linux":
@@ -88,8 +90,8 @@ class OpenTofuDownload(OpenTofuBinary):
                 f"You tried {system}."
             )
 
-    @private
-    def __download_and_extract(self, url, extract_to):
+    @protected
+    def _download_and_extract(self, url, extract_to):
         """Function to download and extract tofu binary from github."""
 
         if ((system := platform.system().lower()) == "windows") and (
@@ -125,6 +127,9 @@ class OpenTofuDownload(OpenTofuBinary):
     def _store_downloaded_bin(self):
         """Function for storing tofu bin in install dir."""
 
+        if version := self._get_current_version() == self._get_latest_version():
+            self.info(f"OpenTofu is already at the latest version: {version}")
+            return
         url = self.__get_download_url()
         with tempfile.TemporaryDirectory() as tmpdir:
             self.__download_and_extract(url, tmpdir)
@@ -195,5 +200,18 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
     @protected
     def _store_downloaded_bin(self):
         """Function for storing tofu bin in the working bin directory."""
-        raise NotImplementedError(
-            "This method should be implemented in subclasses.")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.__download_and_extract(self.url, tmpdir)
+            if ((system := platform.system().lower()) == "windows") and (
+                os.environ["PY_TEST"] == "True"
+            ):
+                self.debug(f"Using test environment for {system}...")
+                tofu_path = os.path.join(tmpdir, "tofu.exe")
+                dest_path = os.path.join(self.install_dir, "tofu.exe")
+            else:
+                tofu_path = os.path.join(tmpdir, "tofu")
+                dest_path = os.path.join(self.install_dir, "tofu")
+            shutil.copy2(tofu_path, dest_path)
+            os.chmod(dest_path, 0o755)
+            self.info(f"OpenTofu updated at {dest_path}")

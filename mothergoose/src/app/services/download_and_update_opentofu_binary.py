@@ -78,6 +78,11 @@ class OpenTofuDownload(OpenTofuBinary):
 
                         return hash
 
+    @property
+    def get_packages_sha256_hash(self):
+        """Get the SHA256 hash of the OpenTofu bundle."""
+        return self._github_sha256_hash_of_bundle
+
     @protected
     def _get_download_url(self):
         """Function to get tofu download url from github"""
@@ -205,33 +210,6 @@ class OpenTofuDownload(OpenTofuBinary):
             shutil.copy2(tofu_path, dest_path)
             os.chmod(dest_path, 0o755)
             self.info(f"OpenTofu updated at {dest_path}")
-
-    def tests_get_download_url(self):
-        """Test the download URL generation."""
-
-        if os.environ["PY_TEST"] == "True":
-            return self.__get_download_url()
-        else:
-            return None
-
-    def tests_download_and_extract(self):
-        """Test the download and extraction process."""
-
-        if os.environ["PY_TEST"] == "True":
-            with tempfile.TemporaryDirectory() as tmpdir:
-                url = self.__get_download_url()
-                self.__download_and_extract(url, tmpdir)
-                return os.listdir(tmpdir)
-        else:
-            return None
-
-    def tests_store_downloaded_bin(self):
-        """Test the download and extraction process."""
-
-        if os.environ["PY_TEST"] == "True":
-            return self._store_downloaded_bin()
-        else:
-            return None
 
 
 @logged

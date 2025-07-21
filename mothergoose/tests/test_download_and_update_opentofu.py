@@ -84,10 +84,10 @@ def test_tofu_download_different_version_and_check_property(
 ):
     """Function for testiong download and extraction of OpenTofu binary with different version."""
 
-    instance_of_TestOpenTofuDownload.version = "1.10.3"
+    new_instance = TestOpenTofuDownload(OpenTofuBinary)
+    new_instance.version = "1.10.3"
 
-    if files := instance_of_TestOpenTofuDownload.tests_download_and_extract():
-        print(instance_of_TestOpenTofuDownload._github_sha256_hash_of_bundle)
+    if files := new_instance.tests_download_and_extract():
         assert instance_of_TestOpenTofuDownload._github_sha256_hash_of_bundle == {
             "1.10.2": instance_of_TestOpenTofuDownload._github_sha256_hash_of_bundle[
                 "1.10.2"
@@ -96,6 +96,10 @@ def test_tofu_download_different_version_and_check_property(
                 "1.10.3"
             ],
         }
+        assert (
+            new_instance.get_packages_sha256_hash
+            == instance_of_TestOpenTofuDownload.get_packages_sha256_hash
+        )
         assert isinstance(files, list)
         assert len(files) > 0
     else:

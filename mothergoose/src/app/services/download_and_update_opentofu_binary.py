@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import hashlib
 from abc import ABC
 
 from accessify import private, protected
@@ -50,11 +51,32 @@ class OpenTofuDownload(OpenTofuBinary):
 
     __test__ = False
 
+    _github_sha256_hash_of_bundle = {}
+
     def __init__(self, install_dir=None, version=None):
         """Initialize the OpenTofuDownload class."""
 
-        version = version or self._get_latest_version()
+        self.version = version or self._get_latest_version()
         self.install_dir = install_dir or f"/mnt/tofu_binary/{version}"
+
+    @classmethod
+    def get_sha256_hash_of_bundle_from_github(
+        cls, session, version: str, system: str, arch: str, extension: str
+    ) -> str:
+        """Get the SHA255 hash of the OpenTofu bundle from GitHub."""
+
+        response = session.get(
+            "https://api.github.com/repos/opentofu/opentofu/releases"
+        )
+        data = response.json()
+        for release in data:
+            if release["tag_name"] == f"v{version}":
+                for asset in release["assets"]:
+                    if asset["name"] == f"tofu_{version}_{system}_{arch}.{extension}":
+                        hash = asset["digest"].replace("sha256:", "")
+                        cls._github_sha256_hash_of_bundle[version] = hash
+
+                        return hash
 
     @protected
     def _get_download_url(self):
@@ -68,17 +90,15 @@ class OpenTofuDownload(OpenTofuBinary):
             else:
                 self.error(f"Unsupported architecture: {arch}")
                 raise RuntimeError(f"Unsupported architecture: {arch}")
-            dpath = f"download/v{self._get_latest_version()}/tofu_{
-                self._get_latest_version()
-            }_{system}_{arch}.tar.gz"
+            dpath = (
+                f"download/v{self.version}tofu_{self.version}_{system}_{arch}.tar.gz"
+            )
             return f"https://github.com/opentofu/opentofu/releases/{dpath}"
         elif ((system := platform.system().lower()) == "windows") and (
             os.environ["PY_TEST"] == "True"
         ):
             arch = "amd64"
-            dpath = f"download/v{self._get_latest_version()}/tofu_{
-                self._get_latest_version()
-            }_{system}_{arch}.zip"
+            dpath = f"download/v{self.version}/tofu_{self.version}_{system}_{arch}.zip"
             return f"https://github.com/opentofu/opentofu/releases/{dpath}"
         else:
             self.error(f"""
@@ -99,12 +119,31 @@ class OpenTofuDownload(OpenTofuBinary):
         ):
             import zipfile
 
+            self.info("Getting has of the bundl and save it in class variavle...")
+            self.get_sha256_hash_of_bundle_from_github(
+                self.session, self.version, system, "amd64", "zip"
+            )
             self.info(f"Using test environment for {system}...")
             zip_path = os.path.join(extract_to, "tofu.zip")
             self.info(f"Downloading OpenTofu from {url}...")
             response = self.session.get(url)
             with open(zip_path, "wb") as file:
                 file.write(response.content)
+            self.info("Calculating SHA256 hash of the downloaded file...")
+            if sha256 := hashlib.sha256():
+                with open(zip_path, "rb") as file:
+                    sha256.update(file.read())
+                downloaded_sum = sha256.hexdigest()
+            self.info(f"Downloaded file hash: {downloaded_sum}")
+            if expected_sum := self._github_sha256_hash_of_bundle.get(self.version):
+                if downloaded_sum != expected_sum:
+                    self.error(
+                        f"Downloaded file hash {downloaded_sum} does not match "
+                        f"expected hash {expected_sum}."
+                    )
+                    raise RuntimeError(
+                        "Downloaded file hash does not match expected hash."
+                    )
             self.info("Extracting...")
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(extract_to)
@@ -112,16 +151,37 @@ class OpenTofuDownload(OpenTofuBinary):
         elif ((system := platform.system().lower()) == "linux") and (
             os.environ["PY_TEST"] == "True"
         ):
+            self.info("Getting has of the bundl and save it in class variavle...")
+            self.get_sha256_hash_of_bundle_from_github(
+                self.session, self.version, system, "amd64", "tar.gz"
+            )
             tar_path = os.path.join(extract_to, "tofu.tar.gz")
             self.info(f"Downloading OpenTofu from {url}...")
             response = self.session.get(url)
             with open(tar_path, "wb") as file:
-                response = self.session.get(url)
                 file.write(response.content)
+            self.info("Calculating SHA256 hash of the downloaded file...")
+            if sha256 := hashlib.sha256():
+                with open(tar_path, "rb") as file:
+                    sha256.update(file.read())
+                    downloaded_sum = sha256.hexdigest()
+            self.info(f"Downloaded file hash: {downloaded_sum}")
+            if expected_sum := self._github_sha256_hash_of_bundle.get(self.version):
+                if downloaded_sum != expected_sum:
+                    self.error(
+                        f"Downloaded file hash {downloaded_sum} does not match "
+                        f"expected hash {expected_sum}."
+                    )
+                    raise RuntimeError(
+                        "Downloaded file hash does not match expected hash."
+                    )
             self.info("Extracting...")
             with tarfile.open(tar_path, "r:gz") as tar_ref:
                 tar_ref.extractall(extract_to)
             os.remove(tar_path)
+        else:
+            self.error(f"Unsupported system: {system}")
+            raise RuntimeError(f"Unsupported system: {system}")
 
     @protected
     def _store_downloaded_bin(self):

@@ -49,14 +49,14 @@ def instance_of_TestOpenTofuDownload():
     """Function for init connection in OpensearchArchive class."""
 
     client = TestOpenTofuDownload(OpenTofuBinary)
-    client.version = "v1.10.2"
+    client.version = "1.10.2"
     yield client
 
 
 @pytest.mark.dependency()
 def test_tofu_get_download_get_downlload_url(instance_of_TestOpenTofuDownload):
     # pylint: disable=protected-access
-    """Function for testing if new index creation function works as expected."""
+    """Function for testing download URL generation of OpenTofu binary."""
 
     if download_url := instance_of_TestOpenTofuDownload.tests_get_download_url():
         assert isinstance(download_url, str)
@@ -69,9 +69,33 @@ def test_tofu_get_download_get_downlload_url(instance_of_TestOpenTofuDownload):
 
 @pytest.mark.dependency(depends=["test_tofu_get_download_get_downlload_url"])
 def test_tofu_get_download_and_extract(instance_of_TestOpenTofuDownload):
-    """Function for testing if new index creation function works as expected."""
+    """Function for testing download and extraction of OpenTofu binary."""
 
     if files := instance_of_TestOpenTofuDownload.tests_download_and_extract():
+        assert isinstance(files, list)
+        assert len(files) > 0
+    else:
+        assert False, "Files were not downloaded and extracted correctly."
+
+
+@pytest.mark.dependency(depends=["test_tofu_get_download_and_extract"])
+def test_tofu_download_different_version_and_check_property(
+    instance_of_TestOpenTofuDownload,
+):
+    """Function for testiong download and extraction of OpenTofu binary with different version."""
+
+    instance_of_TestOpenTofuDownload.version = "1.10.3"
+
+    if files := instance_of_TestOpenTofuDownload.tests_download_and_extract():
+        print(instance_of_TestOpenTofuDownload._github_sha256_hash_of_bundle)
+        assert instance_of_TestOpenTofuDownload._github_sha256_hash_of_bundle == {
+            "1.10.2": instance_of_TestOpenTofuDownload._github_sha256_hash_of_bundle[
+                "1.10.2"
+            ],
+            "1.10.3": instance_of_TestOpenTofuDownload._github_sha256_hash_of_bundle[
+                "1.10.3"
+            ],
+        }
         assert isinstance(files, list)
         assert len(files) > 0
     else:

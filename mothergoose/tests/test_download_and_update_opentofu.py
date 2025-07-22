@@ -82,7 +82,10 @@ def test_tofu_get_download_and_extract(instance_of_TestOpenTofuDownload):
 def test_tofu_download_different_version_and_check_property(
     instance_of_TestOpenTofuDownload,
 ):
-    """Function for testiong download and extraction of OpenTofu binary with different version."""
+    """
+    Function for testiong download and extraction of
+    OpenTofu binary with different version.
+    """
 
     new_instance = TestOpenTofuDownload(OpenTofuBinary)
     new_instance.version = "1.10.3"

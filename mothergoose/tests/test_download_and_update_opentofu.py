@@ -44,8 +44,8 @@ class TestOpenTofuDownload(OpenTofuDownload):
             return None
 
 
-@pytest.fixture(scope="module", name="instance_of_TestOpenTofuDownload")
-def instance_of_TestOpenTofuDownload():
+@pytest.fixture(scope="module", name="inst_download")
+def inst_download():
     """Function for init connection in OpensearchArchive class."""
 
     client = TestOpenTofuDownload(OpenTofuBinary)
@@ -54,11 +54,11 @@ def instance_of_TestOpenTofuDownload():
 
 
 @pytest.mark.dependency()
-def test_tofu_get_download_get_downlload_url(instance_of_TestOpenTofuDownload):
+def test_tofu_get_download_get_downlload_url(inst_download):
     # pylint: disable=protected-access
     """Function for testing download URL generation of OpenTofu binary."""
 
-    if download_url := instance_of_TestOpenTofuDownload.tests_get_download_url():
+    if download_url := inst_download.tests_get_download_url():
         assert isinstance(download_url, str)
         assert download_url.startswith(
             "https://github.com/opentofu/opentofu/releases/download/v1.10.2/"
@@ -68,10 +68,10 @@ def test_tofu_get_download_get_downlload_url(instance_of_TestOpenTofuDownload):
 
 
 @pytest.mark.dependency(depends=["test_tofu_get_download_get_downlload_url"])
-def test_tofu_get_download_and_extract(instance_of_TestOpenTofuDownload):
+def test_tofu_get_download_and_extract(inst_download):
     """Function for testing download and extraction of OpenTofu binary."""
 
-    if files := instance_of_TestOpenTofuDownload.tests_download_and_extract():
+    if files := inst_download.tests_download_and_extract():
         assert isinstance(files, list)
         assert len(files) > 0
     else:
@@ -80,7 +80,7 @@ def test_tofu_get_download_and_extract(instance_of_TestOpenTofuDownload):
 
 @pytest.mark.dependency(depends=["test_tofu_get_download_and_extract"])
 def test_tofu_download_different_version_and_check_property(
-    instance_of_TestOpenTofuDownload,
+    inst_download,
 ):
     """
     Function for testiong download and extraction of
@@ -91,17 +91,13 @@ def test_tofu_download_different_version_and_check_property(
     new_instance.version = "1.10.3"
 
     if files := new_instance.tests_download_and_extract():
-        assert instance_of_TestOpenTofuDownload._github_sha256_hash_of_bundle == {
-            "1.10.2": instance_of_TestOpenTofuDownload._github_sha256_hash_of_bundle[
-                "1.10.2"
-            ],
-            "1.10.3": instance_of_TestOpenTofuDownload._github_sha256_hash_of_bundle[
-                "1.10.3"
-            ],
+        assert inst_download._github_sha256_hash_of_bundle == {
+            "1.10.2": inst_download._github_sha256_hash_of_bundle["1.10.2"],
+            "1.10.3": inst_download._github_sha256_hash_of_bundle["1.10.3"],
         }
         assert (
             new_instance.get_packages_sha256_hash
-            == instance_of_TestOpenTofuDownload.get_packages_sha256_hash
+            == inst_download.get_packages_sha256_hash
         )
         assert isinstance(files, list)
         assert len(files) > 0

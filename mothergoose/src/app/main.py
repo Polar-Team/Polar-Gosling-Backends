@@ -1,11 +1,9 @@
 from fastapi import FastAPI, HTTPException
 
+from .schema.payload_schemas import OpenTofuPayload
 from .services.download_and_update_opentofu_binary import *
 from .services.opentofu_wrapper import *
-
 from .util.logging import logged
-from .schema.payload_schemas import OpenTofuPayload
-
 
 # class AppCreator:
 #     """App Creator class wrapper for MotherGoose"""

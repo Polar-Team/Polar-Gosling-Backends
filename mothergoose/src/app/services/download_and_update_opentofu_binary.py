@@ -1,5 +1,6 @@
 """OpenTofuBinary download and update module."""
 
+import hashlib
 import json
 import os
 import platform
@@ -7,12 +8,10 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-import hashlib
 from abc import ABC
 
-from accessify import private, protected
+from accessify import protected
 
-from app.util.class_access import only_called_by
 from app.util.logging import logged
 from app.util.requests_session import with_requests_session
 
@@ -31,14 +30,14 @@ class OpenTofuBinary(ABC):
     def _get_current_version(self):
         """Get the current version of OpenTofu from the installed binary."""
 
-        tofu_path = os.path.join(self.install_dir, "tofu")
-        if not os.path.exists(tofu_path):
+        t_path = os.path.join(self.install_dir, "tofu")
+        if not os.path.exists(t_path):
             self.error("OpenTofu binary not found.")
             raise FileNotFoundError("OpenTofu binary not found.")
         result = subprocess.run(
-            [tofu_path, "--version"], capture_output=True, text=True, check=True
+            [t_path, "--version"], capture_output=True, text=True, check=True
         )
-        return result.stdout.strip().split()[-1]
+        return result.stdout.strip().split()[-1].replace("v", "")
 
 
 @logged
@@ -51,7 +50,7 @@ class OpenTofuDownload(OpenTofuBinary):
 
     __test__ = False
 
-    _github_sha256_hash_of_bundle = {}
+    _github_sha256_hash_of_bundle: dict[str, str] = {}
 
     def __init__(self, install_dir=None, version=None):
         """Initialize the OpenTofuDownload class."""
@@ -61,7 +60,7 @@ class OpenTofuDownload(OpenTofuBinary):
 
     @classmethod
     def get_sha256_hash_of_bundle_from_github(
-        cls, session, version: str, system: str, arch: str, extension: str
+        cls, session, ver: str, system: str, arch: str, ext: str
     ) -> str:
         """Get the SHA255 hash of the OpenTofu bundle from GitHub."""
 
@@ -70,11 +69,11 @@ class OpenTofuDownload(OpenTofuBinary):
         )
         data = response.json()
         for release in data:
-            if release["tag_name"] == f"v{version}":
+            if release["tag_name"] == f"v{ver}":
                 for asset in release["assets"]:
-                    if asset["name"] == f"tofu_{version}_{system}_{arch}.{extension}":
+                    if asset["name"] == f"tofu_{ver}_{system}_{arch}.{ext}":
                         hash = asset["digest"].replace("sha256:", "")
-                        cls._github_sha256_hash_of_bundle[version] = hash
+                        cls._github_sha256_hash_of_bundle[ver] = hash
 
                         return hash
 
@@ -87,6 +86,7 @@ class OpenTofuDownload(OpenTofuBinary):
     def _get_download_url(self):
         """Function to get tofu download url from github"""
 
+        ver = self.version
         if (system := platform.system().lower()) == "linux":
             if (arch := platform.machine().lower()) in ("x86_64", "amd64"):
                 arch = "amd64"
@@ -95,21 +95,21 @@ class OpenTofuDownload(OpenTofuBinary):
             else:
                 self.error(f"Unsupported architecture: {arch}")
                 raise RuntimeError(f"Unsupported architecture: {arch}")
-            dpath = (
-                f"download/v{self.version}tofu_{self.version}_{system}_{arch}.tar.gz"
-            )
+            dpath = f"download/v{ver}tofu_{ver}_{system}_{arch}.tar.gz"
             return f"https://github.com/opentofu/opentofu/releases/{dpath}"
         elif ((system := platform.system().lower()) == "windows") and (
             os.environ["PY_TEST"] == "True"
         ):
             arch = "amd64"
-            dpath = f"download/v{self.version}/tofu_{self.version}_{system}_{arch}.zip"
+            dpath = f"download/v{ver}/tofu_{ver}_{system}_{arch}.zip"
             return f"https://github.com/opentofu/opentofu/releases/{dpath}"
         else:
-            self.error(f"""
+            self.error(
+                f"""
                 Only Linux is supported in serverless Docker containers.
                 You tried {system}.
-                """)
+                """
+            )
             raise RuntimeError(
                 "Only Linux is supported in serverless Docker containers."
                 f"You tried {system}."
@@ -119,14 +119,15 @@ class OpenTofuDownload(OpenTofuBinary):
     def _download_and_extract(self, url, extract_to):
         """Function to download and extract tofu binary from github."""
 
+        ver = self.version
         if ((system := platform.system().lower()) == "windows") and (
             os.environ["PY_TEST"] == "True"
         ):
             import zipfile
 
-            self.info("Getting has of the bundl and save it in class variavle...")
+            self.info("Getting hash of the bundle and save it in class var...")
             self.get_sha256_hash_of_bundle_from_github(
-                self.session, self.version, system, "amd64", "zip"
+                self.session, ver, system, "amd64", "zip"
             )
             self.info(f"Using test environment for {system}...")
             zip_path = os.path.join(extract_to, "tofu.zip")
@@ -140,11 +141,11 @@ class OpenTofuDownload(OpenTofuBinary):
                     sha256.update(file.read())
                 downloaded_sum = sha256.hexdigest()
             self.info(f"Downloaded file hash: {downloaded_sum}")
-            if expected_sum := self._github_sha256_hash_of_bundle.get(self.version):
+            if expected_sum := self._github_sha256_hash_of_bundle.get(ver):
                 if downloaded_sum != expected_sum:
                     self.error(
-                        f"Downloaded file hash {downloaded_sum} does not match "
-                        f"expected hash {expected_sum}."
+                        f"Downloaded file hash {downloaded_sum} does "
+                        f"not match expected hash {expected_sum}."
                     )
                     raise RuntimeError(
                         "Downloaded file hash does not match expected hash."
@@ -156,9 +157,9 @@ class OpenTofuDownload(OpenTofuBinary):
         elif ((system := platform.system().lower()) == "linux") and (
             os.environ["PY_TEST"] == "True"
         ):
-            self.info("Getting has of the bundl and save it in class variavle...")
+            self.info("Getting hash of the bundle and save it in class var...")
             self.get_sha256_hash_of_bundle_from_github(
-                self.session, self.version, system, "amd64", "tar.gz"
+                self.session, ver, system, "amd64", "tar.gz"
             )
             tar_path = os.path.join(extract_to, "tofu.tar.gz")
             self.info(f"Downloading OpenTofu from {url}...")
@@ -171,11 +172,11 @@ class OpenTofuDownload(OpenTofuBinary):
                     sha256.update(file.read())
                     downloaded_sum = sha256.hexdigest()
             self.info(f"Downloaded file hash: {downloaded_sum}")
-            if expected_sum := self._github_sha256_hash_of_bundle.get(self.version):
+            if expected_sum := self._github_sha256_hash_of_bundle.get(ver):
                 if downloaded_sum != expected_sum:
                     self.error(
-                        f"Downloaded file hash {downloaded_sum} does not match "
-                        f"expected hash {expected_sum}."
+                        f"Downloaded file hash {downloaded_sum} does "
+                        f"not match expected hash {expected_sum}."
                     )
                     raise RuntimeError(
                         "Downloaded file hash does not match expected hash."
@@ -192,9 +193,9 @@ class OpenTofuDownload(OpenTofuBinary):
     def _store_downloaded_bin(self):
         """Function for storing tofu bin in install dir."""
 
-        if version := self._get_current_version() == self._get_latest_version():
-            self.info(f"OpenTofu is already at the latest version: {version}")
-            return
+        if (ver := self._get_current_version()) == self._get_latest_version():
+            self.info(f"OpenTofu is already at the latest version: {ver}")
+            return None
         url = self.__get_download_url()
         with tempfile.TemporaryDirectory() as tmpdir:
             self.__download_and_extract(url, tmpdir)
@@ -216,8 +217,8 @@ class OpenTofuDownload(OpenTofuBinary):
 class OpenTofuUpdate(OpenTofuBinary):
     """Class for Updating OpenTofu binary."""
 
-    def __init__(self, version="1.9.1", install_dir=None):
-        self.version = version
+    def __init__(self, install_dir=None):
+        self.current_version = self._get_current_version()
         self.install_dir = install_dir or "/usr/local/bin"
 
 
@@ -227,7 +228,10 @@ class OpenTofuUpdate(OpenTofuBinary):
     timeout=3,
 )
 class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
-    """Class to handle the OpenTofu binary download process from other sources."""
+    """
+    Class to handle the OpenTofu binary
+    download process from other sources.
+    """
 
     def __init__(self, url: str, install_dir: str = None):
         """Initialize the OpenTofuDownloaded class."""
@@ -236,11 +240,15 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
         self.url = url
 
     @protected
+    def _download_and_extract(self):
+        """Funhction to download and extract tofu binary from other sources."""
+
+    @protected
     def _store_downloaded_bin(self):
         """Function for storing tofu bin in the working bin directory."""
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            self.__download_and_extract(self.url, tmpdir)
+            self._download_and_extract(self.url, tmpdir)
             if ((system := platform.system().lower()) == "windows") and (
                 os.environ["PY_TEST"] == "True"
             ):

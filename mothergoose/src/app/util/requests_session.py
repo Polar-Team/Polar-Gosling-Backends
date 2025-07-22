@@ -1,7 +1,8 @@
+from functools import wraps
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from functools import wraps
 
 
 def with_requests_session(

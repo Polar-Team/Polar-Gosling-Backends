@@ -3,7 +3,7 @@ name = "mothergoose"
 version = "0.1.2"
 description = "Backend server for Polar Gosling Orchestration of Nest tasks and Apex or Nadir handlers"
 readme = "README.md"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.10,<3.14"
 authors = [
       {name = "Daniel Dalavurak",email = "morsh110792@yahoo.com"}
 ]
@@ -13,18 +13,33 @@ dependencies = [
     "grpcio>=1.71.0",
     "grpcio-tools>=1.71.0",
     "pydantic>=2.11.5",
-    "beautifulsoup4>=4.12.3",
 ]
 
 [dependency-groups]
 dev = [
+  "debugpy>=1.8.14",
+  "tox-gh>=1.4.4",
+  "tox>=4.23.2",
+]
+format = [
+  "black>=23.9.24",
+  "isort>=5.12.0",
+]
+style = [
+  "pylint>=3.3.7",
+  "flake8>=7.2.0",
+  "flake8-pyproject>=1.2.3",
+]
+test = [
   "pytest>=8.3.5",
   "pytest-dependency>=0.6.0",
-  "pylint>=3.3.7",
   "testcontainers>=4.10.0",
-  "flake8>=7.2.0",
-  "debugpy>=1.8.14",
-  "black>=23.9.24",
+]
+type = [
+  "mypy>=1.13.0",
+  "types-requests>=2.32.0.20241016",
+  "types-six>=1.17.0.20241205",
+  "types-deprecated>=1.2.15.20241117",
 ]
 
 [tool.pytest.ini_options]
@@ -35,5 +50,70 @@ testpaths = [
     "integration",
 ]
 
+[tool.tox]
+env_list = [
+    "3.10",
+    "3.11",
+    "3.12",
+    "3.13",
+    "format",
+    "type",
+    "style",
+]
+  skip_missing_interpreters = true
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.tox.env_run_base]
+description = "Run tests under {base_python}"
+dependency_groups = [
+    "test",
+]
+commands = [["pytest"]]
+
+[tool.tox.env.format]
+description = "Format code with black and isort"
+skip_install = true
+dependency_groups = [
+  "format",
+]
+commands = [
+    ["black", "--check", "--diff", "src/app"],
+    ["isort", "--check", "--diff", "src/app"],
+]
+
+[tool.tox.env.style]
+description = "Check style with flake8 and pylint"
+skip_install = true
+dependency_groups = [
+    "style",
+]
+commands = [
+    ["flake8", "src/app"],
+    ["pylint", "src/app"],
+]
+
+[tool.tox.env.type]
+description = "Check types with mypy"
+skip_install = true
+dependency_groups = [
+    "type",
+]
+commands = [["mypy", "src/app"]]
+
+[tool.mypy]
+disallow_untyped_defs = true
+disallow_any_unimported = true
+check_untyped_defs = true
+no_implicit_reexport = true
+warn_unreachable = true
+warn_unused_configs = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = [
+    "util.*",
+    "schema.*",
+]
+ignore_missing_imports = true

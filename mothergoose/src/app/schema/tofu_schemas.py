@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+import re
 
 
 class OpenTofuBackendOptions(BaseModel):
@@ -10,3 +11,35 @@ class OpenTofuBackendOptions(BaseModel):
     lock_method: str = "POST"
     unlock_method: str = "DELETE"
     retry_wait_min: int = 5
+
+
+class OpenTofuBinFileInfo(BaseModel):
+    """Data schema for OpenTofu binary files information."""
+
+    bin_version: str
+    bin_sha256: str
+    bin_url: str
+
+    @field_validator("bin_version")
+    def validate_semver(cls, value):
+        """Validate that the version follows semantic versioning."""
+        semver_pattern = r"^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?(\+[a-zA-Z0-9]+)?$"
+        if not re.match(semver_pattern, value):
+            raise ValueError(f"Invalid semantic version: {value}")
+        return value
+
+    @field_validator("bin_sha256")
+    def validate_sha256(cls, value):
+        """Validate that the SHA256 hash is a valid hexadecimal string."""
+        sha256_pattern = r"^[a-fA-F0-9]{64}$"
+        if not re.match(sha256_pattern, value):
+            raise ValueError(f"Invalid SHA256 hash: {value}")
+        return value
+
+    @field_validator("bin_url")
+    def validate_url(cls, value):
+        """Validate that the URL is a valid HTTP or HTTPS URL."""
+        url_pattern = r"^(https?://)[^\s/$.?#].[^\s]*$"
+        if not re.match(url_pattern, value):
+            raise ValueError(f"Invalid URL: {value}")
+        return value

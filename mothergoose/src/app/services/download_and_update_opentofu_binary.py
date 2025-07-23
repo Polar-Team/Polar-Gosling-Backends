@@ -12,6 +12,7 @@ from abc import ABC
 
 from accessify import protected
 
+from app.schema.tofu_schemas import OpenTofuBinFileInfo
 from app.util.logging import logged
 from app.util.requests_session import with_requests_session
 
@@ -27,17 +28,19 @@ class OpenTofuBinary(ABC):
             release_info = json.loads(response.content)
             return release_info["tag_name"].lstrip("v")
 
-    def _get_current_version(self):
+    def _get_current_version(self) -> str:
         """Get the current version of OpenTofu from the installed binary."""
 
-        t_path = os.path.join(self.install_dir, "tofu")
-        if not os.path.exists(t_path):
-            self.error("OpenTofu binary not found.")
-            raise FileNotFoundError("OpenTofu binary not found.")
-        result = subprocess.run(
-            [t_path, "--version"], capture_output=True, text=True, check=True
-        )
-        return result.stdout.strip().split()[-1].replace("v", "")
+        tp = os.path.join(self.install_dir, "tofu")
+        if not os.path.exists(tp):
+            result = "0.0.0"
+            self.warning("OpenTofu binary not found.It's ok if first run.")
+        else:
+            process = subprocess.run(
+                [tp, "--version"], capture_output=True, text=True, check=True
+            )
+            result = process.stdout.strip().split()[-1].replace("v", "")
+        return result
 
 
 @logged
@@ -190,15 +193,15 @@ class OpenTofuDownload(OpenTofuBinary):
             raise RuntimeError(f"Unsupported system: {system}")
 
     @protected
-    def _store_downloaded_bin(self):
+    def _store_downloaded_bin(self) -> OpenTofuBinFileInfo:
         """Function for storing tofu bin in install dir."""
 
         if (ver := self._get_current_version()) == self._get_latest_version():
             self.info(f"OpenTofu is already at the latest version: {ver}")
             return None
-        url = self.__get_download_url()
+        url = self._get_download_url()
         with tempfile.TemporaryDirectory() as tmpdir:
-            self.__download_and_extract(url, tmpdir)
+            self._download_and_extract(url, tmpdir)
             if ((system := platform.system().lower()) == "windows") and (
                 os.environ["PY_TEST"] == "True"
             ):
@@ -206,20 +209,44 @@ class OpenTofuDownload(OpenTofuBinary):
                 tofu_path = os.path.join(tmpdir, "tofu.exe")
                 dest_path = os.path.join(self.install_dir, "tofu.exe")
             else:
+                self.debug(f"Using test environment for {system}...")
                 tofu_path = os.path.join(tmpdir, "tofu")
                 dest_path = os.path.join(self.install_dir, "tofu")
             shutil.copy2(tofu_path, dest_path)
             os.chmod(dest_path, 0o755)
             self.info(f"OpenTofu updated at {dest_path}")
+            info = OpenTofuBinFileInfo(
+                bin_version=self.version,
+                bin_sha256=self.get_packages_sha256_hash[self.version],
+                bin_url=url,
+            )
+        return info
 
 
 @logged
+@with_requests_session(
+    retries=3,
+    timeout=3,
+)
 class OpenTofuUpdate(OpenTofuBinary):
     """Class for Updating OpenTofu binary."""
 
     def __init__(self, install_dir=None):
         self.current_version = self._get_current_version()
         self.install_dir = install_dir or "/usr/local/bin"
+
+    def update(self):
+        """Update OpenTofu binary if a new version is available."""
+
+        latest_version = self._get_latest_version()
+        if self.current_version == latest_version:
+            self.info(f"Tofu is already at the latest version: {latest_version}")
+            return None
+        self.info(f"Updating Tofu from {self.current_version} to {latest_version}")
+        downloader = OpenTofuDownload(
+            install_dir=self.install_dir, version=latest_version
+        )
+        downloader._store_downloaded_bin()
 
 
 @logged

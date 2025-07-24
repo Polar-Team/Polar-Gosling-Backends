@@ -7,11 +7,13 @@ import platform
 import shutil
 import subprocess
 import tarfile
-import zipfile
 import tempfile
+from typing import TypeVar
+import zipfile
 from abc import ABC
 
-from accessify import protected, private
+from accessify import private, protected
+from requests import Session
 
 from app.schema.tofu_schemas import OpenTofuBinFileInfo
 from app.util.logging import logged
@@ -21,7 +23,7 @@ from app.util.requests_session import with_requests_session
 class OpenTofuBinary(ABC):
     """Abstract base class for OpenTofu binary management."""
 
-    def _get_latest_version(self):
+    def _get_latest_version(self) -> str:
         """Get the latest version of OpenTofu from GitHub."""
 
         url = "https://api.github.com/repos/opentofu/opentofu/releases/latest"
@@ -56,7 +58,9 @@ class OpenTofuDownload(OpenTofuBinary):
 
     _github_sha256_hash_of_bundle: dict[str, str] = {}
 
-    def __init__(self, install_dir=None, version=None):
+    def __init__(
+        self, install_dir: str | None = None, version: str | None = None
+    ) -> None:
         """Initialize the OpenTofuDownload class."""
 
         self.version = version or self._get_latest_version()
@@ -64,7 +68,7 @@ class OpenTofuDownload(OpenTofuBinary):
 
     @classmethod
     def get_sha256_hash_of_bundle_from_github(
-        cls, session, ver: str, system: str, arch: str, ext: str
+        cls, session: Session, ver: str, system: str, arch: str, ext: str
     ) -> str:
         """Get the SHA255 hash of the OpenTofu bundle from GitHub."""
 
@@ -79,15 +83,15 @@ class OpenTofuDownload(OpenTofuBinary):
                         hash = asset["digest"].replace("sha256:", "")
                         cls._github_sha256_hash_of_bundle[ver] = hash
 
-                        return hash
+        return hash
 
     @property
-    def get_packages_sha256_hash(self):
+    def get_packages_sha256_hash(self) -> dict:
         """Get the SHA256 hash of the OpenTofu bundle."""
         return self._github_sha256_hash_of_bundle
 
     @protected
-    def _get_download_url(self):
+    def _get_download_url(self) -> str:
         """Function to get tofu download url from github"""
 
         ver = self.version
@@ -118,7 +122,7 @@ class OpenTofuDownload(OpenTofuBinary):
             )
 
     @protected
-    def _download_and_extract(self, url, extract_to):
+    def _download_and_extract(self, url: str, extract_to: str) -> None:
         """Function to download and extract tofu binary from github."""
 
         ver = self.version
@@ -191,7 +195,11 @@ class OpenTofuDownload(OpenTofuBinary):
 
         if (ver := self._get_current_version()) == self._get_latest_version():
             self.info(f"OpenTofu is already at the latest version: {ver}")
-            return None
+            return OpenTofuBinFileInfo(
+                bin_version=ver,
+                bin_sha256=self.get_packages_sha256_hash.get(ver, ""),
+                bin_url="<same_as_origin>",
+            )
         url = self._get_download_url()
         with tempfile.TemporaryDirectory() as tmpdir:
             self._download_and_extract(url, tmpdir)
@@ -226,6 +234,15 @@ class OpenTofuUpdate(OpenTofuBinary):
         self.current_version = self._get_current_version()
         self.install_dir = install_dir or "/usr/local/bin"
 
+    @property
+    def get_selected_version(self) -> str:
+        """Get the selected version of OpenTofu from the database."""
+
+    @property
+    def get_current_version(self) -> str:
+        """Get the current version of OpenTofu from the installed binary."""
+        return self.current_version
+
     @private
     def __update_to_latest_version(self):
         """Update OpenTofu binary if a new version is available."""
@@ -248,6 +265,29 @@ class OpenTofuUpdate(OpenTofuBinary):
     def __download_rollback_releases(self):
         """Download up to 10 preveious version from current version."""
 
+    def download_available_versions(self) -> list[str]:
+        """Download available OpenTofu versions from GitHub."""
+
+        url = "https://api.github.com/repos/opentofu/opentofu/releases"
+        with self.session.get(url) as response:
+            releases = json.loads(response.content)
+            versions = [
+                release["tag_name"].lstrip("v")
+                for release in releases
+                if "tag_name" in release
+            ]
+            return sorted(versions, reverse=True)
+
+    def check_required_actions(self, rollback_count: int) -> bool:
+        """Check if OpenTofu binary needs to be updated."""
+
+        if (
+            current_version := self._get_current_version()
+        ) == self._get_latest_version():
+            self.info(f"Tofu already at the last version: {current_version}")
+            return False
+        return True
+
 
 @logged
 @with_requests_session(
@@ -261,14 +301,17 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
     Supported sources: Gitlab
     """
 
-    __token: str
+    _token: str
 
-    def __init__(self, version: str, url: str, install_dir: str = None):
+    def __init__(
+        self, version: str, url: str, hash_sha256: str, install_dir: str = None
+    ):
         """Initialize the OpenTofuDownloaded class."""
 
-        self.install_dir = install_dir or "/mnt/tofu_binary/tofu_other_source"
+        self.install_dir = install_dir or f"/mnt/tofu_binary/{version}"
         self.url = url
         self.version = version
+        self.hash_sha256 = hash_sha256
 
     @protected
     def _download_and_extract(self, extract_to: str):
@@ -323,7 +366,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
             self.info(f"Downloading OpenTofu from {self.url}...")
             if self.header_auth:
                 headers = {
-                    "PRIVATE_TOKEN": self.__token,
+                    "Private-Token": self.__token,
                 }
                 response = self.session.get(self.url, headers=headers)
             else:
@@ -352,3 +395,31 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
         else:
             self.error(f"Unsupported system: {system}")
             raise RuntimeError(f"Unsupported system: {system}")
+
+    @protected
+    def _store_downloaded_bin(self) -> OpenTofuBinFileInfo:
+        """Function for storing tofu bin in install dir."""
+
+        if (ver := self._get_current_version()) == self._get_latest_version():
+            self.info(f"OpenTofu is already at the latest version: {ver}")
+            return None
+        url = self.url
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._download_and_extract(url, tmpdir)
+            if (system := platform.system().lower()) == "windows":
+                self.info(f"Using test environment for {system}...")
+                tofu_path = os.path.join(tmpdir, "tofu.exe")
+                dest_path = os.path.join(self.install_dir, "tofu.exe")
+            else:
+                self.info(f"Using test environment for {system}...")
+                tofu_path = os.path.join(tmpdir, "tofu")
+                dest_path = os.path.join(self.install_dir, "tofu")
+            shutil.copy2(tofu_path, dest_path)
+            os.chmod(dest_path, 0o755)
+            self.info(f"OpenTofu updated at {dest_path}")
+            info = OpenTofuBinFileInfo(
+                bin_version=self.version,
+                bin_sha256=self.get_packages_sha256_hash[self.version],
+                bin_url=url,
+            )
+        return info

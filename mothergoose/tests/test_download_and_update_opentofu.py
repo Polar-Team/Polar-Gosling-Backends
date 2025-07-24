@@ -7,6 +7,7 @@ from app.services.download_and_update_opentofu_binary import (
     OpenTofuBinary,
     OpenTofuDownload,
     OpenTofuUpdate,
+    OpenTofuDownloadFromOtherSource,
 )
 from app.schema.tofu_schemas import OpenTofuBinFileInfo
 
@@ -31,6 +32,30 @@ class TestOpenTofuDownload(OpenTofuDownload):
         if os.environ["PY_TEST"] == "True":
             with tempfile.TemporaryDirectory() as tmpdir:
                 url = self._get_download_url()
+                self._download_and_extract(url, tmpdir)
+                return os.listdir(tmpdir)
+        else:
+            return None
+
+    def tests_store_downloaded_bin(self):
+        """Test the download and extraction process."""
+
+        if os.environ["PY_TEST"] == "True":
+            return self._store_downloaded_bin()
+        else:
+            return None
+
+
+class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
+    """Test class for OpenTofuDownloadFromOtherSource."""
+
+    def tests_download_and_extract(self):
+        """Test the download and extraction process."""
+
+        if os.environ["PY_TEST"] == "True":
+            self._token = "test_token"
+            with tempfile.TemporaryDirectory() as tmpdir:
+                url = ""
                 self._download_and_extract(url, tmpdir)
                 return os.listdir(tmpdir)
         else:

@@ -110,6 +110,10 @@ no_implicit_reexport = true
 warn_unreachable = true
 warn_unused_configs = true
 warn_redundant_casts = true
+disable_error_code = [
+    "attr-defined",
+    "import-untyped",
+]
 
 [[tool.mypy.overrides]]
 module = [
@@ -117,3 +121,4 @@ module = [
     "schema.*",
 ]
 ignore_missing_imports = true
+

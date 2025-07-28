@@ -13,7 +13,11 @@ class AsyncYDBConnection:
         self.driver_config = schema.config
 
     async def connect(self):
-        async with YDBAsync.Driver(self.driver_config) as driver:
+        async with YDBAsync.Driver(
+            endpoint=self.driver_config.endpoint,
+            database=self.driver_config.database,
+            root_certificates=self.driver_config.root_certificates,
+        ) as driver:
             """Create an asynchronous YDB driver."""
             try:
                 await driver.wait(timeout=5)

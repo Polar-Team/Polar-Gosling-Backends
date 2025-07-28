@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
 
-class PydanticModle(BaseModel):
+class PydanticBaseModel(BaseModel):
     """
     Base Pydantic model for DynamoDB schemas.
     """
@@ -12,7 +12,7 @@ class PydanticModle(BaseModel):
         allow_mutation = False
 
 
-class DynamoDBConfig(PydanticModle):
+class DynamoDBConfig(PydanticBaseModel):
     """
     Configuration for DynamoDB connection.
     """
@@ -61,7 +61,7 @@ class DynamoDBConfig(PydanticModle):
         raise ValueError("endpoint_url must be a non-empty string or None.")
 
 
-class DynamoDBTableSchema(PydanticModle):
+class DynamoDBTableSchema(PydanticBaseModel):
     """
     Schema for a DynamoDB table.
     """
@@ -81,7 +81,7 @@ class DynamoDBTableSchema(PydanticModle):
     )
 
 
-class DynamoDBSchema(PydanticModle):
+class DynamoDBSchema(PydanticBaseModel):
     """Schema for DynamoDB configuration and table definitions."""
 
     config: DynamoDBConfig = Field(..., description="DynamoDB connection configuration")

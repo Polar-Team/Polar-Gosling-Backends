@@ -1,0 +1,94 @@
+from pydantic import BaseModel, Field, field_validator
+
+
+class PydanticModle(BaseModel):
+    """
+    Base Pydantic model for DynamoDB schemas.
+    """
+
+    class Config:
+        orm_mode = True
+        arbitrary_types_allowed = True
+        allow_mutation = False
+
+
+class DynamoDBConfig(PydanticModle):
+    """
+    Configuration for DynamoDB connection.
+    """
+
+    region_name: str = Field(..., description="AWS region name")
+    endpoint_url: str | None = Field(
+        None, description="DynamoDB endpoint URL (optional)"
+    )
+    aws_access_key_id: str | None = Field(
+        None, description="AWS access key ID (optional)"
+    )
+    aws_secret_access_key: str | None = Field(
+        None, description="AWS secret access key (optional)"
+    )
+    aws_session_token: str | None = Field(
+        None, description="AWS session token (optional)"
+    )
+    botocore_config: dict | None = Field(
+        None, description="Botocore configuration options (optional)"
+    )
+
+    @field_validator("botocore_config", mode="before")
+    @classmethod
+    def validate_botocore_config(cls, value):
+        """
+        Validate and convert botocore_config to a dictionary if it is not None.
+        """
+        if value is None:
+            return {}
+        elif isinstance(value, dict):
+            return value
+        raise ValueError("botocore_config must be a dictionary or None.")
+
+    @field_validator("endpoint_url", mode="before")
+    @classmethod
+    def validate_endpoint_url(cls, value):
+        """
+        Ensure endpoint_url is either None or a valid HTTP(S) URL string.
+        """
+        if value is None:
+            return value
+        elif isinstance(value, str) and value.strip():
+            if value.startswith("https://"):
+                return value
+            raise ValueError("endpoint_url must start with https://")
+        raise ValueError("endpoint_url must be a non-empty string or None.")
+
+
+class DynamoDBTableSchema(PydanticModle):
+    """
+    Schema for a DynamoDB table.
+    """
+
+    table_name: str = Field(..., description="Name of the DynamoDB table")
+    key_schema: list[dict] = Field(
+        ..., description="Key schema for the table (list of dicts)"
+    )
+    attribute_definitions: list[dict] = Field(
+        ..., description="Attribute definitions for the table (list of dicts)"
+    )
+    provisioned_throughput: dict = Field(
+        ..., description="Provisioned throughput settings for the table"
+    )
+    global_secondary_indexes: list[dict] | None = Field(
+        None, description="Global secondary indexes for the table (optional)"
+    )
+
+
+class DynamoDBSchema(PydanticModle):
+    """Schema for DynamoDB configuration and table definitions."""
+
+    config: DynamoDBConfig = Field(..., description="DynamoDB connection configuration")
+    tables: list[DynamoDBTableSchema] = Field(
+        ..., description="List of table schemas to be created in DynamoDB"
+    )
+    default_table: str | None = Field(
+        None, description="Default table name for operations (optional)"
+    )
+    version: str = Field("1.0", description="Schema version")

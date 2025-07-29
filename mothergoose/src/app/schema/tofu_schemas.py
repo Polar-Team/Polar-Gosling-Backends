@@ -23,7 +23,7 @@ class OpenTofuBinFileInfo(BaseModel):
 
     @field_validator("bin_version")
     @classmethod
-    def validate_semver(cls, value):
+    def validate_semver(cls, value: str) -> str:
         """Validate that the version follows semantic versioning."""
         semver_pattern = r"^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?(\+[a-zA-Z0-9]+)?$"
         if not re.match(semver_pattern, value):
@@ -32,7 +32,7 @@ class OpenTofuBinFileInfo(BaseModel):
 
     @field_validator("bin_sha256")
     @classmethod
-    def validate_sha256(cls, value):
+    def validate_sha256(cls, value: str) -> str:
         """Validate that the SHA256 hash is a valid hexadecimal string."""
         sha256_pattern = r"^[a-fA-F0-9]{64}$"
         if not re.match(sha256_pattern, value):
@@ -41,7 +41,7 @@ class OpenTofuBinFileInfo(BaseModel):
 
     @field_validator("bin_url")
     @classmethod
-    def validate_url(cls, value):
+    def validate_url(cls, value: str) -> str:
         """Validate that the URL is a valid HTTP or HTTPS URL."""
         url_pattern = r"^(https?://)[^\s/$.?#].[^\s]*$"
         if not re.match(url_pattern, value):

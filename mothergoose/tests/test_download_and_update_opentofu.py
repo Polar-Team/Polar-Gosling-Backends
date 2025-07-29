@@ -10,7 +10,7 @@ from app.services.download_and_update_opentofu_binary import (
     OpenTofuDownloadFromOtherSource,
 )
 from app.schema.tofu_schemas import OpenTofuBinFileInfo
-from app.schema.ydb_tables import YDBTableSchema
+from app.schema.db_tables import YDBTableSchema
 from app.schema.ydb_schemas import (
     YDBConfig,
     YDBSchema,

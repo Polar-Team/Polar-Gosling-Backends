@@ -1,20 +1,22 @@
 from functools import wraps
-
+from typing import Callable, TypeVar, Any, Tuple
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+F = TypeVar("F", bound=Callable[..., Any])
+
 
 def with_requests_session(
-    cls=None,
-    retries=3,
-    backoff_factor=0.5,
-    timeout=10,
-    status_forcelist=(502, 503, 504),
-):
-    def requests_for_init(func):
+    cls: Any = None,
+    retries: int = 3,
+    backoff_factor: float = 0.5,
+    timeout: int = 10,
+    status_forcelist: Tuple[int, ...] = (502, 503, 504),
+) -> Any:
+    def requests_for_init(func: F) -> Any:
         @wraps(func)
-        def wrapper(self, *args, **kwargs):
+        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
             self.session = requests.Session()
             retry = Retry(
                 total=retries,
@@ -27,9 +29,6 @@ def with_requests_session(
 
             if timeout is not None:
                 self.session.timeout = timeout
-            else:
-                self.session.timeout = 10
-
             try:
                 return func(self, *args, **kwargs)
             finally:
@@ -37,7 +36,7 @@ def with_requests_session(
 
         return wrapper
 
-    def wrap(cls):
+    def wrap(cls: Any) -> Any:
         cls.__init__ = requests_for_init(cls.__init__)
         return cls
 

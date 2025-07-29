@@ -52,9 +52,10 @@ class OpenTofuBinary(ABC):
     retries=3,
     timeout=3,
 )
-class OpenTofuDownload(OpenTofuBinary):
+class OpenTofuDownload(OpenTofuBinary):  # type: ignore[attr-defined]
     """Class to handle the OpenTofu binary download process."""
 
+    # pylint: disable=no-member,too-few-public-methods
     __test__ = False
 
     _github_sha256_hash_of_bundle: dict[str, str] = {}
@@ -231,7 +232,9 @@ class OpenTofuDownload(OpenTofuBinary):
 class OpenTofuUpdate(OpenTofuBinary):
     """Class for Updating OpenTofu binary."""
 
-    def __init__(self, install_dir=None):
+    # pylint: disable=no-member
+
+    def __init__(self, install_dir: str | None = None) -> None:
         self.current_version = self._get_current_version()
         self.install_dir = install_dir or "/usr/local/bin"
 
@@ -245,7 +248,7 @@ class OpenTofuUpdate(OpenTofuBinary):
         return self.current_version
 
     @private
-    def __update_to_latest_version(self):
+    def __update_to_latest_version(self) -> OpenTofuBinFileInfo | None:
         """Update OpenTofu binary if a new version is available."""
 
         last_version = self._get_latest_version()
@@ -302,11 +305,16 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
     Supported sources: Gitlab
     """
 
+    # pylint: disable=no-member,too-few-public-methods
     _token: str
 
     def __init__(
-        self, version: str, url: str, hash_sha256: str, install_dir: str = None
-    ):
+        self,
+        version: str,
+        url: str,
+        hash_sha256: str,
+        install_dir: str | None = None,
+    ) -> None:
         """Initialize the OpenTofuDownloaded class."""
 
         self.install_dir = install_dir or f"/mnt/tofu_binary/{version}"
@@ -315,7 +323,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
         self.hash_sha256 = hash_sha256
 
     @protected
-    def _download_and_extract(self, extract_to: str):
+    def _download_and_extract(self, extract_to: str) -> None:
         """Function to download and extract tofu binary from other sources."""
 
         self.header_auth = False
@@ -403,7 +411,12 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
 
         if (ver := self._get_current_version()) == self._get_latest_version():
             self.info(f"OpenTofu is already at the latest version: {ver}")
-            return None
+            return OpenTofuBinFileInfo(
+                bin_version=ver,
+                bin_sha256=self.get_packages_sha256_hash.get(ver, ""),
+                bin_url="<same_as_origin>",
+            )
+
         url = self.url
         with tempfile.TemporaryDirectory() as tmpdir:
             self._download_and_extract(url, tmpdir)

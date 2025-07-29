@@ -1,8 +1,10 @@
-from pydantic.dataclasses import dataclass, Field
-from app.schema.ydb_tables import YDBTableSchema
+from pydantic import ConfigDict, Field
+from pydantic.dataclasses import dataclass
+
+from app.schema.db_tables import YDBTableSchema
 
 
-@dataclass
+@dataclass(config=ConfigDict(frozen=True))
 class OpenTofuModelYDB:
     """
     Base class for OpenTofu models.
@@ -16,12 +18,12 @@ class OpenTofuModelYDB:
     model_name: str = "OpenTofuModel"
     version: str = "1.0"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Post-initialization logic can be added here if needed."""
         pass
 
 
-@dataclass
+@dataclass(config=ConfigDict(frozen=True))
 class OpenTofuModelDynamoDB:
     """
     Base class for OpenTofu models specific to DynamoDB.
@@ -31,6 +33,6 @@ class OpenTofuModelDynamoDB:
     model_name: str = "OpenTofuModel"
     version: str = "1.0"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Post-initialization logic can be added here if needed."""
         pass

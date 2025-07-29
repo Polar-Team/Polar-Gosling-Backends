@@ -113,14 +113,24 @@ warn_unreachable = true
 warn_unused_configs = true
 warn_redundant_casts = true
 disable_error_code = [
-    "attr-defined",
     "import-untyped",
 ]
 
 [[tool.mypy.overrides]]
 module = [
-    "util.*",
-    "schema.*",
+    "app.util.*",
+    "app.schema.*",
 ]
 ignore_missing_imports = true
+disallow_any_unimported = false
+
+[[tool.mypy.overrides]]
+module = [
+  "app.services.download_and_update_opentofu_binary",
+  "app.db.ydb_connection",
+  "app.db.dynamodb_connection",
+]
+disable_error_code = [
+  "attr-defined",
+]
 

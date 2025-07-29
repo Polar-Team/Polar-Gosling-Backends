@@ -1,13 +1,16 @@
 import inspect
+from typing import Callable, TypeVar, Any
 from functools import wraps
 
+F = TypeVar("F", bound=Callable[..., Any])
 
-def only_called_by(*allowed_classes: str):
+
+def only_called_by(*allowed_classes: str) -> Any:
     allowed_set = set(allowed_classes)
 
-    def decorator(method):
+    def decorator(method: F) -> Any:
         @wraps(method)
-        def wrapper(self, *args, **kwargs):
+        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
             stack = inspect.stack()
             caller = None
             try:

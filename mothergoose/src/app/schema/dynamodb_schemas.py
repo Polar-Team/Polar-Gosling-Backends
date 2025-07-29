@@ -27,7 +27,7 @@ class DynamoDBConfig(PydanticBaseModelORM):
 
     @field_validator("botocore_config", mode="before")
     @classmethod
-    def validate_botocore_config(cls, value):
+    def validate_botocore_config(cls, value: dict | None) -> dict:
         """
         Validate and convert botocore_config to a dictionary if it is not None.
         """
@@ -39,7 +39,7 @@ class DynamoDBConfig(PydanticBaseModelORM):
 
     @field_validator("endpoint_url", mode="before")
     @classmethod
-    def validate_endpoint_url(cls, value):
+    def validate_endpoint_url(cls, value: str | None) -> str | None:
         """
         Ensure endpoint_url is either None or a valid HTTP(S) URL string.
         """

@@ -2,14 +2,16 @@
 
 import logging
 from functools import wraps
+from typing import Callable, TypeVar, Any
 
 logger = logging.getLogger(__name__)
+F = TypeVar("F", bound=Callable[..., Any])
 
 
-def logged(cls=None, *, name=""):
-    def logged_for_init(func):
+def logged(cls: Any = None, *, name: str = "") -> Any:
+    def logged_for_init(func: F) -> Any:
         @wraps(func)
-        def wrapper(self, *args, **kwargs):
+        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
             logger_name = name or f"{self.__class__.__name__}-{func.__name__}"
             self.log = logging.getLogger(logger_name)
             for method_name in (
@@ -26,7 +28,7 @@ def logged(cls=None, *, name=""):
 
         return wrapper
 
-    def wrap(cls):
+    def wrap(cls: Any) -> Any:
         cls.__init__ = logged_for_init(cls.__init__)
         return cls
 

@@ -3,8 +3,8 @@ from typing import Optional
 from pydantic import Field, field_validator
 from ydb import credentials_from_env_variables as ydb_cred_function
 
+from app.model.opentofu_models import OpenTofuModelDynamoDB, OpenTofuModelYDB
 from app.model.pydantic_base_models import PydanticBaseModelORM
-from app.model.opentofu_models import OpenTofuModelYDB, OpenTofuModelDynamoDB
 
 
 class YDBConfig(PydanticBaseModelORM):
@@ -20,7 +20,7 @@ class YDBConfig(PydanticBaseModelORM):
 
     @field_validator("endpoint", mode="before")
     @classmethod
-    def validate_endpoint(cls, value):
+    def validate_endpoint(cls, value: str) -> str:
         """
         Ensure endpoint is a valid URL string.
         """

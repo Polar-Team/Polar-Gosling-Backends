@@ -1,7 +1,7 @@
 import os
-import time
+
 import tempfile
-from datetime import datetime
+
 import pytest
 from app.services.download_and_update_opentofu_binary import (
     OpenTofuBinary,
@@ -10,6 +10,16 @@ from app.services.download_and_update_opentofu_binary import (
     OpenTofuDownloadFromOtherSource,
 )
 from app.schema.tofu_schemas import OpenTofuBinFileInfo
+from app.schema.ydb_tables import YDBTableSchema
+from app.schema.ydb_schemas import (
+    YDBConfig,
+    YDBSchema,
+    OpenTofuModelYDB,
+    OpenTofuModelDynamoDB,
+)
+
+from app.db.ydb_connection import AsyncYDBConnection
+from testcontainers.core.container import DockerContainer
 
 os.environ["PY_TEST"] = "True"
 os.environ["DISABLE_ACCESSIFY"] = "True"
@@ -68,6 +78,50 @@ class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
             return self._store_downloaded_bin()
         else:
             return None
+
+
+@pytest.fixture(scope="module", name="container")
+def ydb_container():
+    image = "ydbplatform/local-ydb:latest"
+    with (
+        DockerContainer(image)
+        .with_exposed_ports(2136)
+        .with_env("YDB_USE_IN_MEMORY_PDISKS", "true") as container
+    ):
+        yield container
+
+
+@pytest.fixture(scope="module", name="ydb_schema")
+def ydb_schema(container):
+    """Fixture to provide YDB configuration."""
+    host = container.get_container_host_ip()
+    port = container.get_exposed_port(2136)
+    config = YDBConfig(
+        endpoint=f"grpc://{host}:{port}",
+        database="/local",
+    )
+
+    table_schema = YDBTableSchema(
+        table_name="opentofu_binaries",
+        key_columns=["bin_version"],
+        value_columns=["bin_sha256", "bin_url", "created_at"],
+        primary_key=["bin_version"],
+    )
+    model = OpenTofuModelYDB(tables=[table_schema])
+    schema = YDBSchema(
+        config=config,
+        model=model,
+    )
+    yield schema
+
+
+@pytest.fixture(scope="module", name="ydb_connection")
+def ydb_connection(ydb_schema):
+    """Fixture to provide YDB connection."""
+
+    connection = AsyncYDBConnection(ydb_schema)
+    yield connection
+    connection.close()
 
 
 @pytest.fixture(scope="module", name="inst_download")

@@ -14,7 +14,7 @@ dependencies = [
     "grpcio>=1.71.0",
     "grpcio-tools>=1.71.0",
     "pydantic>=2.11.5",
-    "ydb>=2.12.2",
+    "ydb>=3.21.6",
 ]
 
 [dependency-groups]

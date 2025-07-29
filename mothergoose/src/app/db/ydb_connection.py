@@ -21,7 +21,9 @@ class AsyncYDBConnection:
             """Create an asynchronous YDB driver."""
             try:
                 await driver.wait(timeout=5)
-                return driver
+                pool = YDBAsync.SessionPool(driver, size=self.driver_config.pool_size)
+                session = await pool.acquire()
+                return session
             except TimeoutError:
                 error_info = driver.discovery_debug_details()
                 self.error(f"Failed to connect to YDB: {error_info}")

@@ -1,18 +1,9 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
+
+from app.model.pydantic_base_models import PydanticBaseModelORM
 
 
-class PydanticBaseModel(BaseModel):
-    """
-    Base Pydantic model for DynamoDB schemas.
-    """
-
-    class Config:
-        orm_mode = True
-        arbitrary_types_allowed = True
-        allow_mutation = False
-
-
-class DynamoDBConfig(PydanticBaseModel):
+class DynamoDBConfig(PydanticBaseModelORM):
     """
     Configuration for DynamoDB connection.
     """
@@ -61,7 +52,7 @@ class DynamoDBConfig(PydanticBaseModel):
         raise ValueError("endpoint_url must be a non-empty string or None.")
 
 
-class DynamoDBTableSchema(PydanticBaseModel):
+class DynamoDBTableSchema(PydanticBaseModelORM):
     """
     Schema for a DynamoDB table.
     """
@@ -81,7 +72,7 @@ class DynamoDBTableSchema(PydanticBaseModel):
     )
 
 
-class DynamoDBSchema(PydanticBaseModel):
+class DynamoDBSchema(PydanticBaseModelORM):
     """Schema for DynamoDB configuration and table definitions."""
 
     config: DynamoDBConfig = Field(..., description="DynamoDB connection configuration")

@@ -1,0 +1,11 @@
+from pydantic import BaseModel, ConfigDict
+
+
+class PydanticBaseModelORM(BaseModel):
+    """Pydantic configuration for YDB schemas."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        arbitrary_types_allowed=True,
+        frozen=True,
+    )

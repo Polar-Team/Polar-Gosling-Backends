@@ -1,47 +1,42 @@
-from pydantic import BaseModel, Field
+from typing import Optional
+
+from pydantic import Field, field_validator
+from ydb import credentials_from_env_variables as ydb_cred_function
+
+from app.model.pydantic_base_models import PydanticBaseModelORM
+from app.model.opentofu_models import OpenTofuModelYDB, OpenTofuModelDynamoDB
 
 
-class PydanticBaseModel(BaseModel):
-    """Pydantic configuration for YDB schemas."""
-
-    class Config:
-        """Pydantic configuration for YDB schemas."""
-
-        orm_mode = True
-        arbitrary_types_allowed = True
-        allow_mutation = False
-
-
-class YDBConfig(PydanticBaseModel):
+class YDBConfig(PydanticBaseModelORM):
     endpoint: str = Field(..., description="YDB endpoint URL")
     database: str = Field(..., description="YDB database name")
-    root_certificates: str | None = Field(
+    pool_size: int = Field(10, description="Size of the session pools for YDB")
+    credentials: Optional[ydb_cred_function] = Field(
+        None, description="Credentials for YDB connection (e.g., token)"
+    )
+    root_certificates: Optional[str] = Field(
         None, description="Root certificates for secure connection (optional)"
     )
 
-
-class YDBTableSchema(PydanticBaseModel):
-    table_name: str = Field(..., description="Name of the YDB table")
-    key_columns: list[str] = Field(
-        ..., description="List of key column names for the table"
-    )
-    value_columns: list[str] = Field(
-        ..., description="List of value column names for the table"
-    )
-    primary_key: str | None = Field(
-        None, description="Primary key column name (optional)"
-    )
-    indexes: list[str] = Field(
-        [], description="List of index names for the table (optional)"
-    )
+    @field_validator("endpoint", mode="before")
+    @classmethod
+    def validate_endpoint(cls, value):
+        """
+        Ensure endpoint is a valid URL string.
+        """
+        if isinstance(value, str) and value.strip():
+            if value.startswith("grpc://"):
+                return value
+            raise ValueError("endpoint must start with grpc://")
+        raise ValueError("endpoint must be a non-empty string.")
 
 
-class YDBSchema(PydanticBaseModel):
-    config: YDBConfig = Field(..., description="Configuration for YDB connection")
-    tables: list[YDBTableSchema] = Field(
-        ..., description="List of table schemas to be created in YDB"
-    )
+class YDBSchema(PydanticBaseModelORM):
+    config: YDBConfig = Field(..., description="Setup for YDB connection")
     default_table: str | None = Field(
         None, description="Default table name for operations (optional)"
     )
     version: str = Field("1.0", description="Schema version")
+    model: OpenTofuModelYDB | OpenTofuModelDynamoDB = Field(
+        ..., description="Model type for integration"
+    )

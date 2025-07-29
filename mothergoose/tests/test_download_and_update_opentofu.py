@@ -80,7 +80,7 @@ class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
             return None
 
 
-@pytest.fixture(scope="module", name="container")
+@pytest.fixture(scope="module", name="ydb_container")
 def ydb_container():
     image = "ydbplatform/local-ydb:latest"
     with (
@@ -92,10 +92,10 @@ def ydb_container():
 
 
 @pytest.fixture(scope="module", name="ydb_schema")
-def ydb_schema(container):
+def ydb_schema(ydb_container):
     """Fixture to provide YDB configuration."""
-    host = container.get_container_host_ip()
-    port = container.get_exposed_port(2136)
+    host = ydb_container.get_container_host_ip()
+    port = ydb_container.get_exposed_port(2136)
     config = YDBConfig(
         endpoint=f"grpc://{host}:{port}",
         database="/local",
@@ -105,7 +105,7 @@ def ydb_schema(container):
         table_name="opentofu_binaries",
         key_columns=["bin_version"],
         value_columns=["bin_sha256", "bin_url", "created_at"],
-        primary_key=["bin_version"],
+        primary_key="bin_version",
     )
     model = OpenTofuModelYDB(tables=[table_schema])
     schema = YDBSchema(
@@ -121,7 +121,6 @@ def ydb_connection(ydb_schema):
 
     connection = AsyncYDBConnection(ydb_schema)
     yield connection
-    connection.close()
 
 
 @pytest.fixture(scope="module", name="inst_download")
@@ -202,3 +201,12 @@ def tests_store_downloaded_bin(inst_download):
         )
     else:
         assert False, "Binaries were not stored correctly."
+
+
+@pytest.mark.dependency(depends=["tests_store_downloaded_bin"])
+def test_ydb_connection(ydb_connection):
+    """Test the YDB connection."""
+    assert ydb_connection is not None
+    assert isinstance(ydb_connection, AsyncYDBConnection)
+    assert ydb_connection.driver_config is not None
+    assert isinstance(ydb_connection.driver_config, YDBConfig)

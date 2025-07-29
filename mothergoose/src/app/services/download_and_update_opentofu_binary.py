@@ -22,6 +22,7 @@ from app.util.requests_session import with_requests_session
 class OpenTofuBinary(ABC):
     """Abstract base class for OpenTofu binary management."""
 
+    @protected
     def _get_latest_version(self) -> str:
         """Get the latest version of OpenTofu from GitHub."""
 
@@ -30,6 +31,7 @@ class OpenTofuBinary(ABC):
             release_info = json.loads(response.content)
             return release_info["tag_name"].lstrip("v")
 
+    @protected
     def _get_current_version(self) -> str:
         """Get the current version of OpenTofu from the installed binary."""
 

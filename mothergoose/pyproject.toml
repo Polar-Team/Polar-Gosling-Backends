@@ -34,6 +34,7 @@ style = [
 ]
 test = [
   "pytest>=8.3.5",
+  "pytest-asyncio>=1.1.0",
   "pytest-dependency>=0.6.0",
   "testcontainers>=4.10.0",
 ]
@@ -126,7 +127,7 @@ disallow_any_unimported = false
 
 [[tool.mypy.overrides]]
 module = [
-  "app.services.download_and_update_opentofu_binary",
+  "app.services.*",
   "app.db.ydb_connection",
   "app.db.dynamodb_connection",
 ]

@@ -1,5 +1,6 @@
 from functools import wraps
-from typing import Callable, TypeVar, Any, Tuple
+from typing import Any, Callable, Tuple, TypeVar
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry

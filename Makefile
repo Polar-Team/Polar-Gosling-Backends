@@ -1,29 +1,20 @@
 
-.PHONY: format lint type test tox-3.10 tox-3.11 tox-3.12 tox-3.13 tox-all
+.PHONY: format lint type test tox-base tox-all
 
 format:
-	cd mothergoose; uv run black ./src;   uv run isort --profile black ./src
+	cd mothergoose; uv run tox -e format
 
 lint:
-	cd mothergoose; uv run flake8 ./src;  uv run pylint ./src
+	cd mothergoose; uv run tox -e style
 
 type:
-	cd mothergoose; uv run mypy ./src
+	cd mothergoose; uv run tox -e type
 
 test:
 	cd mothergoose; uv run pytest
 
-tox-3.10:
-	cd mothergoose; uv run tox -e 3.10
-
-tox-3.11:
-	cd mothergoose; uv run tox -e 3.11
-
-tox-3.12:
-	cd mothergoose; uv run tox -e 3.12
-
-tox-3.13:
-	cd mothergoose; uv run tox -e 3.13
+tox-base:
+	cd mothergoose; uv run tox -e base
 
 tox-all:
 	cd mothergoose; uv run tox

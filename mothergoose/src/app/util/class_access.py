@@ -1,6 +1,6 @@
 import inspect
-from typing import Callable, TypeVar, Any
 from functools import wraps
+from typing import Any, Callable, TypeVar
 
 F = TypeVar("F", bound=Callable[..., Any])
 

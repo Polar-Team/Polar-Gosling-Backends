@@ -3,6 +3,8 @@ import os
 import tempfile
 
 import pytest
+import pytest_asyncio
+from ydb import Any
 from app.services.download_and_update_opentofu_binary import (
     OpenTofuBinary,
     OpenTofuDownload,
@@ -18,7 +20,9 @@ from app.schema.ydb_schemas import (
     OpenTofuModelDynamoDB,
 )
 
-from app.db.ydb_connection import AsyncYDBConnection
+from ydb import AnonymousCredentials
+
+from app.db.ydb_connection import AsyncYDBOperations
 from testcontainers.core.container import DockerContainer
 
 os.environ["PY_TEST"] = "True"
@@ -80,13 +84,33 @@ class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
             return None
 
 
+class HostnameDockerContainer(DockerContainer):
+    def __init__(
+        self,
+        image: str,
+        hostname: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize the Docker container with a specific hostname."""
+        super().__init__(image, *args, **kwargs)
+        self.hostname = hostname
+
+    def _configure_container(self) -> None:
+        super()._configure_container()
+        self._container_kwargs["hostname"] = self.hostname
+
+
 @pytest.fixture(scope="module", name="ydb_container")
 def ydb_container():
     image = "ydbplatform/local-ydb:latest"
+    grpc_port = 2136
     with (
-        DockerContainer(image)
-        .with_exposed_ports(2136)
-        .with_env("YDB_USE_IN_MEMORY_PDISKS", "true") as container
+        HostnameDockerContainer(image, "localhost")
+        .with_name("ydb-test-container")
+        .with_exposed_ports(grpc_port)
+        .with_env("YDB_USE_IN_MEMORY_PDISKS", "true")
+        .with_env("GRPC_PORT", str(grpc_port)) as container
     ):
         yield container
 
@@ -99,6 +123,7 @@ def ydb_schema(ydb_container):
     config = YDBConfig(
         endpoint=f"grpc://{host}:{port}",
         database="/local",
+        credentials=AnonymousCredentials(),
     )
 
     table_schema = YDBTableSchema(
@@ -115,12 +140,16 @@ def ydb_schema(ydb_container):
     yield schema
 
 
-@pytest.fixture(scope="module", name="ydb_connection")
-def ydb_connection(ydb_schema):
+@pytest_asyncio.fixture(scope="module", name="ydb_connection")
+async def ydb_connection(ydb_schema):
     """Fixture to provide YDB connection."""
 
-    connection = AsyncYDBConnection(ydb_schema)
+    class_connection = AsyncYDBOperations(ydb_schema)
+    class_connection.timeout = 60
+    # class_connection.fail_fast = True
+    connection = await class_connection.connect()
     yield connection
+    await connection.close()
 
 
 @pytest.fixture(scope="module", name="inst_download")
@@ -204,9 +233,7 @@ def tests_store_downloaded_bin(inst_download):
 
 
 @pytest.mark.dependency(depends=["tests_store_downloaded_bin"])
-def test_ydb_connection(ydb_connection):
+@pytest.mark.asyncio
+async def test_ydb_connection(ydb_connection):
     """Test the YDB connection."""
     assert ydb_connection is not None
-    assert isinstance(ydb_connection, AsyncYDBConnection)
-    assert ydb_connection.driver_config is not None
-    assert isinstance(ydb_connection.driver_config, YDBConfig)

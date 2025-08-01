@@ -1,9 +1,18 @@
 from dataclasses import dataclass, field
 from pydantic import ConfigDict, Field, field_validator
 from pydantic.dataclasses import dataclass as pydantic_dataclass
-from typing import List, Any
-from app.schema.db_tables import YDBTableSchema
+from typing import List, Any, Literal
+from app.schema.db_tables import (
+    YDBTableSchema,
+    YDBBool,
+    YDBUtf8,
+    YDBType,
+)
 
+# Define the source types for OpenTofu versioning
+
+GitHubSource = Literal["github"]
+OtherSource = Literal["other"]
 
 # YDB models setup for OpenTofu versioning
 
@@ -15,55 +24,109 @@ class OpenTofuVersionTableYDB:
     This class extends YDBTableSchema to include versioning information.
     """
 
+    __source: GitHubSource | OtherSource = field(init=False, default="github")
+
     table_name: str = "opentofu_version"
     columns: List[str] = field(
-        default_factory=lambda: ["version", "downloaded_at", "sha256_hash"],
+        default_factory=lambda: [
+            "version_id",
+            "version",
+            "source",
+            "downloaded_at",
+            "sha256_hash",
+            "active",
+        ],
     )
-    rows_type: List[str] = field(
-        default_factory=lambda: ["str", "str", "str"],
+    r_type: list[YDBUtf8 | YDBBool | GitHubSource | OtherSource] = field(
+        default_factory=lambda: [
+            YDBType({"type": "Utf8"}).root,
+            YDBType({"type": "Utf8"}).root,
+            "github",
+            YDBType({"type": "Utf8"}).root,
+            YDBType({"type": "Utf8"}).root,
+            YDBType({"type": "Bool"}).root,
+        ],
     )
-    values_for_insert: List[Any] = field(
+    primary_key: str = "version_id"
+    values_for_operate: List[Any] = field(
         default_factory=lambda: [],
     )
 
+    @property
+    def source(self) -> GitHubSource | OtherSource:
+        """
+        Returns the source of the version.
+        This property can be either 'github' or 'other'.
+        """
+        return self.__source
+
+    @source.setter
+    def source(self, value: GitHubSource | OtherSource) -> None:
+        """
+        Sets the source of the version.
+        Raises ValueError if the value is not 'github' or 'other'.
+        """
+        if value not in ["github", "other"]:
+            raise ValueError("Source must be either 'github' or 'other'.")
+        self.__source = value
+
     def __post_init__(self) -> None:
         """Post-initialization logic can be added here if needed."""
-        if len(self.columns) != len(self.rows_type):
+        if len(self.columns) != len(self.r_type):
             raise ValueError(
                 "The number of columns must match the number of row types."
             )
         elif (
-            len(self.values_for_insert) != len(self.columns)
-            and len(self.values_for_insert) != len(self.rows_type)
-            and len(self.values_for_insert) != 0
+            len(self.values_for_operate) != len(self.columns)
+            and len(self.values_for_operate) != len(self.r_type)
+            and len(self.values_for_operate) != 0
         ):
             raise ValueError(
-                "The number of values for insert must match columns and types."
+                "The number of values foroinsert must match columns and types."
             )
         elif self.table_name.startswith("opentofu_version") is False:
             raise ValueError("Table name must start with 'opentofu_version'.")
-        elif self.columns[0] != "version":
-            raise ValueError("The first column must be 'version'.")
-        elif self.columns[1] != "downloaded_at":
-            raise ValueError("The second column must be 'downloaded_at'.")
-        elif self.columns[2] != "sha256_hash":
-            raise ValueError("The third column must be 'sha256_hash'.")
+        elif self.primary_key != "version_id":
+            raise ValueError("Primary key must be 'version_id'.")
+        elif self.columns[0] != "version_id":
+            raise ValueError("The first column must be 'version_id'.")
+        elif self.columns[1] != "version":
+            raise ValueError("The second column must be 'version'.")
+        elif self.columns[2] != "source":
+            raise ValueError("The third column must be 'source'.")
+        elif self.columns[3] != "downloaded_at":
+            raise ValueError("The fourth column must be 'downloaded_at'.")
+        elif self.columns[4] != "sha256_hash":
+            raise ValueError("The fith column must be 'sha256_hash'.")
+        elif self.columns[5] != "active":
+            raise ValueError("The sixth column must be 'active'.")
         elif (
-            self.rows_type[0] != "str"
-            or self.rows_type[1] != "str"
-            or self.rows_type[2] != "str"
+            self.r_type[0].type != "Utf8"
+            or self.r_type[1].type != "Utf8"
+            or self.r_type[3].type != "Utf8"
+            or self.r_type[4].type != "Utf8"
+            or self.r_type[5].type != "Bool"
         ):
-            raise ValueError("Rows types list must be 'str'.")
+            raise ValueError(
+                """
+                All rows except 'active'='Bool' and 'source'='github|other'
+                Must be  'Utf8'
+                """
+            )
+        common_columns_types = [
+            col for col in self.r_type if col != "github" and col != "other"
+        ]
         if schema := YDBTableSchema(
             table_name=self.table_name,
             columns=self.columns,
-            rows_type=self.rows_type,
-            values_for_insert=self.values_for_insert,
+            r_type=common_columns_types,
+            primary_key=self.primary_key,
+            values_for_operate=self.values_for_operate,
         ):
             self.table_name = schema.table_name
             self.columns = schema.columns
-            self.rows_type = schema.rows_type
-            self.values_for_insert = schema.values_for_insert
+            self.primary_key = schema.primary_key
+            self.values_for_operate = schema.values_for_operate
 
 
 @pydantic_dataclass(config=ConfigDict(frozen=True))

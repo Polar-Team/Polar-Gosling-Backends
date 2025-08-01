@@ -14,7 +14,7 @@ def prepared_create_query(table: OpenTofuVersionTableYDB) -> str:
         str: The prepared YDB query string.
     """
     columns_definition = ", ".join(
-        f"`{col}` {typ}" for col, typ in zip(table.columns, table.rows_type)
+        f"`{col}` {typ}" for col, typ in zip(table.columns, table.r_type.type)
     )
     primary_key = (
         f", PRIMARY KEY (`{table.primary_key!s}`)" if table.primary_key else ""
@@ -29,7 +29,7 @@ def prepared_create_query(table: OpenTofuVersionTableYDB) -> str:
 
 
 async def ydb_tofu_version_create_tables(
-    pool: YDBAsync.QuerySession, tables: list[OpenTofuVersionTableYDB]
+    pool: YDBAsync.QuerySessionPool, tables: list[OpenTofuVersionTableYDB]
 ) -> None:
     """
     Create Tables the YDB database using the provided session pool.

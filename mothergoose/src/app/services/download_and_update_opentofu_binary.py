@@ -9,7 +9,7 @@ import subprocess
 import tarfile
 import tempfile
 import zipfile
-from abc import ABC
+from abc import ABC, abstractmethod
 
 from accessify import private, protected
 from requests import Session
@@ -46,6 +46,16 @@ class OpenTofuBinary(ABC):
             result = process.stdout.strip().split()[-1].replace("v", "")
         return result
 
+    @abstractmethod
+    def _download_and_extract(self, url: str, extract_to: str) -> None:
+        """Download and extract the OpenTofu binary from the given URL."""
+        pass
+
+    @abstractmethod
+    def _store_downloaded_bin(self) -> OpenTofuBinFileInfo:
+        """Store the downloaded OpenTofu binary in the specified directory."""
+        pass
+
 
 @logged
 @with_requests_session(
@@ -56,7 +66,6 @@ class OpenTofuDownload(OpenTofuBinary):  # type: ignore[attr-defined]
     """Class to handle the OpenTofu binary download process."""
 
     # pylint: disable=no-member,too-few-public-methods
-    __test__ = False
 
     _github_sha256_hash_of_bundle: dict[str, str] = {}
 
@@ -206,11 +215,11 @@ class OpenTofuDownload(OpenTofuBinary):  # type: ignore[attr-defined]
         with tempfile.TemporaryDirectory() as tmpdir:
             self._download_and_extract(url, tmpdir)
             if (system := platform.system().lower()) == "windows":
-                self.info(f"Using test environment for {system}...")
+                self.info(f"Using environment for {system}...")
                 tofu_path = os.path.join(tmpdir, "tofu.exe")
                 dest_path = os.path.join(self.install_dir, "tofu.exe")
             else:
-                self.info(f"Using test environment for {system}...")
+                self.info(f"Using environment for {system}...")
                 tofu_path = os.path.join(tmpdir, "tofu")
                 dest_path = os.path.join(self.install_dir, "tofu")
             shutil.copy2(tofu_path, dest_path)
@@ -224,89 +233,16 @@ class OpenTofuDownload(OpenTofuBinary):  # type: ignore[attr-defined]
         return info
 
 
-@logged
-@with_requests_session(
-    retries=3,
-    timeout=3,
-)
-class OpenTofuUpdate(OpenTofuBinary):
-    """Class for Updating OpenTofu binary."""
-
-    # pylint: disable=no-member
-
-    def __init__(self, install_dir: str | None = None) -> None:
-        self.current_version = self._get_current_version()
-        self.install_dir = install_dir or "/usr/local/bin"
-
-    @property
-    def get_selected_version(self) -> str:
-        """Get the selected version of OpenTofu from the database."""
-
-    @property
-    def get_current_version(self) -> str:
-        """Get the current version of OpenTofu from the installed binary."""
-        return self.current_version
-
-    @private
-    def __update_to_latest_version(self) -> OpenTofuBinFileInfo | None:
-        """Update OpenTofu binary if a new version is available."""
-
-        last_version = self._get_latest_version()
-        if self.current_version == last_version:
-            self.info(f"Tofu is already at the last version: {last_version}")
-            return None
-        self.info(f"Update Tofu from {self.current_version} to {last_version}")
-        downloader = OpenTofuDownload(
-            install_dir=self.install_dir, version=last_version
-        )
-        return downloader._store_downloaded_bin()
-
-    @private
-    def __update_to_selected_version(self):
-        """Update OpenTofu binary to a version of selected in database."""
-
-    @private
-    def __download_rollback_releases(self):
-        """Download up to 10 preveious version from current version."""
-
-    def download_available_versions(self) -> list[str]:
-        """Download available OpenTofu versions from GitHub."""
-
-        url = "https://api.github.com/repos/opentofu/opentofu/releases"
-        with self.session.get(url) as response:
-            releases = json.loads(response.content)
-            versions = [
-                release["tag_name"].lstrip("v")
-                for release in releases
-                if "tag_name" in release
-            ]
-            return sorted(versions, reverse=True)
-
-    def check_required_actions(self, rollback_count: int) -> bool:
-        """Check if OpenTofu binary needs to be updated."""
-
-        if (
-            current_version := self._get_current_version()
-        ) == self._get_latest_version():
-            self.info(f"Tofu already at the last version: {current_version}")
-            return False
-        return True
-
-
-@logged
-@with_requests_session(
-    retries=3,
-    timeout=3,
-)
 class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
     """
     Class to handle the OpenTofu binary
     download process from other sources.
-    Supported sources: Gitlab
     """
 
     # pylint: disable=no-member,too-few-public-methods
-    _token: str
+    __token: str
+    __bearer_token: bool = False
+    __auth_header_name: str = "Private-Token"
 
     def __init__(
         self,
@@ -320,7 +256,37 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
         self.install_dir = install_dir or f"/mnt/tofu_binary/{version}"
         self.url = url
         self.version = version
-        self.hash_sha256 = hash_sha256
+        self._github_sha256_hash_of_bundle[self.version] = hash_sha256
+
+    @property
+    def token(self) -> str:
+        """Get the token for authentication."""
+        return self.__token
+
+    @token.setter
+    def token(self, value: str) -> None:
+        """Set the token for authentication."""
+        self.__token = value
+
+    @property
+    def bearer_token(self) -> bool:
+        """Get the bearer token flag."""
+        return self.__bearer_token
+
+    @bearer_token.setter
+    def bearer_token(self, value: bool) -> None:
+        """Set the bearer token flag."""
+        self.__bearer_token = value
+
+    @property
+    def auth_header_name(self) -> str:
+        """Get the authentication header name."""
+        return self.__auth_header_name
+
+    @auth_header_name.setter
+    def auth_header_name(self, value: str) -> None:
+        """Set the authentication header name."""
+        self.__auth_header_name = value
 
     @protected
     def _download_and_extract(self, extract_to: str) -> None:
@@ -338,9 +304,13 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
             self.info(f"Using test environment for {system}...")
             zip_path = os.path.join(extract_to, "tofu.zip")
             self.info(f"Downloading OpenTofu from {self.url}...")
+            if self.__bearer_token:
+                token = f"Bearer {self.__token}"
+            else:
+                token = self.__token
             if self.header_auth:
                 headers = {
-                    "Private-Token": self.__token,
+                    f"{self.__auth_header_name}": f"{token}",
                 }
                 response = self.session.get(self.url, headers=headers)
             else:
@@ -421,11 +391,11 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
         with tempfile.TemporaryDirectory() as tmpdir:
             self._download_and_extract(url, tmpdir)
             if (system := platform.system().lower()) == "windows":
-                self.info(f"Using test environment for {system}...")
+                self.info(f"Using environment for {system}...")
                 tofu_path = os.path.join(tmpdir, "tofu.exe")
                 dest_path = os.path.join(self.install_dir, "tofu.exe")
             else:
-                self.info(f"Using test environment for {system}...")
+                self.info(f"Using environment for {system}...")
                 tofu_path = os.path.join(tmpdir, "tofu")
                 dest_path = os.path.join(self.install_dir, "tofu")
             shutil.copy2(tofu_path, dest_path)
@@ -437,3 +407,72 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
                 bin_url=url,
             )
         return info
+
+
+@logged
+@with_requests_session(
+    retries=3,
+    timeout=3,
+)
+class OpenTofuUpdate:
+    """Class for Updating OpenTofu binary."""
+
+    # pylint: disable=no-member
+
+    def __init__(self, install_dir: str | None = None) -> None:
+        self.current_version = self._get_current_version()
+        self.install_dir = install_dir or "/usr/local/bin"
+
+    @property
+    def get_selected_version(self) -> str:
+        """Get the selected version of OpenTofu from the database."""
+
+    @property
+    def get_current_version(self) -> str:
+        """Get the current version of OpenTofu from the installed binary."""
+        return self.current_version
+
+    @private
+    def __update_to_latest_version(self) -> OpenTofuBinFileInfo | None:
+        """Update OpenTofu binary if a new version is available."""
+
+        last_version = self._get_latest_version()
+        if self.current_version == last_version:
+            self.info(f"Tofu is already at the last version: {last_version}")
+            return None
+        self.info(f"Update Tofu from {self.current_version} to {last_version}")
+        downloader = OpenTofuDownload(
+            install_dir=self.install_dir, version=last_version
+        )
+        return downloader._store_downloaded_bin()
+
+    @private
+    def __update_to_selected_version(self):
+        """Update OpenTofu binary to a version of selected in database."""
+
+    @private
+    def __download_rollback_releases(self):
+        """Download up to 10 preveious version from current version."""
+
+    def download_available_versions(self) -> list[str]:
+        """Download available OpenTofu versions from GitHub."""
+
+        url = "https://api.github.com/repos/opentofu/opentofu/releases"
+        with self.session.get(url) as response:
+            releases = json.loads(response.content)
+            versions = [
+                release["tag_name"].lstrip("v")
+                for release in releases
+                if "tag_name" in release
+            ]
+            return sorted(versions, reverse=True)
+
+    def check_required_actions(self, rollback_count: int) -> bool:
+        """Check if OpenTofu binary needs to be updated."""
+
+        if (
+            current_version := self._get_current_version()
+        ) == self._get_latest_version():
+            self.info(f"Tofu already at the last version: {current_version}")
+            return False
+        return True

@@ -1,20 +1,20 @@
 
-.PHONY: format lint type test tox-base tox-all
+.PHONY: mg-format mg-lint mg-type mg-test mg-tox-base mg-tox-all
 
-format:
+mg-format:
 	cd mothergoose; uv run tox -e format
 
-lint:
+mg-lint:
 	cd mothergoose; uv run tox -e style
 
-type:
+mg-type:
 	cd mothergoose; uv run tox -e type
 
-test:
+mg-test:
 	cd mothergoose; uv run pytest
 
-tox-base:
+mg-tox-base:
 	cd mothergoose; uv run tox -e base
 
-tox-all:
+mg-tox-all:
 	cd mothergoose; uv run tox

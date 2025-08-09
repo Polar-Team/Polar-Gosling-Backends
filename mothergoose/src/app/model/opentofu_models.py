@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from pydantic import ConfigDict, Field, field_validator
 from pydantic.dataclasses import dataclass as pydantic_dataclass
-from typing import List, Any, Literal
+from typing import Tuple, Any, Literal
 from app.schema.db_tables import (
     YDBTableSchema,
     YDBBool,
@@ -9,66 +9,41 @@ from app.schema.db_tables import (
     YDBType,
 )
 
-# Define the source types for OpenTofu versioning
-
-GitHubSource = Literal["github"]
-OtherSource = Literal["other"]
-
 # YDB models setup for OpenTofu versioning
 
 
-@dataclass
+@dataclass(frozen=True)
 class OpenTofuVersionTableYDB:
     """
     Represents a table schema for OpenTofu versioning.
     This class extends YDBTableSchema to include versioning information.
     """
 
-    __source: GitHubSource | OtherSource = field(init=False, default="github")
-
     table_name: str = "opentofu_version"
-    columns: List[str] = field(
-        default_factory=lambda: [
+    columns: Tuple[str] = field(
+        default_factory=lambda: (
             "version_id",
             "version",
             "source",
             "downloaded_at",
             "sha256_hash",
             "active",
-        ],
+        ),
     )
-    r_type: list[YDBUtf8 | YDBBool | GitHubSource | OtherSource] = field(
-        default_factory=lambda: [
+    r_type: Tuple[YDBUtf8 | YDBBool] = field(
+        default_factory=lambda: (
             YDBType({"type": "Utf8"}).root,
             YDBType({"type": "Utf8"}).root,
-            "github",
+            YDBType({"type": "Utf8"}).root,
             YDBType({"type": "Utf8"}).root,
             YDBType({"type": "Utf8"}).root,
             YDBType({"type": "Bool"}).root,
-        ],
+        ),
     )
     primary_key: str = "version_id"
-    values_for_operate: List[Any] = field(
+    values_for_operate: Tuple[Any] = field(
         default_factory=lambda: [],
     )
-
-    @property
-    def source(self) -> GitHubSource | OtherSource:
-        """
-        Returns the source of the version.
-        This property can be either 'github' or 'other'.
-        """
-        return self.__source
-
-    @source.setter
-    def source(self, value: GitHubSource | OtherSource) -> None:
-        """
-        Sets the source of the version.
-        Raises ValueError if the value is not 'github' or 'other'.
-        """
-        if value not in ["github", "other"]:
-            raise ValueError("Source must be either 'github' or 'other'.")
-        self.__source = value
 
     def __post_init__(self) -> None:
         """Post-initialization logic can be added here if needed."""
@@ -103,30 +78,24 @@ class OpenTofuVersionTableYDB:
         elif (
             self.r_type[0].type != "Utf8"
             or self.r_type[1].type != "Utf8"
+            or self.r_type[2].type != "Utf8"
             or self.r_type[3].type != "Utf8"
             or self.r_type[4].type != "Utf8"
             or self.r_type[5].type != "Bool"
         ):
             raise ValueError(
                 """
-                All rows except 'active'='Bool' and 'source'='github|other'
-                Must be  'Utf8'
+                All rows except 'active'='Bool' must be Utf8 type.
                 """
             )
-        common_columns_types = [
-            col for col in self.r_type if col != "github" and col != "other"
-        ]
         if schema := YDBTableSchema(
             table_name=self.table_name,
             columns=self.columns,
-            r_type=common_columns_types,
+            r_type=self.r_type,
             primary_key=self.primary_key,
             values_for_operate=self.values_for_operate,
         ):
-            self.table_name = schema.table_name
-            self.columns = schema.columns
-            self.primary_key = schema.primary_key
-            self.values_for_operate = schema.values_for_operate
+            schema  # Validate the schema
 
 
 @pydantic_dataclass(config=ConfigDict(frozen=True))

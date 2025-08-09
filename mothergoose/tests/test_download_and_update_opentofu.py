@@ -4,7 +4,7 @@ import tempfile
 
 import pytest
 import pytest_asyncio
-from ydb import Any
+
 from app.services.download_and_update_opentofu_binary import (
     OpenTofuBinary,
     OpenTofuDownload,
@@ -12,7 +12,9 @@ from app.services.download_and_update_opentofu_binary import (
     OpenTofuDownloadFromOtherSource,
 )
 from app.schema.tofu_schemas import OpenTofuBinFileInfo
-from app.schema.db_tables import YDBTableSchema
+
+from app.model.opentofu_models import OpenTofuVersionTableYDB
+
 from app.schema.ydb_schemas import (
     YDBConfig,
     YDBSchema,
@@ -23,7 +25,7 @@ from app.schema.ydb_schemas import (
 from ydb import AnonymousCredentials
 
 from app.db.ydb_connection import AsyncYDBOperations
-from testcontainers.core.container import DockerContainer
+from app.db.manage_db import ydb_tofu_version_create_tables
 
 os.environ["PY_TEST"] = "True"
 os.environ["DISABLE_ACCESSIFY"] = "True"
@@ -31,6 +33,8 @@ os.environ["DISABLE_ACCESSIFY"] = "True"
 
 class TestOpenTofuDownload(OpenTofuDownload):
     """Test class for OpenTofuDownload."""
+
+    __test__ = False
 
     def tests_get_download_url(self):
         """Test the download URL generation."""
@@ -63,6 +67,8 @@ class TestOpenTofuDownload(OpenTofuDownload):
 class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
     """Test class for OpenTofuDownloadFromOtherSource."""
 
+    __test__ = False
+
     def tests_download_and_extract(self):
         """Test the download and extraction process."""
 
@@ -84,37 +90,6 @@ class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
             return None
 
 
-class HostnameDockerContainer(DockerContainer):
-    def __init__(
-        self,
-        image: str,
-        hostname: str,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
-        """Initialize the Docker container with a specific hostname."""
-        super().__init__(image, *args, **kwargs)
-        self.hostname = hostname
-
-    def _configure_container(self) -> None:
-        super()._configure_container()
-        self._container_kwargs["hostname"] = self.hostname
-
-
-@pytest.fixture(scope="module", name="ydb_container")
-def ydb_container():
-    image = "ydbplatform/local-ydb:latest"
-    grpc_port = 2136
-    with (
-        HostnameDockerContainer(image, "localhost")
-        .with_name("ydb-test-container")
-        .with_exposed_ports(grpc_port)
-        .with_env("YDB_USE_IN_MEMORY_PDISKS", "true")
-        .with_env("GRPC_PORT", str(grpc_port)) as container
-    ):
-        yield container
-
-
 @pytest.fixture(scope="module", name="ydb_schema")
 def ydb_schema(ydb_container):
     """Fixture to provide YDB configuration."""
@@ -126,30 +101,13 @@ def ydb_schema(ydb_container):
         credentials=AnonymousCredentials(),
     )
 
-    table_schema = YDBTableSchema(
-        table_name="opentofu_binaries",
-        key_columns=["bin_version"],
-        value_columns=["bin_sha256", "bin_url", "created_at"],
-        primary_key="bin_version",
-    )
+    table_schema = OpenTofuVersionTableYDB()
     model = OpenTofuModelYDB(tables=[table_schema])
     schema = YDBSchema(
         config=config,
         model=model,
     )
     yield schema
-
-
-@pytest_asyncio.fixture(scope="module", name="ydb_connection")
-async def ydb_connection(ydb_schema):
-    """Fixture to provide YDB connection."""
-
-    class_connection = AsyncYDBOperations(ydb_schema)
-    class_connection.timeout = 60
-    # class_connection.fail_fast = True
-    connection = await class_connection.connect()
-    yield connection
-    await connection.close()
 
 
 @pytest.fixture(scope="module", name="inst_download")
@@ -234,6 +192,6 @@ def tests_store_downloaded_bin(inst_download):
 
 @pytest.mark.dependency(depends=["tests_store_downloaded_bin"])
 @pytest.mark.asyncio
-async def test_ydb_connection(ydb_connection):
-    """Test the YDB connection."""
-    assert ydb_connection is not None
+async def test_ydb_create_tofu_version_table(ydb_schema):
+    """Create tables for testing OpenTofu Update modules."""
+    AsyncYDBOperations(ydb_schema, ydb_tofu_version_create_tables)

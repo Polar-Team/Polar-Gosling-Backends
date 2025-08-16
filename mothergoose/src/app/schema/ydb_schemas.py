@@ -1,12 +1,9 @@
 from typing import Optional
 
 from pydantic import Field, field_validator
-
+from ydb import AccessTokenCredentials, AnonymousCredentials, StaticCredentials
 from ydb.iam.auth import MetadataUrlCredentials, ServiceAccountCredentials
-from ydb.oauth2_token_exchange import (
-    Oauth2TokenExchangeCredentials,
-)
-from ydb import AnonymousCredentials, AccessTokenCredentials, StaticCredentials
+from ydb.oauth2_token_exchange import Oauth2TokenExchangeCredentials
 
 from app.model.opentofu_models import OpenTofuModelDynamoDB, OpenTofuModelYDB
 from app.model.pydantic_base_models import PydanticBaseModelORM

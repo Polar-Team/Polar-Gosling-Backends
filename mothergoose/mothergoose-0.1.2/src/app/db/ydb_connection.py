@@ -22,11 +22,6 @@ class AsyncYDBOperations:
         self.operations_function = operations_function
 
     @property
-    def result(self) -> Any:
-        """Get the result of the YDB operations."""
-        return self.__result
-
-    @property
     def timeout(self) -> int:
         """Get the connection timeout."""
         return self.__timeout
@@ -67,7 +62,7 @@ class AsyncYDBOperations:
                 pool = YDBAsync.QuerySessionPool(
                     driver, size=self.driver_config.pool_size
                 )
-                self.__result = await self.operations_function(
+                await self.operations_function(
                     pool=pool,
                     tables=self.tables,
                 )
@@ -79,12 +74,11 @@ class AsyncYDBOperations:
                     self.error(f"Connection timed out: {error_info!s}")
                     raise TimeoutError(
                         "Failed to connect to YDB within the timeout period."
-                        f"Error {e!s} - {error_info!s}"
                     )
                 else:
                     self.error(f"YDB connection error: {e!s}")
-                    raise AsyncGenericError(
-                        f"An error occurred while connecting to YDB: {e!s}"
+                    raise YDBAsync.issues.GenericError(
+                        "An error occurred while connecting to YDB."
                     )
 
     @private
@@ -92,12 +86,7 @@ class AsyncYDBOperations:
         """Stop the YDB driver and release resources."""
 
         if hasattr(self, "__driver") and self.__driver:
-            if self.__driver.is_running():
-                self.info("Stopping YDB driver...")
-                await self.__driver.stop()
-                self.info("YDB driver stopped successfully.")
-        elif hasattr(self, "pool") and self.pool:
-            if self.pool.is_running():
-                self.info("Stopping YDB pool...")
-                await self.pool.stop()
-                self.info("YDB pool stopped successfully.")
+            await self.__driver.stop()
+            self.info("YDB driver stopped successfully.")
+        else:
+            self.warning("YDB driver was not initialized or already stopped.")

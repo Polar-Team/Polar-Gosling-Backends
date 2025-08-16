@@ -1,13 +1,10 @@
 from dataclasses import dataclass, field
+from typing import Any, Literal, Tuple
+
 from pydantic import ConfigDict, Field, field_validator
 from pydantic.dataclasses import dataclass as pydantic_dataclass
-from typing import Tuple, Any, Literal
-from app.schema.db_tables import (
-    YDBTableSchema,
-    YDBBool,
-    YDBUtf8,
-    YDBType,
-)
+
+from app.schema.db_tables import YDBBool, YDBTableSchema, YDBType, YDBUtf8
 
 # YDB models setup for OpenTofu versioning
 

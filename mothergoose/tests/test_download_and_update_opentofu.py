@@ -25,7 +25,7 @@ from app.schema.ydb_schemas import (
 from ydb import AnonymousCredentials
 
 from app.db.ydb_connection import AsyncYDBOperations
-from app.db.manage_db import ydb_tofu_version_create_tables
+from app.db.manage_db import AsyncYDBFunctionsCollections
 
 os.environ["PY_TEST"] = "True"
 os.environ["DISABLE_ACCESSIFY"] = "True"
@@ -93,10 +93,11 @@ class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
 @pytest.fixture(scope="module", name="ydb_schema")
 def ydb_schema(ydb_container):
     """Fixture to provide YDB configuration."""
+
     host = ydb_container.get_container_host_ip()
     port = ydb_container.get_exposed_port(2136)
     config = YDBConfig(
-        endpoint=f"grpc://{host}:{port}",
+        endpoint=f"grpc://{host!s}:{port!s}",
         database="/local",
         credentials=AnonymousCredentials(),
     )
@@ -194,4 +195,14 @@ def tests_store_downloaded_bin(inst_download):
 @pytest.mark.asyncio
 async def test_ydb_create_tofu_version_table(ydb_schema):
     """Create tables for testing OpenTofu Update modules."""
-    AsyncYDBOperations(ydb_schema, ydb_tofu_version_create_tables)
+
+    if exist := await AsyncYDBOperations(
+        ydb_schema, AsyncYDBFunctionsCollections.tables_exist
+    ).process():
+        assert exist.result is False, "Tables already exist."
+    else:
+        operation = AsyncYDBOperations(
+            ydb_schema,
+            AsyncYDBFunctionsCollections.create_tables,
+        )
+        await operation.process()

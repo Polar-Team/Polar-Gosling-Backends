@@ -1,7 +1,8 @@
 from typing import Literal, Union
 
-from pydantic import BaseModel, Field, RootModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, RootModel
 from ydb import PrimitiveType
+
 from app.model.pydantic_base_models import PydanticBaseModelORM
 
 # YDB Table schema definitions

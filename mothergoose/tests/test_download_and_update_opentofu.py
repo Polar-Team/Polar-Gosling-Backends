@@ -3,7 +3,6 @@ import os
 import tempfile
 
 import pytest
-import pytest_asyncio
 
 from app.services.download_and_update_opentofu_binary import (
     OpenTofuBinary,
@@ -204,7 +203,13 @@ async def test_ydb_create_tofu_version_table(ydb_schema):
 
     await operation.process()
 
-    operation.operations_function = AsyncYDBFunctionsCollections.create_tables
-
     with pytest.raises(AsyncGenericError):
         await operation.process()
+
+    await operation.check_tables_exist()
+
+    assert operation.result[0].name == "opentofu_version", (
+        "Table 'opentofu_version' was not created."
+    )
+
+    assert operation.result[0].type == 2, "Created target is not a table."

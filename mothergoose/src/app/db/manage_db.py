@@ -37,7 +37,7 @@ class PreparedYDBQueries:
         """
 
     @staticmethod
-    def check_table_exist_query(table: YDBTables) -> str:
+    def check_table_non_empty_query(table: YDBTables) -> str:
         """
         Prepare a YDB query string for retrieving data from a table.
 
@@ -68,7 +68,7 @@ class AsyncYDBFunctionsCollections:
             bool: True if the table exists, False otherwise.
         """
         queries = [
-            PreparedYDBQueries.check_table_exist_query(table)
+            PreparedYDBQueries.check_table_non_empty_query(table)
             for table in tables
             if isinstance(table, OpenTofuVersionTableYDB)
         ]

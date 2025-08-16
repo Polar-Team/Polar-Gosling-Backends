@@ -3,7 +3,7 @@ from typing import Any
 from accessify import private
 from ydb import aio as YDBAsync
 from ydb.issues import GenericError as AsyncGenericError
-
+from ydb import SchemeClient as YDBSchemeClient
 from app.schema.ydb_schemas import YDBSchema
 from app.util.logging import logged
 
@@ -50,6 +50,45 @@ class AsyncYDBOperations:
             raise ValueError("Fail fast must be a boolean value.")
         self.__fail_fast = value
 
+    async def check_tables_exist(self) -> None:
+        """Check if the specified tables exist in the YDB database."""
+        async with YDBAsync.Driver(
+            endpoint=self.driver_config.endpoint,
+            database=self.driver_config.database,
+            root_certificates=self.driver_config.root_certificates,
+            credentials=self.driver_config.credentials,
+        ) as driver:
+            """Create an asynchronous YDB driver for check tables."""
+            try:
+                await driver.wait(
+                    fail_fast=self.__fail_fast,
+                    timeout=self.__timeout,
+                )
+                schema = YDBSchemeClient(driver)
+                results = []
+                for t in self.tables:
+                    results.append(
+                        await schema.describe_path(
+                            f"{self.driver_config.database}/{t.table_name!s}"
+                        )
+                    )
+                    self.__result = results
+                self.info("Table check completed, stopping the driver.")
+                await self.__stop()
+            except (TimeoutError, AsyncGenericError) as e:
+                if type(e) is TimeoutError:
+                    error_info = driver.discovery_debug_details()
+                    self.error(f"Connection timed out: {error_info!s}")
+                    raise TimeoutError(
+                        "Failed to connect to YDB within the timeout period."
+                        f"Error {e!s} - {error_info!s}"
+                    )
+                else:
+                    self.error(f"YDB connection error: {e!s}")
+                    raise AsyncGenericError(
+                        f"An error occurred while connecting to YDB: {e!s}"
+                    )
+
     async def process(self) -> None:
         async with YDBAsync.Driver(
             endpoint=self.driver_config.endpoint,
@@ -57,7 +96,7 @@ class AsyncYDBOperations:
             root_certificates=self.driver_config.root_certificates,
             credentials=self.driver_config.credentials,
         ) as driver:
-            """Create an asynchronous YDB driver."""
+            """Create an asynchronous YDB driver for process."""
             try:
                 await driver.wait(
                     fail_fast=self.__fail_fast,

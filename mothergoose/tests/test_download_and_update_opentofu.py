@@ -23,7 +23,7 @@ from app.schema.ydb_schemas import (
 )
 
 from ydb import AnonymousCredentials
-
+from ydb.issues import GenericError as AsyncGenericError
 from app.db.ydb_connection import AsyncYDBOperations
 from app.db.manage_db import AsyncYDBFunctionsCollections
 
@@ -196,13 +196,15 @@ def tests_store_downloaded_bin(inst_download):
 async def test_ydb_create_tofu_version_table(ydb_schema):
     """Create tables for testing OpenTofu Update modules."""
 
-    if exist := await AsyncYDBOperations(
-        ydb_schema, AsyncYDBFunctionsCollections.tables_exist
-    ).process():
-        assert exist.result is False, "Tables already exist."
-    else:
-        operation = AsyncYDBOperations(
-            ydb_schema,
-            AsyncYDBFunctionsCollections.create_tables,
-        )
+    operation = AsyncYDBOperations(
+        ydb_schema,
+        AsyncYDBFunctionsCollections.create_tables,
+    )
+    operation.fail_fast = True
+
+    await operation.process()
+
+    operation.operations_function = AsyncYDBFunctionsCollections.create_tables
+
+    with pytest.raises(AsyncGenericError):
         await operation.process()

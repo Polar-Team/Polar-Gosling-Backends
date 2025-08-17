@@ -1,10 +1,12 @@
 from dataclasses import dataclass, field
-from typing import Any, Literal, Tuple
+from typing import Any, Tuple, Union
 
 from pydantic import ConfigDict, Field, field_validator
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
-from app.schema.db_tables import YDBBool, YDBTableSchema, YDBType, YDBUtf8
+from app.schema.db_tables import YDBTableSchema
+
+from app.types.ydb_types import YDBUtf8, YDBBool, YDBType
 
 # YDB models setup for OpenTofu versioning
 
@@ -95,6 +97,9 @@ class OpenTofuVersionTableYDB:
             schema  # Validate the schema
 
 
+OpenTofuYDBTables = Union[OpenTofuVersionTableYDB]
+
+
 @pydantic_dataclass(config=ConfigDict(frozen=True))
 class OpenTofuModelYDB:
     """
@@ -102,7 +107,7 @@ class OpenTofuModelYDB:
     This class can be extended to create specific OpenTofu models.
     """
 
-    tables: list[OpenTofuVersionTableYDB] = Field(
+    tables: list[OpenTofuYDBTables] = Field(
         ..., description="List of table schemas to be created in YDB"
     )
 

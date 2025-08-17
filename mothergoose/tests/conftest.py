@@ -14,5 +14,5 @@ def ydb_container():
         .with_env("YDB_USE_IN_MEMORY_PDISKS", "true")
         .with_env("GRPC_PORT", str(grpc_port)) as container
     ):
-        time.sleep(15)  # Wait for the container to start
+        time.sleep(30)  # Wait for the container to start
         yield container

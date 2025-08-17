@@ -142,7 +142,7 @@ class OpenTofuDownload(OpenTofuBinary):  # type: ignore[attr-defined]
             self.get_sha256_hash_of_bundle_from_github(
                 self.session, ver, system, "amd64", "zip"
             )
-            self.info(f"Using test environment for {system}...")
+            self.info(f"Using environment for {system}...")
             zip_path = os.path.join(extract_to, "tofu.zip")
             self.info(f"Downloading OpenTofu from {url}...")
             response = self.session.get(url)
@@ -301,7 +301,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuDownload):
             self.get_sha256_hash_of_bundle_from_github(
                 self.session, ver, system, "amd64", "zip"
             )
-            self.info(f"Using test environment for {system}...")
+            self.info(f"Using environment for {system}...")
             zip_path = os.path.join(extract_to, "tofu.zip")
             self.info(f"Downloading OpenTofu from {self.url}...")
             if self.__bearer_token:

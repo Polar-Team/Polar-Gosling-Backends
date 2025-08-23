@@ -35,10 +35,14 @@ class TestOpenTofuDownload(OpenTofuDownload):
 
     __test__ = False
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.py_test_enabled = os.environ.get("PY_TEST") == "True"
+
     def tests_get_download_url(self):
         """Test the download URL generation."""
 
-        if os.environ["PY_TEST"] == "True":
+        if self.py_test_enabled:
             return self._get_download_url()
         else:
             return None
@@ -46,7 +50,7 @@ class TestOpenTofuDownload(OpenTofuDownload):
     def tests_download_and_extract(self):
         """Test the download and extraction process."""
 
-        if os.environ["PY_TEST"] == "True":
+        if self.py_test_enabled:
             with tempfile.TemporaryDirectory() as tmpdir:
                 url = self._get_download_url()
                 self._download_and_extract(url, tmpdir)
@@ -57,7 +61,7 @@ class TestOpenTofuDownload(OpenTofuDownload):
     def tests_store_downloaded_bin(self):
         """Test the download and extraction process."""
 
-        if os.environ["PY_TEST"] == "True":
+        if self.py_test_enabled:
             return self._store_downloaded_bin()
         else:
             return None
@@ -68,10 +72,14 @@ class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
 
     __test__ = False
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.py_test_enabled = os.environ.get("PY_TEST") == "True"
+
     def tests_download_and_extract(self):
         """Test the download and extraction process."""
 
-        if os.environ["PY_TEST"] == "True":
+        if self.py_test_enabled:
             self._token = "test_token"
             with tempfile.TemporaryDirectory() as tmpdir:
                 url = ""
@@ -83,7 +91,7 @@ class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
     def tests_store_downloaded_bin(self):
         """Test the download and extraction process."""
 
-        if os.environ["PY_TEST"] == "True":
+        if self.py_test_enabled:
             return self._store_downloaded_bin()
         else:
             return None

@@ -98,24 +98,22 @@ class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
 
 
 @pytest.fixture(scope="module", name="ydb_schema")
-def ydb_schema(ydb_container):
+def ydb_schema(ydb_container) -> YDBSchema:
     """Fixture to provide YDB configuration."""
 
-    host = ydb_container.get_container_host_ip()
-    port = ydb_container.get_exposed_port(2136)
     config = YDBConfig(
-        endpoint=f"grpc://{host!s}:{port!s}",
+        endpoint=f"grpc://{ydb_container.get_container_host_ip()}:{
+            ydb_container.get_exposed_port(2136)
+        }",
         database="/local",
         credentials=AnonymousCredentials(),
     )
-
-    table_schema = OpenTofuVersionTableYDB()
-    model = OpenTofuModelYDB(tables=[table_schema])
+    model = OpenTofuModelYDB(tables=[OpenTofuVersionTableYDB()])
     schema = YDBSchema(
         config=config,
         model=model,
     )
-    yield schema
+    return schema
 
 
 @pytest.fixture(scope="module", name="inst_download")

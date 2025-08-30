@@ -6,7 +6,7 @@ import pytest
 
 from app.services.download_and_update_opentofu_binary import (
     OpenTofuBinary,
-    OpenTofuDownload,
+    OpenTofuDownloadGithub,
     OpenTofuUpdate,
     OpenTofuDownloadFromOtherSource,
 )
@@ -30,7 +30,7 @@ os.environ["PY_TEST"] = "True"
 os.environ["DISABLE_ACCESSIFY"] = "True"
 
 
-class TestOpenTofuDownload(OpenTofuDownload):
+class TestOpenTofuDownloadGithub(OpenTofuDownloadGithub):
     """Test class for OpenTofuDownload."""
 
     __test__ = False
@@ -62,7 +62,7 @@ class TestOpenTofuDownload(OpenTofuDownload):
         """Test the download and extraction process."""
 
         if self.py_test_enabled:
-            return self._store_downloaded_bin()
+            return self.store_downloaded_bin()
         else:
             return None
 
@@ -92,7 +92,7 @@ class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
         """Test the download and extraction process."""
 
         if self.py_test_enabled:
-            return self._store_downloaded_bin()
+            return self.store_downloaded_bin()
         else:
             return None
 
@@ -120,7 +120,7 @@ def ydb_schema(ydb_container) -> YDBSchema:
 def inst_download():
     """Function for init connection in OpensearchArchive class."""
 
-    client = TestOpenTofuDownload(OpenTofuBinary)
+    client = TestOpenTofuDownloadGithub(OpenTofuBinary)
     client.version = "1.10.2"
     yield client
 
@@ -159,7 +159,7 @@ def test_tofu_download_different_version_and_check_property(
     OpenTofu binary with different version.
     """
 
-    new_instance = TestOpenTofuDownload(OpenTofuBinary)
+    new_instance = TestOpenTofuDownloadGithub(OpenTofuBinary)
     new_instance.version = "1.10.3"
 
     if files := new_instance.tests_download_and_extract():

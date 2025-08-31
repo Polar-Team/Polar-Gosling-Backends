@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 from accessify import private
 from ydb import aio as YDBAsync
@@ -6,6 +6,7 @@ from ydb.issues import GenericError as AsyncGenericError
 from ydb import SchemeClient as YDBSchemeClient
 from app.schema.ydb_schemas import YDBSchema
 from app.util.logging import logged
+from app.db.manage_db import AsyncYDBFunctionsCollections
 
 
 @logged
@@ -15,7 +16,11 @@ class AsyncYDBOperations:
     __timeout: int = 30  # Default timeout for connection attempts
     __fail_fast: bool = False  # Flag to set if the connection should fail fast
 
-    def __init__(self, schema: YDBSchema, operations_function: Any) -> None:
+    def __init__(
+        self,
+        schema: YDBSchema,
+        operations_function: AsyncYDBFunctionsCollections,
+    ) -> None:
         """Initialize the YDB connection with the provided configuration."""
         self.driver_config = schema.config
         self.tables = schema.model.tables
@@ -89,7 +94,12 @@ class AsyncYDBOperations:
                         f"An error occurred while connecting to YDB: {e!s}"
                     )
 
-    async def process(self) -> None:
+    async def process(
+        self,
+        selected_columns: Optional[list[str]] = None,
+        searching_columns: Optional[list[str]] = None,
+        searching_values: Optional[list[str]] = None,
+    ) -> None:
         async with YDBAsync.Driver(
             endpoint=self.driver_config.endpoint,
             database=self.driver_config.database,
@@ -106,10 +116,23 @@ class AsyncYDBOperations:
                 pool = YDBAsync.QuerySessionPool(
                     driver, size=self.driver_config.pool_size
                 )
-                self.__result = await self.operations_function(
-                    pool=pool,
-                    tables=self.tables,
-                )
+                if (
+                    selected_columns is not None
+                    and searching_columns is not None
+                    and searching_values is not None
+                ):
+                    self.__result = await self.operations_function(
+                        pool=pool,
+                        tables=self.tables,
+                        selected_columns=selected_columns,
+                        searching_columns=searching_columns,
+                        searching_values=searching_values,
+                    )
+                else:
+                    self.__result = await self.operations_function(
+                        pool=pool,
+                        tables=self.tables,
+                    )
                 self.info("Operations completed, stopping the driver.")
                 await self.__stop()
             except (TimeoutError, AsyncGenericError) as e:

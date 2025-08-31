@@ -1,11 +1,16 @@
 import asyncio
-from typing import Union, Any
+
+from typing import Union, Any, TypeVar
+
 
 import ydb.aio as YDBAsync
 
 from app.model.opentofu_models import OpenTofuVersionTableYDB
 
 YDBTables = Union[OpenTofuVersionTableYDB]
+
+
+V = TypeVar("V")
 
 
 class PreparedYDBQueries:
@@ -48,6 +53,56 @@ class PreparedYDBQueries:
             str: The prepared YDB query string.
         """
         return f"SELECT 1 FROM `{table.table_name}` LIMIT 1"
+
+    @staticmethod
+    def select_with_parameters(
+        table: YDBTables,
+        selected_columns: list[str],
+        searching_columns: list[str],
+        searching_values: list[str],
+    ) -> str:
+        """
+        Prepare a YDB parameterized SELECT query string.
+
+        Args:
+            table: The table schema to prepare the query for.
+
+        Returns:
+            str: The prepared YDB parameterized SELECT query string.
+        """
+
+        declaraions = "\n".join(
+            f"DECLARE ${col}Var AS {table.r_type[i].parametarized_type};"
+            for i, col in enumerate(table.columns)
+            if col in searching_columns
+        )
+
+        parameters: dict[str, Any] = {}
+
+        parameters = {
+            f"${col}Var": (
+                searching_values[i],
+                table.r_type[i].parametarized_type,
+            )
+            for i, col in enumerate(table.columns)
+            if col in searching_columns
+        }
+
+        query = f"""
+        {declaraions}
+
+        SELECT
+            {", ".join(f"`{col}`" for col in selected_columns if col in table.columns)}
+        FROM `{table.table_name}`
+        WHERE {
+            " AND ".join(
+                f"`{col}` = ${col}Var"
+                for col in searching_columns
+                if col in table.columns
+            )
+        };
+        """
+        return query, parameters
 
 
 class AsyncYDBFunctionsCollections:
@@ -99,9 +154,61 @@ class AsyncYDBFunctionsCollections:
         queries = [
             PreparedYDBQueries.create_query(table)
             for table in tables
-            if isinstance(table, OpenTofuVersionTableYDB)
+            if isinstance(table, YDBTables)
         ]
 
         async with pool:
             coros = [pool.execute_with_retries(query) for query in queries]
             await asyncio.gather(*coros)
+
+    @staticmethod
+    async def select_parameterized_query(
+        pool: YDBAsync.QuerySessionPool,
+        tables: list[YDBTables],
+        selected_columns: list[str],
+        searching_columns: list[str],
+        searching_values: list[str],
+    ) -> Any:
+        """
+        Execute a parameterized SELECT query on the YDB database.
+
+        Args:
+            pool (QuerySession): The session pool to use for the query.
+            query (str): The parameterized query string to execute.
+            parameters (dict): The parameters to bind to the query.
+
+        Returns:
+            ResultSet: The result set of the executed query.
+        """
+        queries, parameters = [
+            (
+                PreparedYDBQueries.select_with_parameters(
+                    table,
+                    selected_columns,
+                    searching_columns,
+                    searching_values,
+                )
+            )
+            for table in tables
+            if isinstance(table, YDBTables)
+        ]
+
+        async with pool:
+            coros = [
+                pool.execute_with_retries(
+                    query,
+                    query_parameters=parameters[i],
+                    commit_tx=True,
+                )
+                for i, query in enumerate(queries)
+            ]
+            results = await asyncio.gather(*coros, return_exceptions=True)
+        return [
+            result
+            if not isinstance(
+                result,
+                Exception,
+            )
+            else None
+            for result in results
+        ]

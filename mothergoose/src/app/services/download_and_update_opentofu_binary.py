@@ -444,7 +444,6 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
     @property
     def get_current_version(self) -> str:
         """Get the current version of OpenTofu from the installed binary."""
-        return self.current_version
 
     @private
     def __update_to_latest_version(self) -> OpenTofuBinFileInfo | None:

@@ -2,6 +2,7 @@ import os
 
 import tempfile
 
+from docker import version
 import pytest
 
 from app.services.download_and_update_opentofu_binary import (
@@ -184,16 +185,27 @@ def tests_store_downloaded_bin(inst_download):
     """Function for testing download and extraction of OpenTofu binary."""
 
     inst_download.install_dir = tempfile.mkdtemp(prefix="opentofu_test_")
-    if bin_info := inst_download.tests_store_downloaded_bin():
-        assert isinstance(bin_info, OpenTofuBinFileInfo)
-        assert bin_info.bin_version == "1.10.2"
-        hash = inst_download.get_packages_sha256_hash["1.10.2"]
-        assert bin_info.bin_sha256 == hash
-        assert bin_info.bin_url.startswith(
-            "https://github.com/opentofu/opentofu/releases/download/v1.10.2"
-        )
-    else:
-        assert False, "Binaries were not stored correctly."
+    # if bin_info := inst_download.tests_store_downloaded_bin():
+    inst_download.tests_store_downloaded_bin()
+    inst2_download = TestOpenTofuDownloadGithub(version="1.10.3")
+    inst2_download.install_dir = inst_download.install_dir
+    inst2_download.tests_store_downloaded_bin()
+    binaries_list = OpenTofuDownloadGithub.get_opentofu_bin_files_info()
+    assert isinstance(binaries_list[0], OpenTofuBinFileInfo)
+    assert binaries_list[0].bin_version == "1.10.2"
+    assert binaries_list[1].bin_version == "1.10.3"
+    hash_10_2 = inst_download.get_packages_sha256_hash["1.10.2"]
+    hash_10_3 = inst_download.get_packages_sha256_hash["1.10.3"]
+    assert binaries_list[0].bin_sha256 == hash_10_2
+    assert binaries_list[1].bin_sha256 == hash_10_3
+    assert binaries_list[0].bin_url.startswith(
+        "https://github.com/opentofu/opentofu/releases/download/v1.10.2"
+    )
+    assert binaries_list[1].bin_url.startswith(
+        "https://github.com/opentofu/opentofu/releases/download/v1.10.3"
+    )
+    # else:
+    #     assert False, "Binaries were not stored correctly."
 
 
 @pytest.mark.dependency(depends=["tests_store_downloaded_bin"])

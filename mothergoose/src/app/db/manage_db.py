@@ -42,6 +42,19 @@ class PreparedYDBQueries:
         """
 
     @staticmethod
+    def drop_query(table: YDBTables) -> str:
+        """
+        Prepare a YDB query string for dropping a table.
+
+        Args:
+            table: The table schema to prepare the query for.
+
+        Returns:
+            str: The prepared YDB query string.
+        """
+        return f"DROP TABLE `{table.table_name}`"
+
+    @staticmethod
     def check_table_non_empty_query(table: YDBTables) -> str:
         """
         Prepare a YDB query string for retrieving data from a table.

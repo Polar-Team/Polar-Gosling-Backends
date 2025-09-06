@@ -27,6 +27,16 @@ from app.util.generator import generate_version_id_decorator
 class OpenTofuBinary(ABC):
     """Abstract base class for OpenTofu binary management."""
 
+    @classmethod
+    def get_opentofu_bin_files_info(cls) -> list[OpenTofuBinFileInfo]:
+        """Get the OpenTofu binary files information."""
+        return cls._opentofu_bin_files_info
+
+    @classmethod
+    def add_opentofu_bin_info(cls, info: OpenTofuBinFileInfo) -> None:
+        """Set the OpenTofu binary files information."""
+        cls._opentofu_bin_files_info.append(info)
+
     def _get_latest_version(self) -> str:
         """Get the latest version of OpenTofu from GitHub."""
 
@@ -97,16 +107,6 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
                     if asset["name"] == f"tofu_{ver}_{system}_{arch}.{ext}":
                         hash = asset["digest"].replace("sha256:", "")
                         cls._github_sha256_hash_of_bundle[ver] = hash
-
-    @classmethod
-    def add_opentofu_bin_info(cls, info: OpenTofuBinFileInfo) -> None:
-        """Set the OpenTofu binary files information."""
-        cls._opentofu_bin_files_info.append(info)
-
-    @classmethod
-    def get_opentofu_bin_files_info(cls) -> list[OpenTofuBinFileInfo]:
-        """Get the OpenTofu binary files information."""
-        return cls._opentofu_bin_files_info
 
     @property
     def get_packages_sha256_hash(self) -> dict:

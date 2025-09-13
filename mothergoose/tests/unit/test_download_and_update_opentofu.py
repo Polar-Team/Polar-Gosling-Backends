@@ -7,7 +7,7 @@ import pytest
 from app.services.download_and_update_opentofu_binary import (
     OpenTofuBinary,
     OpenTofuDownloadGithub,
-    OpenTofuUpdate,
+    OpenTofuUpdateGithub,
     OpenTofuDownloadFromOtherSource,
 )
 from app.schema.tofu_schemas import OpenTofuBinFileInfo
@@ -180,7 +180,7 @@ def test_tofu_download_different_version_and_check_property(
 @pytest.mark.dependency(
     depends=["test_tofu_download_different_version_and_check_property"]
 )
-def tests_store_downloaded_bin(inst_download):
+def test_store_downloaded_bin(inst_download):
     """Function for testing download and extraction of OpenTofu binary."""
 
     inst_download.install_dir = tempfile.mkdtemp(prefix="opentofu_test_")
@@ -218,7 +218,7 @@ def tests_store_downloaded_bin(inst_download):
     ), "Url of version v1.10.3 is not correct."
 
 
-@pytest.mark.dependency(depends=["tests_store_downloaded_bin"])
+@pytest.mark.dependency(depends=["test_store_downloaded_bin"])
 @pytest.mark.asyncio
 async def test_ydb_create_tofu_version_table(ydb_schema):
     """Create tables for testing OpenTofu Update modules."""
@@ -241,3 +241,13 @@ async def test_ydb_create_tofu_version_table(ydb_schema):
     )
 
     assert operation.result[0].type == 2, "Created target is not a table."
+
+
+@pytest.mark.dependency(depends=["test_ydb_create_tofu_version_table"])
+def test_opentofu_update_github(ydb_schema):
+    """Function for testing OpenTofuUpdateGithub class."""
+
+    updater = OpenTofuUpdateGithub(
+        ydb_schema, install_dir=tempfile.mkdtemp(prefix="opentofu_test_")
+    )
+    updater.start_update()

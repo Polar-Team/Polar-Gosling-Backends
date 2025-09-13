@@ -1,5 +1,6 @@
 import asyncio
 
+
 from typing import Union, Any, TypeVar
 
 
@@ -117,12 +118,50 @@ class PreparedYDBQueries:
         """
         return query, parameters
 
+    @staticmethod
+    def upsert_query(table: YDBTables) -> str:
+        """
+        Prepare a YDB UPSERT query string.
+
+        Args:
+            table: The table schema to prepare the query for.
+
+        Returns:
+            str: The prepared YDB UPSERT query string.
+        """
+
+        declaraions = "\n".join(
+            f"DECLARE ${col}Var AS {table.r_type[i].parametarized_type};"
+            for i, col in enumerate(table.columns)
+        )
+
+        parameters: dict[str, Any] = {}
+
+        parameters = {
+            f"${col}Var": (
+                table.values_for_operate[i],
+                table.r_type[i].parametarized_type,
+            )
+            for i, col in enumerate(table.columns)
+        }
+
+        query = f"""
+        {declaraions}
+
+        UPSERT INTO `{table.table_name}` (
+            {", ".join(f"`{col}`" for col in table.columns)}
+        ) VALUES (
+            {", ".join(f"${col}Var" for col in table.columns)}
+        );
+        """
+        return query, parameters
+
 
 class AsyncYDBFunctionsCollections:
     """A collection of asynchronous YDB functions for managing the database."""
 
     @staticmethod
-    async def tables_exist(
+    async def tables_not_empty(
         pool: YDBAsync.QuerySessionPool, tables: list[YDBTables]
     ) -> Any:
         """
@@ -208,11 +247,7 @@ class AsyncYDBFunctionsCollections:
 
         async with pool:
             coros = [
-                pool.execute_with_retries(
-                    query,
-                    query_parameters=parameters[i],
-                    commit_tx=True,
-                )
+                pool.execute_with_retries(query, parameters[i])
                 for i, query in enumerate(queries)
             ]
             results = await asyncio.gather(*coros, return_exceptions=True)
@@ -225,3 +260,40 @@ class AsyncYDBFunctionsCollections:
             else None
             for result in results
         ]
+
+    @staticmethod
+    async def upsert_query(
+        pool: YDBAsync.QuerySessionPool,
+        tables: list[YDBTables],
+        table_name: str,
+    ) -> Any:
+        """
+        Execute an UPSERT query on the YDB database.
+
+        Args:
+            pool (QuerySession): The session pool to use for the query.
+            table_name (str): The name of the table to upsert into.
+            upsert_values (list): The values to upsert into the table.
+
+        Returns:
+            ResultSet: The result set of the executed query.
+        """
+        table = next(
+            (t for t in tables if t.table_name == table_name),
+            None,
+        )
+        if table is None:
+            raise ValueError(f"Table {table_name} not found in the pool.")
+
+        query, parameters = PreparedYDBQueries.upsert_query(table)
+
+        async with pool:
+            result = await pool.execute_with_retries(query, parameters)
+        return (
+            result
+            if not isinstance(
+                result,
+                Exception,
+            )
+            else None
+        )

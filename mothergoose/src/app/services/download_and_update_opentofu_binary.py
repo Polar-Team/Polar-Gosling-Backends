@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import asyncio
 import os
 import platform
 import shutil
@@ -9,6 +10,7 @@ import subprocess
 import tarfile
 import tempfile
 import zipfile
+from datetime import datetime
 from abc import ABC, abstractmethod
 
 from accessify import private, protected
@@ -397,8 +399,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
             self.error(f"Unsupported system: {system}")
             raise RuntimeError(f"Unsupported system: {system}")
 
-    @protected
-    def _store_downloaded_bin(self) -> None:
+    def store_downloaded_bin(self) -> None:
         """Function for storing tofu bin in install dir."""
 
         url = next(
@@ -461,36 +462,110 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
 
     # pylint: disable=no-member
 
-    def __init__(self, install_dir: str | None = None) -> None:
-        self.current_version = self.get_current_version()
+    def __init__(
+        self,
+        schema: YDBSchema | DynamoDBSchema,
+        install_dir: str | None = None,
+    ) -> None:
+        self.schema = schema
+        self.c_version = asyncio.run(self.get_current_version)
+        self.install_dir = install_dir or f"/mnt/tofu_binary/{self.c_version}"
 
     @property
-    def get_current_version(self, schema: YDBSchema | DynamoDBSchema) -> str:
+    async def get_current_version(
+        self,
+    ) -> str | None:
         """Get the current version of OpenTofu from the installed binary."""
 
         operation = AsyncYDBOperations(
-            schema,
-            AsyncYDBFunctionsCollections.select_with_parameters,
+            self.schema,
+            AsyncYDBFunctionsCollections.tables_not_empty,
         )
+        await operation.check_tables_exist()
+        if operation.result[0].name != "opentofu_version":
+            self.info("OpenTofu version table does not exist in the DB.")
+            return None
+        else:
+            await operation.process()
+            if operation.result[0] is True:
+                operation.operations_function = (
+                    AsyncYDBFunctionsCollections.select_parameterized_query
+                )
+                await operation.process(
+                    selected_columns=["version_id", "version", "sha256_hash"],
+                    searching_columns=["active", "source"],
+                    searching_values=[True, "github"],
+                )
+                if operation.result and operation.result[0].rows:
+                    version_id = operation.result[0].rows[0].version_id
+                    version = operation.result[0].rows[0].version
+                    sha256_hash = operation.result[0].rows[0].sha256_hash
+                    self.info(f"Current OpenTofu Selected version: {version}")
+                return version_id, version, sha256_hash
+            else:
+                self.info("OpenTofu version table is empty.")
+                return None
+
+    def _get_latest_version(self) -> str:
+        """Get the latest version of OpenTofu from GitHub."""
+
+        url = "https://api.github.com/repos/opentofu/opentofu/releases/latest"
+        with self.session.get(url) as response:
+            release_info = json.loads(response.content)
+            return release_info["tag_name"].lstrip("v")
 
     @private
-    @generate_version_id_decorator()
     def __update_to_latest_version(self) -> OpenTofuBinFileInfo | None:
         """Update OpenTofu binary if a new version is available."""
 
         last_version = self._get_latest_version()
-        if self.current_version == last_version:
+        if self.c_version == last_version:
             self.info(f"Tofu is already at the last version: {last_version}")
             return None
-        self.info(f"Update Tofu from {self.current_version} to {last_version}")
+        self.info(f"Update Tofu from {self.c_version} to {last_version}")
         downloader = OpenTofuDownloadGithub(
             install_dir=self.install_dir, version=last_version
         )
-        return downloader._store_downloaded_bin()
+        downloader.store_downloaded_bin()
+        self.c_version = downloader.get_opentofu_bin_files_info()[-1].bin_version
+        return downloader.get_opentofu_bin_files_info()[-1]
 
     @private
-    def __download_rollback_releases(self):
-        """Download up to 10 preveious version from current version."""
+    def __download_rollback_releases(
+        self, rollback_factor: int = 3
+    ) -> list[OpenTofuBinFileInfo]:
+        """Download up to 3 previous versions from current version."""
+
+        if rollback_factor < 1 or rollback_factor > 3:
+            self.error("Rollback factor must be between 1 and 3.")
+            raise ValueError("Rollback factor must be between 1 and 3.")
+        available_versions = self.download_available_versions()
+        if self.c_version in available_versions:
+            c_index = available_versions.index(self.c_version)
+            rollback_versions = available_versions[
+                c_index + 1 : c_index + (rollback_factor + 1)
+            ]
+            for task in rollback_versions:
+                self.info(f"Downloading rollback version: {task}")
+                instance = OpenTofuDownloadGithub(
+                    install_dir=self.install_dir,
+                    version=task,
+                )
+                instance.store_downloaded_bin()
+
+            return OpenTofuDownloadGithub.get_opentofu_bin_files_info()
+        else:
+            self.error(
+                f"""Current version {self.c_version} not found
+                in available versions.
+                """
+            )
+            raise RuntimeError(
+                f"""
+                Current version {self.c_version} not found
+                in available versions.
+                """
+            )
 
     def download_available_versions(self) -> list[str]:
         """Download available OpenTofu versions from GitHub."""
@@ -505,15 +580,82 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
             ]
             return sorted(versions, reverse=True)
 
-    def check_required_actions(self, rollback_count: int) -> bool:
+    def check_required_actions(self) -> bool:
         """Check if OpenTofu binary needs to be updated."""
 
-        if (
-            current_version := self._get_current_version()
-        ) == self._get_latest_version():
+        if (current_version := self.c_version) == self._get_latest_version():
             self.info(f"Tofu already at the last version: {current_version}")
             return False
         return True
+
+    @generate_version_id_decorator()
+    def get_version_info(sha256_version, version_name, source="github"):
+        return sha256_version, version_name, source
+
+    def start_update(
+        self,
+        rb: int | None = None,
+    ) -> None:
+        """Start the update process."""
+
+        if req := self.check_required_actions():
+            self.info(f"Update required is {req}, starting the process...")
+            latest = self.__update_to_latest_version()
+
+            for table in self.schema.model.tables:
+                if table.table_name == "opentofu_version":
+                    table.values_for_operate = [
+                        self.get_version_info(
+                            latest.bin_sha256,
+                            latest.bin_version,
+                        ),
+                        latest.bin_version,
+                        "github",
+                        datetime.now().isoformat(),
+                        latest.bin_sha256,
+                        True,
+                    ]
+
+            operation = AsyncYDBOperations(
+                self.schema,
+                AsyncYDBFunctionsCollections.upsert_query,
+            )
+            asyncio.run(
+                operation.process(
+                    table_name="opentofu_version",
+                )
+            )
+
+            if rb is None:
+                rollback = self.__download_rollback_releases()
+            else:
+                rollback = self.__download_rollback_releases(rb)
+
+            for rb in rollback:
+                for table in self.schema.model.tables:
+                    if table.table_name == "opentofu_version":
+                        table.values_for_operate = [
+                            self.get_version_info(
+                                rb.bin_sha256,
+                                rb.bin_version,
+                            ),
+                            rb.bin_version,
+                            "github",
+                            datetime.now().isoformat(),
+                            rb.bin_sha256,
+                            False,
+                        ]
+                operation = AsyncYDBOperations(
+                    self.schema,
+                    AsyncYDBFunctionsCollections.upsert_query,
+                )
+                asyncio.run(
+                    operation.process(
+                        table_name="opentofu_version",
+                    )
+                )
+        else:
+            self.info("No update required, exiting.")
 
 
 class OpenTofuUpdateOtherSource(OpenTofuUpdate):

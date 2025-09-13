@@ -11,8 +11,8 @@ def generate_version_id_decorator():
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            sha256_version, version_name = func(*args, **kwargs)
-            data = f"{sha256_version}:{version_name}".encode("utf-8")
+            sha256_version, version_name, source = func(*args, **kwargs)
+            data = f"{sha256_version}:{version_name}:{source}".encode("utf-8")
             version_id = hashlib.sha256(data).hexdigest()
             return version_id
 

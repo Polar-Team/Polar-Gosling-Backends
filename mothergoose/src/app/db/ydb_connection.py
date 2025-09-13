@@ -99,6 +99,7 @@ class AsyncYDBOperations:
         selected_columns: Optional[list[str]] = None,
         searching_columns: Optional[list[str]] = None,
         searching_values: Optional[list[str]] = None,
+        table_name: Optional[str] = None,
     ) -> None:
         async with YDBAsync.Driver(
             endpoint=self.driver_config.endpoint,
@@ -127,6 +128,16 @@ class AsyncYDBOperations:
                         selected_columns=selected_columns,
                         searching_columns=searching_columns,
                         searching_values=searching_values,
+                    )
+                elif table_name is not None:
+                    table = next(
+                        (t for t in self.tables if t.table_name == table_name),
+                        None,
+                    )
+                    self.__result = await self.operations_function(
+                        pool=pool,
+                        tables=self.tables,
+                        table_name=table.table_name,
                     )
                 else:
                     self.__result = await self.operations_function(

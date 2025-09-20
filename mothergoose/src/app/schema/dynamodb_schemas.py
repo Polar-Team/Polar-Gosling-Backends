@@ -1,7 +1,7 @@
 from pydantic import Field, field_validator
 
-from app.model.pydantic_base_models import PydanticBaseModelORM
 from app.model.opentofu_models import OpenTofuModelDynamoDB
+from app.model.pydantic_base_models import PydanticBaseModelORM
 
 
 class DynamoDBConfig(PydanticBaseModelORM):

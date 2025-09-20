@@ -12,8 +12,8 @@ import tempfile
 import zipfile
 from abc import ABC, abstractmethod
 from datetime import datetime
-
 from typing import Any
+
 from accessify import private, protected
 from requests import Session
 
@@ -542,7 +542,9 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
             install_dir=self.install_dir, version=last_version
         )
         downloader.store_downloaded_bin()
-        self.c_version = downloader.get_opentofu_bin_files_info()[-1].bin_version  # noqa: E501
+        self.c_version = downloader.get_opentofu_bin_files_info()[
+            -1
+        ].bin_version  # noqa: E501
         return downloader.get_opentofu_bin_files_info()[-1]
 
     @private

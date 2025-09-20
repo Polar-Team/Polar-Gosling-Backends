@@ -1,4 +1,4 @@
-from typing import Any, Optional, Callable
+from typing import Any, Callable, Optional
 
 from accessify import private
 from ydb import SchemeClient as YDBSchemeClient

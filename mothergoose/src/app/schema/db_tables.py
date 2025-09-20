@@ -1,5 +1,6 @@
-from pydantic import Field
 from typing import Any, Tuple, Union
+
+from pydantic import Field
 
 from app.model.pydantic_base_models import PydanticBaseModelORM
 from app.types.ydb_types import YDBBool, YDBBytes, YDBDouble, YDBInt64, YDBUtf8

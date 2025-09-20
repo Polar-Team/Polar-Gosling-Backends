@@ -1,8 +1,9 @@
 """Asynchronous DynamoDB Connection Module"""
 
+from typing import Any
+
 import aioboto3
 from aioboto3 import ClientError, ConnectionError
-from typing import Any
 
 from app.schema.dynamodb_schemas import DynamoDBSchema
 from app.util.logging import logged

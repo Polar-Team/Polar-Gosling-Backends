@@ -4,7 +4,7 @@ from typing import Any, Tuple, Union
 from pydantic import ConfigDict, Field, field_validator
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
-from app.schema.db_tables import YDBTableSchema, DynamoDBTableSchema
+from app.schema.db_tables import DynamoDBTableSchema, YDBTableSchema
 from app.types.ydb_types import YDBBool, YDBType, YDBUtf8
 
 # YDB models setup for OpenTofu versioning

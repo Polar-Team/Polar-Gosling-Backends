@@ -1,8 +1,5 @@
 import asyncio
-
-
-from typing import Union, Any, TypeVar
-
+from typing import Any, TypeVar, Union
 
 import ydb.aio as YDBAsync
 
@@ -74,7 +71,7 @@ class PreparedYDBQueries:
         selected_columns: list[str],
         searching_columns: list[str],
         searching_values: list[str],
-    ) -> str:
+    ) -> tuple[str, dict[str, Any]]:
         """
         Prepare a YDB parameterized SELECT query string.
 
@@ -119,7 +116,7 @@ class PreparedYDBQueries:
         return query, parameters
 
     @staticmethod
-    def upsert_query(table: YDBTables) -> str:
+    def upsert_query(table: YDBTables) -> tuple[str, dict[str, Any]]:
         """
         Prepare a YDB UPSERT query string.
 
@@ -161,9 +158,9 @@ class AsyncYDBFunctionsCollections:
     """A collection of asynchronous YDB functions for managing the database."""
 
     @staticmethod
-    async def tables_not_empty(
+    async def tables_not_empty(  # type: ignore[no-any-unimported]
         pool: YDBAsync.QuerySessionPool, tables: list[YDBTables]
-    ) -> Any:
+    ) -> list[bool]:
         """
         Check if a table exists in the YDB database.
 
@@ -184,17 +181,19 @@ class AsyncYDBFunctionsCollections:
             coros = [pool.execute_with_retries(query) for query in queries]
             results = await asyncio.gather(*coros, return_exceptions=True)
         return [
-            bool(result[0].rows)
-            if not isinstance(
-                result,
-                Exception,
+            (
+                bool(result[0].rows)  # type: ignore[index]
+                if not isinstance(
+                    result,
+                    Exception,
+                )
+                else False
             )
-            else False
             for result in results
         ]
 
     @staticmethod
-    async def create_tables(
+    async def create_tables(  # type: ignore[no-any-unimported]
         pool: YDBAsync.QuerySessionPool, tables: list[YDBTables]
     ) -> None:
         """
@@ -214,7 +213,7 @@ class AsyncYDBFunctionsCollections:
             await asyncio.gather(*coros)
 
     @staticmethod
-    async def select_parameterized_query(
+    async def select_parameterized_query(  # type: ignore[no-any-unimported]
         pool: YDBAsync.QuerySessionPool,
         tables: list[YDBTables],
         selected_columns: list[str],
@@ -252,17 +251,19 @@ class AsyncYDBFunctionsCollections:
             ]
             results = await asyncio.gather(*coros, return_exceptions=True)
         return [
-            result
-            if not isinstance(
-                result,
-                Exception,
+            (
+                result
+                if not isinstance(
+                    result,
+                    Exception,
+                )
+                else None
             )
-            else None
             for result in results
         ]
 
     @staticmethod
-    async def upsert_query(
+    async def upsert_query(  # type: ignore[no-any-unimported]
         pool: YDBAsync.QuerySessionPool,
         tables: list[YDBTables],
         table_name: str,

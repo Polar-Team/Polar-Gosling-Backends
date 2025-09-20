@@ -1,6 +1,7 @@
 from pydantic import Field, field_validator
 
 from app.model.pydantic_base_models import PydanticBaseModelORM
+from app.model.opentofu_models import OpenTofuModelDynamoDB
 
 
 class DynamoDBConfig(PydanticBaseModelORM):
@@ -52,34 +53,18 @@ class DynamoDBConfig(PydanticBaseModelORM):
         raise ValueError("endpoint_url must be a non-empty string or None.")
 
 
-class DynamoDBTableSchema(PydanticBaseModelORM):
-    """
-    Schema for a DynamoDB table.
-    """
-
-    table_name: str = Field(..., description="Name of the DynamoDB table")
-    key_schema: list[dict] = Field(
-        ..., description="Key schema for the table (list of dicts)"
-    )
-    attribute_definitions: list[dict] = Field(
-        ..., description="Attribute definitions for the table (list of dicts)"
-    )
-    provisioned_throughput: dict = Field(
-        ..., description="Provisioned throughput settings for the table"
-    )
-    global_secondary_indexes: list[dict] | None = Field(
-        None, description="Global secondary indexes for the table (optional)"
-    )
-
-
 class DynamoDBSchema(PydanticBaseModelORM):
     """Schema for DynamoDB configuration and table definitions."""
 
-    config: DynamoDBConfig = Field(..., description="DynamoDB connection configuration")
-    tables: list[DynamoDBTableSchema] = Field(
-        ..., description="List of table schemas to be created in DynamoDB"
+    config: DynamoDBConfig = Field(
+        ...,
+        description="DynamoDB connection configuration",
     )
     default_table: str | None = Field(
         None, description="Default table name for operations (optional)"
     )
     version: str = Field("1.0", description="Schema version")
+    model: OpenTofuModelDynamoDB = Field(
+        ...,
+        description="Table schema definition",
+    )

@@ -1,12 +1,12 @@
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 
 from accessify import private
+from ydb import SchemeClient as YDBSchemeClient
 from ydb import aio as YDBAsync
 from ydb.issues import GenericError as AsyncGenericError
-from ydb import SchemeClient as YDBSchemeClient
+
 from app.schema.ydb_schemas import YDBSchema
 from app.util.logging import logged
-from app.db.manage_db import AsyncYDBFunctionsCollections
 
 
 @logged
@@ -19,7 +19,7 @@ class AsyncYDBOperations:
     def __init__(
         self,
         schema: YDBSchema,
-        operations_function: AsyncYDBFunctionsCollections,
+        operations_function: Callable[..., Any],
     ) -> None:
         """Initialize the YDB connection with the provided configuration."""
         self.driver_config = schema.config
@@ -98,7 +98,7 @@ class AsyncYDBOperations:
         self,
         selected_columns: Optional[list[str]] = None,
         searching_columns: Optional[list[str]] = None,
-        searching_values: Optional[list[str]] = None,
+        searching_values: Optional[list[Any]] = None,
         table_name: Optional[str] = None,
     ) -> None:
         async with YDBAsync.Driver(
@@ -134,10 +134,14 @@ class AsyncYDBOperations:
                         (t for t in self.tables if t.table_name == table_name),
                         None,
                     )
+                    if table is None:
+                        raise ValueError(f"Table {table_name} not found.")
+                    else:
+                        t_name = table.table_name
                     self.__result = await self.operations_function(
                         pool=pool,
                         tables=self.tables,
-                        table_name=table.table_name,
+                        table_name=t_name,
                     )
                 else:
                     self.__result = await self.operations_function(
@@ -161,7 +165,7 @@ class AsyncYDBOperations:
                     )
 
     @private
-    async def __stop(self):
+    async def __stop(self) -> None:
         """Stop the YDB driver and release resources."""
 
         if hasattr(self, "__driver") and self.__driver:

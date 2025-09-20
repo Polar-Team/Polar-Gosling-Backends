@@ -762,7 +762,7 @@ wheels = [
 [[package]]
 name = "mothergoose"
 version = "0.1.2"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "accessify" },
     { name = "aioboto3" },

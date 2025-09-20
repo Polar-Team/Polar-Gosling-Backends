@@ -17,6 +17,10 @@ dependencies = [
     "ydb>=3.21.6",
 ]
 
+[build-system]
+requires = ["setuptools>=65.5.1"]
+build-backend = "setuptools.build_meta"
+
 [dependency-groups]
 dev = [
   "debugpy>=1.8.14",
@@ -121,6 +125,7 @@ disable_error_code = [
 module = [
     "app.util.*",
     "app.schema.*",
+    "app.types.*",
 ]
 ignore_missing_imports = true
 disallow_any_unimported = false
@@ -133,5 +138,13 @@ module = [
 ]
 disable_error_code = [
   "attr-defined",
+]
+
+[[tool.mypy.overrides]]
+module = [
+  "app.types.*"
+]
+disable_error_code = [
+  "typeddict-unknown-key",
 ]
 

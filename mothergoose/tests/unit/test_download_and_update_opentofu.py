@@ -102,9 +102,8 @@ def ydb_schema(ydb_container) -> YDBSchema:
     """Fixture to provide YDB configuration."""
 
     config = YDBConfig(
-        endpoint=f"grpc://{ydb_container.get_container_host_ip()}:{
-            ydb_container.get_exposed_port(2136)
-        }",
+        endpoint=f"grpc://{ydb_container.get_container_host_ip()}:\
+        {ydb_container.get_exposed_port(2136)}",
         database="/local",
         credentials=AnonymousCredentials(),
     )

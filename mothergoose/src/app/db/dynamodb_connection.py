@@ -2,6 +2,7 @@
 
 import aioboto3
 from aioboto3 import ClientError, ConnectionError
+from typing import Any
 
 from app.schema.dynamodb_schemas import DynamoDBSchema
 from app.util.logging import logged
@@ -14,7 +15,7 @@ class AsyncDynamoDBConnection:
     def __init__(self, schema: DynamoDBSchema):
         self.connection_config = schema.config
 
-    async def connect(self):
+    async def connect(self) -> Any:
         """Initialize and return an aioboto3 DynamoDB resource."""
 
         session = aioboto3.Session()

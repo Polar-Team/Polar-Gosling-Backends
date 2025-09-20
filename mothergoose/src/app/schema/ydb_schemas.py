@@ -45,8 +45,9 @@ class YDBSchema(PydanticBaseModelORM):
         None, description="Default table name for operations (optional)"
     )
     version: str = Field("1.0.0", description="Schema version")
-    model: OpenTofuModelYDB | OpenTofuModelDynamoDB = Field(
-        ..., description="Model type for integration"
+    model: OpenTofuModelYDB = Field(
+        ...,
+        description="Model type for integration",
     )
 
     @field_validator("version", mode="before")

@@ -1,8 +1,8 @@
 """OpenTofuBinary download and update module."""
 
+import asyncio
 import hashlib
 import json
-import asyncio
 import os
 import platform
 import shutil
@@ -10,20 +10,21 @@ import subprocess
 import tarfile
 import tempfile
 import zipfile
-from datetime import datetime
 from abc import ABC, abstractmethod
+from datetime import datetime
 
+from typing import Any
 from accessify import private, protected
 from requests import Session
 
-from app.db.ydb_connection import AsyncYDBOperations
 from app.db.manage_db import AsyncYDBFunctionsCollections
+from app.db.ydb_connection import AsyncYDBOperations
 from app.schema.dynamodb_schemas import DynamoDBSchema
-from app.schema.ydb_schemas import YDBSchema
 from app.schema.tofu_schemas import OpenTofuBinFileInfo
+from app.schema.ydb_schemas import YDBSchema
+from app.util.generator import generate_version_id_decorator
 from app.util.logging import logged
 from app.util.requests_session import with_requests_session
-from app.util.generator import generate_version_id_decorator
 
 
 class OpenTofuBinary(ABC):
@@ -67,7 +68,7 @@ class OpenTofuBinary(ABC):
         pass
 
     @abstractmethod
-    def store_downloaded_bin(self) -> OpenTofuBinFileInfo:
+    def store_downloaded_bin(self) -> None:
         """Store the downloaded OpenTofu binary in the specified directory."""
         pass
 
@@ -423,6 +424,10 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
             shutil.copy2(tofu_path, dest_path)
             os.chmod(dest_path, 0o755)
             self.info(f"OpenTofu updated at {dest_path}")
+            if self.version is None:
+                raise RuntimeError("Version is not set.")
+            if url is None:
+                raise RuntimeError("URL is not set.")
             info = OpenTofuBinFileInfo(
                 bin_version=self.version,
                 bin_sha256=next(
@@ -431,7 +436,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
                         for bin in self._opentofu_bin_files_info
                         if bin.bin_version == self.version
                     ),
-                    None,
+                    "",
                 ),
                 bin_url=url,
             )
@@ -447,7 +452,7 @@ class OpenTofuUpdate(ABC):
         pass
 
     @abstractmethod
-    def check_required_actions(self, rollback_count: int) -> bool:
+    def check_required_actions(self) -> bool:
         """Check if OpenTofu binary needs to be updated."""
         pass
 
@@ -474,37 +479,47 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
     @property
     async def get_current_version(
         self,
-    ) -> str | None:
+    ) -> Any:
         """Get the current version of OpenTofu from the installed binary."""
 
-        operation = AsyncYDBOperations(
-            self.schema,
-            AsyncYDBFunctionsCollections.tables_not_empty,
-        )
-        await operation.check_tables_exist()
-        if operation.result[0].name != "opentofu_version":
-            self.info("OpenTofu version table does not exist in the DB.")
-            return None
-        else:
-            await operation.process()
-            if operation.result[0] is True:
-                operation.operations_function = (
-                    AsyncYDBFunctionsCollections.select_parameterized_query
-                )
-                await operation.process(
-                    selected_columns=["version_id", "version", "sha256_hash"],
-                    searching_columns=["active", "source"],
-                    searching_values=[True, "github"],
-                )
+        if self.schema == YDBSchema:
+            operation = AsyncYDBOperations(
+                self.schema,  # type: ignore[arg-type]
+                AsyncYDBFunctionsCollections.tables_not_empty,
+            )
+            await operation.check_tables_exist()
+            if operation.result[0].name != "opentofu_version":
+                self.info("OpenTofu version table does not exist in the DB.")
+                return None
+            else:
+                await operation.process()
+                if operation.result[0] is True:
+                    operation.operations_function = (
+                        AsyncYDBFunctionsCollections.select_parameterized_query
+                    )
+                    await operation.process(
+                        selected_columns=[
+                            "version_id",
+                            "version",
+                            "sha256_hash",
+                        ],
+                        searching_columns=["active", "source"],
+                        searching_values=[True, "github"],
+                    )
                 if operation.result and operation.result[0].rows:
                     version_id = operation.result[0].rows[0].version_id
                     version = operation.result[0].rows[0].version
                     sha256_hash = operation.result[0].rows[0].sha256_hash
                     self.info(f"Current OpenTofu Selected version: {version}")
-                return version_id, version, sha256_hash
-            else:
-                self.info("OpenTofu version table is empty.")
-                return None
+                    return version_id, version, sha256_hash
+                else:
+                    self.info("OpenTofu version table is empty.")
+                    return None
+        elif self.schema == DynamoDBSchema:
+            self.error("DynamoDB is not supported yet.")
+            raise NotImplementedError("DynamoDB is not supported yet.")
+        else:
+            return None
 
     def _get_latest_version(self) -> str:
         """Get the latest version of OpenTofu from GitHub."""
@@ -527,7 +542,7 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
             install_dir=self.install_dir, version=last_version
         )
         downloader.store_downloaded_bin()
-        self.c_version = downloader.get_opentofu_bin_files_info()[-1].bin_version
+        self.c_version = downloader.get_opentofu_bin_files_info()[-1].bin_version  # noqa: E501
         return downloader.get_opentofu_bin_files_info()[-1]
 
     @private
@@ -589,7 +604,9 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
         return True
 
     @generate_version_id_decorator()
-    def get_version_info(sha256_version, version_name, source="github"):
+    def get_version_info(
+        self, sha256_version: str, version_name: str, source: str = "github"
+    ) -> tuple[str, str, str]:
         return sha256_version, version_name, source
 
     def start_update(
@@ -604,7 +621,7 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
 
             for table in self.schema.model.tables:
                 if table.table_name == "opentofu_version":
-                    table.values_for_operate = [
+                    table.values_for_operate = (
                         self.get_version_info(
                             latest.bin_sha256,
                             latest.bin_version,
@@ -614,39 +631,11 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
                         datetime.now().isoformat(),
                         latest.bin_sha256,
                         True,
-                    ]
+                    )
 
-            operation = AsyncYDBOperations(
-                self.schema,
-                AsyncYDBFunctionsCollections.upsert_query,
-            )
-            asyncio.run(
-                operation.process(
-                    table_name="opentofu_version",
-                )
-            )
-
-            if rb is None:
-                rollback = self.__download_rollback_releases()
-            else:
-                rollback = self.__download_rollback_releases(rb)
-
-            for rb in rollback:
-                for table in self.schema.model.tables:
-                    if table.table_name == "opentofu_version":
-                        table.values_for_operate = [
-                            self.get_version_info(
-                                rb.bin_sha256,
-                                rb.bin_version,
-                            ),
-                            rb.bin_version,
-                            "github",
-                            datetime.now().isoformat(),
-                            rb.bin_sha256,
-                            False,
-                        ]
+            if self.schema == YDBSchema:
                 operation = AsyncYDBOperations(
-                    self.schema,
+                    self.schema,  # type: ignore[arg-type]
                     AsyncYDBFunctionsCollections.upsert_query,
                 )
                 asyncio.run(
@@ -654,6 +643,42 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
                         table_name="opentofu_version",
                     )
                 )
+            elif self.schema == DynamoDBSchema:
+                self.error("DynamoDB is not supported yet.")
+                raise NotImplementedError("DynamoDB is not supported yet.")
+
+            if rb is None:
+                rollback = self.__download_rollback_releases()
+            else:
+                rollback = self.__download_rollback_releases(rb)
+
+            for rba in rollback:
+                for table in self.schema.model.tables:
+                    if table.table_name == "opentofu_version":
+                        table.values_for_operate = (
+                            self.get_version_info(
+                                rba.bin_sha256,
+                                rba.bin_version,
+                            ),
+                            rba.bin_version,
+                            "github",
+                            datetime.now().isoformat(),
+                            rba.bin_sha256,
+                            False,
+                        )
+                if self.schema == YDBSchema:
+                    operation = AsyncYDBOperations(
+                        self.schema,  # type: ignore[arg-type]
+                        AsyncYDBFunctionsCollections.upsert_query,
+                    )
+                    asyncio.run(
+                        operation.process(
+                            table_name="opentofu_version",
+                        )
+                    )
+                elif self.schema == DynamoDBSchema:
+                    self.error("DynamoDB is not supported yet.")
+                    raise NotImplementedError("DynamoDB is not supported yet.")
         else:
             self.info("No update required, exiting.")
 

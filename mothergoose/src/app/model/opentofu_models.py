@@ -1,14 +1,25 @@
 from dataclasses import dataclass, field
-from typing import Any, Tuple, Union, List
+from typing import Any, Tuple, Union
 
 from pydantic import ConfigDict, Field, field_validator
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
-from app.schema.db_tables import YDBTableSchema
-
-from app.types.ydb_types import YDBUtf8, YDBBool, YDBType
+from app.schema.db_tables import YDBTableSchema, DynamoDBTableSchema
+from app.types.ydb_types import YDBBool, YDBType, YDBUtf8
 
 # YDB models setup for OpenTofu versioning
+
+
+def make_ydb_type(type: str) -> Any:
+    """
+    Create a YDB type instance based on the provided type string.
+    Args:
+        type (str): The type string to create a YDB type for.
+    Returns:
+        Tuple[YDBBool | YDBUtf8, ...]: A tuple containing the YDB type.
+    """
+
+    return YDBType({"type": type}).root  # type: ignore[arg-type]
 
 
 @dataclass
@@ -19,7 +30,7 @@ class OpenTofuVersionTableYDB:
     """
 
     table_name: str = "opentofu_version"
-    columns: Tuple[str] = field(
+    columns: Tuple[str, ...] = field(
         default_factory=lambda: (
             "version_id",
             "version",
@@ -29,19 +40,19 @@ class OpenTofuVersionTableYDB:
             "active",
         ),
     )
-    r_type: Tuple[YDBUtf8 | YDBBool] = field(
+    r_type: Tuple[YDBUtf8 | YDBBool, ...] = field(
         default_factory=lambda: (
-            YDBType({"type": "Utf8"}).root,
-            YDBType({"type": "Utf8"}).root,
-            YDBType({"type": "Utf8"}).root,
-            YDBType({"type": "Utf8"}).root,
-            YDBType({"type": "Utf8"}).root,
-            YDBType({"type": "Bool"}).root,
+            make_ydb_type("Utf8"),
+            make_ydb_type("Utf8"),
+            make_ydb_type("Utf8"),
+            make_ydb_type("Utf8"),
+            make_ydb_type("Utf8"),
+            make_ydb_type("Bool"),
         ),
     )
     primary_key: str = "version_id"
-    values_for_operate: Tuple[Any] = field(
-        default_factory=lambda: [],
+    values_for_operate: Tuple[Any, ...] = field(
+        default_factory=lambda: (),
     )
 
     def __post_init__(self) -> None:
@@ -87,10 +98,10 @@ class OpenTofuVersionTableYDB:
                 All rows except 'active'='Bool' must be Utf8 type.
                 """
             )
-        if schema := YDBTableSchema(
+        if schema := YDBTableSchema(  # type: ignore[call-arg]
             table_name=self.table_name,
             columns=self.columns,
-            r_type=self.r_type,
+            r_type=self.r_type,  # type: ignore[arg-type]
             primary_key=self.primary_key,
             values_for_operate=self.values_for_operate,
         ):
@@ -147,8 +158,12 @@ class OpenTofuModelDynamoDB:
     This class can be extended to create specific OpenTofu models for DynamoDB.
     """
 
+    tables: list[DynamoDBTableSchema] = Field(
+        ..., description="List of table schemas to be created in YDB"
+    )
+
     model_name: str = "OpenTofuModel"
-    version: str = "1.0"
+    version: str = "1.0.0"
 
     def __post_init__(self) -> None:
         """Post-initialization logic can be added here if needed."""

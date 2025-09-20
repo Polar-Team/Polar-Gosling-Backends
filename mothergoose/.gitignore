@@ -1,4 +1,5 @@
 dist/**
+build/**
 **/__pycache__/**
 **/mothergoose.egg-info/**
 **/.tox/**

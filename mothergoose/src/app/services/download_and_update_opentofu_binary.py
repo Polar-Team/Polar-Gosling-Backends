@@ -30,6 +30,8 @@ from app.util.requests_session import with_requests_session
 class OpenTofuBinary(ABC):
     """Abstract base class for OpenTofu binary management."""
 
+    # pylint: disable=no-member
+
     @classmethod
     def get_opentofu_bin_files_info(cls) -> list[OpenTofuBinFileInfo]:
         """Get the OpenTofu binary files information."""
@@ -63,14 +65,12 @@ class OpenTofuBinary(ABC):
         return result
 
     @abstractmethod
-    def _download_and_extract(self, url: str, extract_to: str) -> None:
+    def _download_and_extract(self, extract_to: str) -> None:
         """Download and extract the OpenTofu binary from the given URL."""
-        pass
 
     @abstractmethod
     def store_downloaded_bin(self) -> None:
         """Store the downloaded OpenTofu binary in the specified directory."""
-        pass
 
 
 @logged
@@ -81,7 +81,9 @@ class OpenTofuBinary(ABC):
 class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
     """Class to handle the OpenTofu binary download process."""
 
-    # pylint: disable=no-member,too-few-public-methods
+    # pylint: disable=no-member
+
+    # pylint: disable=too-many-positional-arguments
 
     _github_sha256_hash_of_bundle: dict[str, str] = {}
     _opentofu_bin_files_info: list[OpenTofuBinFileInfo] = []
@@ -93,10 +95,15 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
 
         self.version = version or self._get_latest_version()
         self.install_dir = install_dir or f"/mnt/tofu_binary/{version}"
+        self.url = self._get_download_url()
 
     @classmethod
     def get_sha256_hash_of_bundle_from_github(
-        cls, session: Session, ver: str, system: str, arch: str, ext: str
+        cls,
+        session: Session,
+        ver: str,
+        system: str,
+        arch: str,
     ) -> None:
         """Get the SHA255 hash of the OpenTofu bundle from GitHub."""
 
@@ -104,12 +111,16 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
             "https://api.github.com/repos/opentofu/opentofu/releases"
         )
         data = response.json()
+        if system == "windows":
+            ext = "zip"
+        else:
+            ext = "tar.gz"
         for release in data:
             if release["tag_name"] == f"v{ver}":
                 for asset in release["assets"]:
                     if asset["name"] == f"tofu_{ver}_{system}_{arch}.{ext}":
-                        hash = asset["digest"].replace("sha256:", "")
-                        cls._github_sha256_hash_of_bundle[ver] = hash
+                        hash_bin = asset["digest"].replace("sha256:", "")
+                        cls._github_sha256_hash_of_bundle[ver] = hash_bin
 
     @property
     def get_packages_sha256_hash(self) -> dict:
@@ -124,43 +135,34 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
         if (system := platform.system().lower()) == "linux":
             if (arch := platform.machine().lower()) in ("x86_64", "amd64"):
                 arch = "amd64"
-            elif (arch := platform.machine().lower()) in ("aarch64", "arm64"):
-                arch = "arm64"
             else:
-                self.error(f"Unsupported architecture: {arch}")
-                raise RuntimeError(f"Unsupported architecture: {arch}")
+                arch = "arm64"
             dpath = f"download/v{ver}tofu_{ver}_{system}_{arch}.tar.gz"
-            return f"https://github.com/opentofu/opentofu/releases/{dpath}"
-        elif (system := platform.system().lower()) == "windows":
+            url = f"https://github.com/opentofu/opentofu/releases/{dpath}"
+        else:
             arch = "amd64"
             dpath = f"download/v{ver}/tofu_{ver}_{system}_{arch}.zip"
-            return f"https://github.com/opentofu/opentofu/releases/{dpath}"
-        else:
-            self.error(
-                f"""
-                Only Linux is supported in serverless Docker containers.
-                You tried {system}.
-                """
-            )
-            raise RuntimeError(
-                "Only Linux is supported in serverless Docker containers."
-                f"You tried {system}."
-            )
+            url = f"https://github.com/opentofu/opentofu/releases/{dpath}"
+
+        return url
 
     @protected
-    def _download_and_extract(self, url: str, extract_to: str) -> None:
+    def _download_and_extract(self, extract_to: str) -> None:
         """Function to download and extract tofu binary from github."""
 
         ver = self.version
         if (system := platform.system().lower()) == "windows":
             self.info("Getting hash of the bundle and save it in class var...")
             self.get_sha256_hash_of_bundle_from_github(
-                self.session, ver, system, "amd64", "zip"
+                self.session,
+                ver,
+                system,
+                "amd64",
             )
             self.info(f"Using environment for {system}...")
             zip_path = os.path.join(extract_to, "tofu.zip")
-            self.info(f"Downloading OpenTofu from {url}...")
-            response = self.session.get(url)
+            self.info(f"Downloading OpenTofu from {self.url}...")
+            response = self.session.get(self.url)
             with open(zip_path, "wb") as file:
                 file.write(response.content)
             self.info("Calculating SHA256 hash of the downloaded file...")
@@ -185,11 +187,11 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
         elif (system := platform.system().lower()) == "linux":
             self.info("Getting hash of the bundle and save it in class var...")
             self.get_sha256_hash_of_bundle_from_github(
-                self.session, ver, system, "amd64", "tar.gz"
+                self.session, ver, system, "amd64"
             )
             tar_path = os.path.join(extract_to, "tofu.tar.gz")
-            self.info(f"Downloading OpenTofu from {url}...")
-            response = self.session.get(url)
+            self.info(f"Downloading OpenTofu from {self.url}...")
+            response = self.session.get(self.url)
             with open(tar_path, "wb") as file:
                 file.write(response.content)
             self.info("Calculating SHA256 hash of the downloaded file...")
@@ -218,9 +220,8 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
     def store_downloaded_bin(self) -> None:
         """Function for storing tofu bin in install dir."""
 
-        url = self._get_download_url()
         with tempfile.TemporaryDirectory() as tmpdir:
-            self._download_and_extract(url, tmpdir)
+            self._download_and_extract(tmpdir)
             if (system := platform.system().lower()) == "windows":
                 self.info(f"Using environment for {system}...")
                 tofu_path = os.path.join(tmpdir, "tofu.exe")
@@ -235,7 +236,7 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
             info = OpenTofuBinFileInfo(
                 bin_version=self.version,
                 bin_sha256=self.get_packages_sha256_hash[self.version],
-                bin_url=url,
+                bin_url=self.url,
             )
             OpenTofuDownloadGithub.add_opentofu_bin_info(info)
 
@@ -251,7 +252,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
     download process from other sources.
     """
 
-    # pylint: disable=no-member,too-few-public-methods
+    # pylint: disable=no-member, too-many-branches, too-many-statements
     __token: str
     __bearer_token: bool = False
     __auth_header_name: str = "Private-Token"
@@ -490,7 +491,6 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
             await operation.check_tables_exist()
             if operation.result[0].name != "opentofu_version":
                 self.info("OpenTofu version table does not exist in the DB.")
-                return None
             else:
                 await operation.process()
                 if operation.result[0] is True:
@@ -514,12 +514,9 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
                     return version_id, version, sha256_hash
                 else:
                     self.info("OpenTofu version table is empty.")
-                    return None
         elif self.schema == DynamoDBSchema:
             self.error("DynamoDB is not supported yet.")
             raise NotImplementedError("DynamoDB is not supported yet.")
-        else:
-            return None
 
     def _get_latest_version(self) -> str:
         """Get the latest version of OpenTofu from GitHub."""
@@ -542,26 +539,24 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
             install_dir=self.install_dir, version=last_version
         )
         downloader.store_downloaded_bin()
-        self.c_version = downloader.get_opentofu_bin_files_info()[
-            -1
-        ].bin_version  # noqa: E501
+        self.c_version = downloader.get_opentofu_bin_files_info()[-1].bin_version  # noqa: E501
         return downloader.get_opentofu_bin_files_info()[-1]
 
     @private
     def __download_rollback_releases(
-        self, rollback_factor: int = 3
+        self, rb_factor: int = 3
     ) -> list[OpenTofuBinFileInfo]:
         """Download up to 3 previous versions from current version."""
 
-        if rollback_factor < 1 or rollback_factor > 3:
+        if rb_factor < 1 or rb_factor > 3:
             self.error("Rollback factor must be between 1 and 3.")
             raise ValueError("Rollback factor must be between 1 and 3.")
         available_versions = self.download_available_versions()
         if self.c_version in available_versions:
             c_index = available_versions.index(self.c_version)
-            rollback_versions = available_versions[
-                c_index + 1 : c_index + (rollback_factor + 1)
-            ]
+            left = c_index + 1
+            right = c_index + (rb_factor + 1)
+            rollback_versions = available_versions[left:right]
             for task in rollback_versions:
                 self.info(f"Downloading rollback version: {task}")
                 instance = OpenTofuDownloadGithub(
@@ -613,7 +608,7 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
 
     def start_update(
         self,
-        rb: int | None = None,
+        rb: int = 3,
     ) -> None:
         """Start the update process."""
 
@@ -649,10 +644,7 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
                 self.error("DynamoDB is not supported yet.")
                 raise NotImplementedError("DynamoDB is not supported yet.")
 
-            if rb is None:
-                rollback = self.__download_rollback_releases()
-            else:
-                rollback = self.__download_rollback_releases(rb)
+            rollback = self.__download_rollback_releases(rb)
 
             for rba in rollback:
                 for table in self.schema.model.tables:

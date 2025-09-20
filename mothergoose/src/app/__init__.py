@@ -1,5 +1,5 @@
 import os
 
-from .main import *
+# from .main import *
 
 os.environ["PY_TEST"] = "False"

@@ -51,7 +51,11 @@ class OpenTofuWrapper:
         return result.stdout
 
     @protected
-    def _apply(self, plan_file: Optional[str] = None, auto_approve: bool = True) -> str:
+    def _apply(
+        self,
+        plan_file: Optional[str] = None,
+        auto_approve: bool = True,
+    ) -> str:
         args = ["apply"]
         if plan_file:
             args.append(plan_file)

@@ -14,6 +14,7 @@ dependencies = [
     "grpcio>=1.71.0",
     "grpcio-tools>=1.71.0",
     "pydantic>=2.11.5",
+    "requests>=2.32.4",
     "ydb>=3.21.6",
 ]
 
@@ -97,8 +98,9 @@ dependency_groups = [
     "style",
 ]
 commands = [
+    ["pip", "install", "-e", "."],
     ["flake8", "src/app"],
-    ["pylint", "src/app"],
+    ["pylint", "src/app/*"],
 ]
 
 [tool.tox.env.type]
@@ -107,7 +109,10 @@ skip_install = true
 dependency_groups = [
     "type",
 ]
-commands = [["mypy", "src/app"]]
+commands = [
+    ["pip", "install", "-e", "."],
+    ["mypy", "src/app"],
+]
 
 [tool.mypy]
 disallow_untyped_defs = true

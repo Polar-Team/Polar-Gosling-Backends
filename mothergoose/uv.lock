@@ -770,6 +770,7 @@ dependencies = [
     { name = "grpcio" },
     { name = "grpcio-tools" },
     { name = "pydantic" },
+    { name = "requests" },
     { name = "ydb" },
 ]
 
@@ -809,6 +810,7 @@ requires-dist = [
     { name = "grpcio", specifier = ">=1.71.0" },
     { name = "grpcio-tools", specifier = ">=1.71.0" },
     { name = "pydantic", specifier = ">=2.11.5" },
+    { name = "requests", specifier = ">=2.32.4" },
     { name = "ydb", specifier = ">=3.21.6" },
 ]
 

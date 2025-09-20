@@ -13,6 +13,8 @@ from app.util.logging import logged
 class AsyncYDBOperations:
     """Asynchronous connection to YDB (Yandex Database) using aio library."""
 
+    # pylint: disable=no-member
+
     __timeout: int = 30  # Default timeout for connection attempts
     __fail_fast: bool = False  # Flag to set if the connection should fail fast
 

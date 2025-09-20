@@ -413,7 +413,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
             None,
         )
         with tempfile.TemporaryDirectory() as tmpdir:
-            self._download_and_extract(url, tmpdir)
+            self._download_and_extract(tmpdir)
             if (system := platform.system().lower()) == "windows":
                 self.info(f"Using environment for {system}...")
                 tofu_path = os.path.join(tmpdir, "tofu.exe")
@@ -450,12 +450,10 @@ class OpenTofuUpdate(ABC):
     @abstractmethod
     def download_available_versions(self) -> list[str]:
         """Download available OpenTofu versions from GitHub."""
-        pass
 
     @abstractmethod
     def check_required_actions(self) -> bool:
         """Check if OpenTofu binary needs to be updated."""
-        pass
 
 
 @logged
@@ -512,8 +510,6 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
                     sha256_hash = operation.result[0].rows[0].sha256_hash
                     self.info(f"Current OpenTofu Selected version: {version}")
                     return version_id, version, sha256_hash
-                else:
-                    self.info("OpenTofu version table is empty.")
         elif self.schema == DynamoDBSchema:
             self.error("DynamoDB is not supported yet.")
             raise NotImplementedError("DynamoDB is not supported yet.")
@@ -565,7 +561,7 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
                 )
                 instance.store_downloaded_bin()
 
-            return OpenTofuDownloadGithub.get_opentofu_bin_files_info()
+            result = OpenTofuDownloadGithub.get_opentofu_bin_files_info()
         else:
             self.error(
                 f"""Current version {self.c_version} not found
@@ -578,6 +574,7 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
                 in available versions.
                 """
             )
+        return result
 
     def download_available_versions(self) -> list[str]:
         """Download available OpenTofu versions from GitHub."""
@@ -604,6 +601,8 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
     def get_version_info(
         self, sha256_version: str, version_name: str, source: str = "github"
     ) -> tuple[str, str, str]:
+        """Generate a version ID by hashing the concatenation"""
+
         return sha256_version, version_name, source
 
     def start_update(

@@ -18,7 +18,6 @@ from app.schema.ydb_schemas import (
     YDBConfig,
     YDBSchema,
     OpenTofuModelYDB,
-    OpenTofuModelDynamoDB,
 )
 
 from ydb import AnonymousCredentials
@@ -52,8 +51,7 @@ class TestOpenTofuDownloadGithub(OpenTofuDownloadGithub):
 
         if self.py_test_enabled:
             with tempfile.TemporaryDirectory() as tmpdir:
-                url = self._get_download_url()
-                self._download_and_extract(url, tmpdir)
+                self._download_and_extract(tmpdir)
                 return os.listdir(tmpdir)
         else:
             return None
@@ -82,8 +80,7 @@ class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
         if self.py_test_enabled:
             self._token = "test_token"
             with tempfile.TemporaryDirectory() as tmpdir:
-                url = ""
-                self._download_and_extract(url, tmpdir)
+                self._download_and_extract(tmpdir)
                 return os.listdir(tmpdir)
         else:
             return None
@@ -119,8 +116,7 @@ def ydb_schema(ydb_container) -> YDBSchema:
 def inst_download():
     """Function for init connection in OpensearchArchive class."""
 
-    client = TestOpenTofuDownloadGithub(OpenTofuBinary)
-    client.version = "1.10.2"
+    client = TestOpenTofuDownloadGithub(version="1.10.3")
     yield client
 
 
@@ -132,7 +128,7 @@ def test_tofu_get_download_get_downlload_url(inst_download):
     if download_url := inst_download.tests_get_download_url():
         assert isinstance(download_url, str)
         assert download_url.startswith(
-            "https://github.com/opentofu/opentofu/releases/download/v1.10.2/"
+            "https://github.com/opentofu/opentofu/releases/download/v1.10.3/"
         )
     else:
         assert False, "Download URL is not generated correctly."
@@ -158,13 +154,12 @@ def test_tofu_download_different_version_and_check_property(
     OpenTofu binary with different version.
     """
 
-    new_instance = TestOpenTofuDownloadGithub(OpenTofuBinary)
-    new_instance.version = "1.10.3"
+    new_instance = TestOpenTofuDownloadGithub(version="1.10.4")
 
     if files := new_instance.tests_download_and_extract():
         assert inst_download._github_sha256_hash_of_bundle == {
-            "1.10.2": inst_download._github_sha256_hash_of_bundle["1.10.2"],
             "1.10.3": inst_download._github_sha256_hash_of_bundle["1.10.3"],
+            "1.10.4": inst_download._github_sha256_hash_of_bundle["1.10.4"],
         }
         assert (
             new_instance.get_packages_sha256_hash
@@ -185,7 +180,7 @@ def test_store_downloaded_bin(inst_download):
     inst_download.install_dir = tempfile.mkdtemp(prefix="opentofu_test_")
 
     inst_download.tests_store_downloaded_bin()
-    inst2_download = TestOpenTofuDownloadGithub(version="1.10.3")
+    inst2_download = TestOpenTofuDownloadGithub(version="1.10.4")
     inst2_download.install_dir = inst_download.install_dir
     inst2_download.tests_store_downloaded_bin()
     binaries_list = OpenTofuDownloadGithub.get_opentofu_bin_files_info()
@@ -195,26 +190,26 @@ def test_store_downloaded_bin(inst_download):
     assert isinstance(binaries_list[1], OpenTofuBinFileInfo), (
         "Second item in binaries list is not instance of OpenTofuBinFileInfo."
     )
-    assert binaries_list[0].bin_version == "1.10.2", (
+    assert binaries_list[0].bin_version == "1.10.3", (
         "Version of first binary is not correct."
     )
-    assert binaries_list[1].bin_version == "1.10.3", (
+    assert binaries_list[1].bin_version == "1.10.4", (
         "Version of second binary is not correct."
     )
-    hash_10_2 = inst_download.get_packages_sha256_hash["1.10.2"]
-    hash_10_3 = inst_download.get_packages_sha256_hash["1.10.3"]
+    hash_10_2 = inst_download.get_packages_sha256_hash["1.10.3"]
+    hash_10_3 = inst_download.get_packages_sha256_hash["1.10.4"]
     assert binaries_list[0].bin_sha256 == hash_10_2, (
-        "SHA256 hash of verxion 1.10.2 is not correct."
-    )
-    assert binaries_list[1].bin_sha256 == hash_10_3, (
         "SHA256 hash of verxion 1.10.3 is not correct."
     )
+    assert binaries_list[1].bin_sha256 == hash_10_3, (
+        "SHA256 hash of verxion 1.10.4 is not correct."
+    )
     assert binaries_list[0].bin_url.startswith(
-        "https://github.com/opentofu/opentofu/releases/download/v1.10.2"
-    ), "Url of version v1.10.2 is not correct."
-    assert binaries_list[1].bin_url.startswith(
         "https://github.com/opentofu/opentofu/releases/download/v1.10.3"
     ), "Url of version v1.10.3 is not correct."
+    assert binaries_list[1].bin_url.startswith(
+        "https://github.com/opentofu/opentofu/releases/download/v1.10.4"
+    ), "Url of version v1.10.4 is not correct."
 
 
 @pytest.mark.dependency(depends=["test_store_downloaded_bin"])

@@ -123,9 +123,9 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
                         cls._github_sha256_hash_of_bundle[ver] = hash_bin
 
     @property
-    def get_packages_sha256_hash(self) -> dict:
+    def get_packages_sha256_hash(cls) -> dict:
         """Get the SHA256 hash of the OpenTofu bundle."""
-        return self._github_sha256_hash_of_bundle
+        return cls._github_sha256_hash_of_bundle
 
     @protected
     def _get_download_url(self) -> str:
@@ -143,8 +143,19 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
             arch = "amd64"
             dpath = f"download/v{ver}/tofu_{ver}_{system}_{arch}.zip"
             url = f"https://github.com/opentofu/opentofu/releases/{dpath}"
-
         return url
+
+    @private
+    def __check_shasum(self, downloaded_sum: str) -> None:
+        """Check the SHA256 hash of the downloaded file."""
+
+        expected_sum = self.get_packages_sha256_hash.get(self.version)
+        if downloaded_sum != expected_sum:
+            self.error(
+                f"Downloaded file hash {downloaded_sum} does "
+                f"not match expected hash {expected_sum}."
+            )
+            raise RuntimeError("Downloaded file hash does not match.")
 
     @protected
     def _download_and_extract(self, extract_to: str) -> None:
@@ -171,15 +182,7 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
                     sha256.update(file.read())
                 downloaded_sum = sha256.hexdigest()
             self.info(f"Downloaded file hash: {downloaded_sum}")
-            if expected_sum := self._github_sha256_hash_of_bundle.get(ver):
-                if downloaded_sum != expected_sum:
-                    self.error(
-                        f"Downloaded file hash {downloaded_sum} does "
-                        f"not match expected hash {expected_sum}."
-                    )
-                    raise RuntimeError(
-                        "Downloaded file hash does not match expected hash."
-                    )
+            self.__check_shasum(downloaded_sum)
             self.info("Extracting...")
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(extract_to)
@@ -200,15 +203,7 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
                     sha256.update(file.read())
                     downloaded_sum = sha256.hexdigest()
             self.info(f"Downloaded file hash: {downloaded_sum}")
-            if expected_sum := self._github_sha256_hash_of_bundle.get(ver):
-                if downloaded_sum != expected_sum:
-                    self.error(
-                        f"Downloaded file hash {downloaded_sum} does "
-                        f"not match expected hash {expected_sum}."
-                    )
-                    raise RuntimeError(
-                        "Downloaded file hash does not match expected hash."
-                    )
+            self.__check_shasum(downloaded_sum)
             self.info("Extracting...")
             with tarfile.open(tar_path, "r:gz") as tar_ref:
                 tar_ref.extractall(extract_to)
@@ -252,7 +247,8 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
     download process from other sources.
     """
 
-    # pylint: disable=no-member, too-many-branches, too-many-statements
+    # pylint: disable=no-member
+
     __token: str
     __bearer_token: bool = False
     __auth_header_name: str = "Private-Token"
@@ -305,28 +301,57 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
         """Set the authentication header name."""
         self.__auth_header_name = value
 
+    def __check_shasum(self, downloaded_sum: str) -> None:
+        """Check the SHA256 hash of the downloaded file."""
+
+        if (
+            expected_sum := next(
+                (
+                    bin.bin_sha256
+                    for bin in self._opentofu_bin_files_info
+                    if bin.bin_version == self.version
+                ),
+                None,
+            )
+        ) is None:
+            self.error("Expected SHA256 hash not found.")
+            raise RuntimeError("Expected SHA256 hash not found.")
+        if downloaded_sum != expected_sum:
+            self.error(
+                f"Downloaded file hash {downloaded_sum} does "
+                f"not match expected hash {expected_sum}."
+            )
+            raise RuntimeError("Downloaded file hash does not match.")
+
+    def __authorization_url(self) -> Session:
+        """Function to add token to url if needed."""
+
+        header_auth = False
+        if self.__token is not None:
+            header_auth = True
+        if self.__bearer_token:
+            token = f"Bearer {self.__token}"
+        else:
+            token = self.__token
+        if header_auth:
+            headers = {
+                f"{self.__auth_header_name}": f"{token}",
+            }
+            result = self.session.get(self.url, headers=headers)
+        else:
+            result = self.session.get(self.url)
+
+        return result
+
     @protected
     def _download_and_extract(self, extract_to: str) -> None:
         """Function to download and extract tofu binary from other sources."""
 
-        self.header_auth = False
-        if self.__token is not None:
-            self.header_auth = True
         if (system := platform.system().lower()) == "windows":
             self.info(f"Using environment for {system}...")
             zip_path = os.path.join(extract_to, "tofu.zip")
             self.info(f"Downloading OpenTofu from {self.url}...")
-            if self.__bearer_token:
-                token = f"Bearer {self.__token}"
-            else:
-                token = self.__token
-            if self.header_auth:
-                headers = {
-                    f"{self.__auth_header_name}": f"{token}",
-                }
-                response = self.session.get(self.url, headers=headers)
-            else:
-                response = self.session.get(self.url)
+            response = self.__authorization_url()
             with open(zip_path, "wb") as file:
                 file.write(response.content)
             self.info("Calculating SHA256 hash of the downloaded file...")
@@ -335,22 +360,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
                     sha256.update(file.read())
                 downloaded_sum = sha256.hexdigest()
             self.info(f"Downloaded file hash: {downloaded_sum}")
-            if expected_sum := next(
-                (
-                    bin.bin_sha256
-                    for bin in self._opentofu_bin_files_info
-                    if bin.bin_version == self.version
-                ),
-                None,
-            ):
-                if downloaded_sum != expected_sum:
-                    self.error(
-                        f"Downloaded file hash {downloaded_sum} does "
-                        f"not match expected hash {expected_sum}."
-                    )
-                    raise RuntimeError(
-                        "Downloaded file hash does not match expected hash."
-                    )
+            self.__check_shasum(downloaded_sum)
             self.info("Extracting...")
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(extract_to)
@@ -358,17 +368,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
         elif (system := platform.system().lower()) == "linux":
             tar_path = os.path.join(extract_to, "tofu.tar.gz")
             self.info(f"Downloading OpenTofu from {self.url}...")
-            if self.__bearer_token:
-                token = f"Bearer {self.__token}"
-            else:
-                token = self.__token
-            if self.header_auth:
-                headers = {
-                    f"{self.__auth_header_name}": f"{token}",
-                }
-                response = self.session.get(self.url, headers=headers)
-            else:
-                response = self.session.get(self.url)
+            response = self.__authorization_url()
             with open(tar_path, "wb") as file:
                 file.write(response.content)
             self.info("Calculating SHA256 hash of the downloaded file...")
@@ -377,22 +377,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
                     sha256.update(file.read())
                     downloaded_sum = sha256.hexdigest()
             self.info(f"Downloaded file hash: {downloaded_sum}")
-            if expected_sum := next(
-                (
-                    bin.bin_sha256
-                    for bin in self._opentofu_bin_files_info
-                    if bin.bin_version == self.version
-                ),
-                None,
-            ):
-                if downloaded_sum != expected_sum:
-                    self.error(
-                        f"Downloaded file hash {downloaded_sum} does "
-                        f"not match expected hash {expected_sum}."
-                    )
-                    raise RuntimeError(
-                        "Downloaded file hash does not match expected hash."
-                    )
+            self.__check_shasum(downloaded_sum)
             self.info("Extracting...")
             with tarfile.open(tar_path, "r:gz") as tar_ref:
                 tar_ref.extractall(extract_to)

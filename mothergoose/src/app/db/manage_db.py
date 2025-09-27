@@ -1,3 +1,7 @@
+"""
+Module for managing YDB and DynamoDB operations asynchronously.
+"""
+
 import asyncio
 from typing import Any, TypeVar, Union
 
@@ -12,6 +16,8 @@ V = TypeVar("V")
 
 
 class PreparedYDBQueries:
+    """A collection of prepared YDB query strings."""
+
     @staticmethod
     def create_query(table: YDBTables) -> str:
         """

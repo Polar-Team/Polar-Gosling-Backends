@@ -1,5 +1,1 @@
-import os
-
-# from .main import *
-
-os.environ["PY_TEST"] = "False"
+"""App package initialization."""

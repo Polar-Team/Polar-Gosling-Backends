@@ -1,3 +1,7 @@
+"""
+YDB Configuration and Schema Models
+"""
+
 from typing import Optional
 
 from pydantic import Field, field_validator
@@ -10,6 +14,8 @@ from app.model.pydantic_base_models import PydanticBaseModelORM
 
 
 class YDBConfig(PydanticBaseModelORM):
+    """Configuration for YDB connection."""
+
     endpoint: str = Field(..., description="YDB endpoint URL")
     database: str = Field(..., description="YDB database name")
     pool_size: int = Field(10, description="Size of the session pools for YDB")
@@ -40,6 +46,8 @@ class YDBConfig(PydanticBaseModelORM):
 
 
 class YDBSchema(PydanticBaseModelORM):
+    """Schema for YDB integration."""
+
     config: YDBConfig = Field(..., description="Setup for YDB connection")
     default_table: str | None = Field(
         None, description="Default table name for operations (optional)"

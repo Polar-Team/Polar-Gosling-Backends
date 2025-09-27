@@ -69,7 +69,7 @@ class OpenTofuBinary(ABC):
         """Download and extract the OpenTofu binary from the given URL."""
 
     @abstractmethod
-    def store_downloaded_bin(self) -> None:
+    def store_downloaded_bin(self) -> tuple[str, str]:
         """Store the downloaded OpenTofu binary in the specified directory."""
 
 
@@ -123,11 +123,10 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
                         cls._github_sha256_hash_of_bundle[ver] = hash_bin
 
     @property
-    def get_packages_sha256_hash(cls) -> dict:
+    def get_packages_sha256_hash(self) -> dict:
         """Get the SHA256 hash of the OpenTofu bundle."""
-        return cls._github_sha256_hash_of_bundle
+        return self._github_sha256_hash_of_bundle
 
-    @protected
     def _get_download_url(self) -> str:
         """Function to get tofu download url from github"""
 
@@ -212,7 +211,7 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
             self.error(f"Unsupported system: {system}")
             raise RuntimeError(f"Unsupported system: {system}")
 
-    def store_downloaded_bin(self) -> None:
+    def store_downloaded_bin(self) -> tuple[str, str]:
         """Function for storing tofu bin in install dir."""
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -234,6 +233,14 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
                 bin_url=self.url,
             )
             OpenTofuDownloadGithub.add_opentofu_bin_info(info)
+        code = "FAILED"
+        version = self.version
+        for tofu in OpenTofuDownloadGithub.get_opentofu_bin_files_info():  # noqa: E501
+            if tofu.bin_version == self.version:
+                version = tofu.bin_version
+                code = "SUCCESS"
+                break
+        return version, code
 
 
 @logged
@@ -301,6 +308,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
         """Set the authentication header name."""
         self.__auth_header_name = value
 
+    @private
     def __check_shasum(self, downloaded_sum: str) -> None:
         """Check the SHA256 hash of the downloaded file."""
 
@@ -323,6 +331,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
             )
             raise RuntimeError("Downloaded file hash does not match.")
 
+    @private
     def __authorization_url(self) -> Session:
         """Function to add token to url if needed."""
 
@@ -386,7 +395,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
             self.error(f"Unsupported system: {system}")
             raise RuntimeError(f"Unsupported system: {system}")
 
-    def store_downloaded_bin(self) -> None:
+    def store_downloaded_bin(self) -> tuple[str, str]:
         """Function for storing tofu bin in install dir."""
 
         url = next(
@@ -426,7 +435,14 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
                 ),
                 bin_url=url,
             )
-            self._opentofu_bin_files_info.append(info)
+            OpenTofuDownloadGithub.add_opentofu_bin_info(info)
+        code = "FAILED"
+        version = self.version
+        for tofu in OpenTofuDownloadGithub.get_opentofu_bin_files_info():  # noqa: E501
+            if tofu.bin_version == self.version:
+                version = tofu.bin_version
+                code = "SUCCESS"
+        return version, code
 
 
 class OpenTofuUpdate(ABC):
@@ -520,7 +536,9 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
             install_dir=self.install_dir, version=last_version
         )
         downloader.store_downloaded_bin()
-        self.c_version = downloader.get_opentofu_bin_files_info()[-1].bin_version  # noqa: E501
+        self.c_version = downloader.get_opentofu_bin_files_info()[
+            -1
+        ].bin_version  # noqa: E501
         return downloader.get_opentofu_bin_files_info()[-1]
 
     @private

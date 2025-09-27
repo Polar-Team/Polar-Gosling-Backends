@@ -1,3 +1,5 @@
+"""Utility to restrict method access to specific classes."""
+
 import inspect
 from functools import wraps
 from typing import Any, Callable, TypeVar
@@ -6,6 +8,12 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 def only_called_by(*allowed_classes: str) -> Any:
+    """Decorator to restrict method access to specific classes.
+    Args:
+        *allowed_classes: Names of classes allowed to call the decorated def.
+    Raises:
+        PermissionError: If the method is called from an unauthorized class.
+    """
     allowed_set = set(allowed_classes)
 
     def decorator(method: F) -> Any:

@@ -1,3 +1,7 @@
+"""
+OpenTofu models for versioning and schema definitions.
+"""
+
 from dataclasses import dataclass, field
 from typing import Any, Tuple, Union
 
@@ -10,16 +14,16 @@ from app.types.ydb_types import YDBBool, YDBType, YDBUtf8
 # YDB models setup for OpenTofu versioning
 
 
-def make_ydb_type(type: str) -> Any:
+def make_ydb_type(ydb_type: str) -> Any:
     """
     Create a YDB type instance based on the provided type string.
     Args:
-        type (str): The type string to create a YDB type for.
+        ydb_type (str): The type string to create a YDB type for.
     Returns:
         Tuple[YDBBool | YDBUtf8, ...]: A tuple containing the YDB type.
     """
 
-    return YDBType({"type": type}).root  # type: ignore[arg-type]
+    return YDBType({"type": ydb_type}).root  # type: ignore[arg-type]
 
 
 @dataclass
@@ -28,6 +32,8 @@ class OpenTofuVersionTableYDB:
     Represents a table schema for OpenTofu versioning.
     This class extends YDBTableSchema to include versioning information.
     """
+
+    # pylint: disable=too-few-public-methods
 
     table_name: str = "opentofu_version"
     columns: Tuple[str, ...] = field(
@@ -61,7 +67,7 @@ class OpenTofuVersionTableYDB:
             raise ValueError(
                 "The number of columns must match the number of row types."
             )
-        elif (
+        if (
             len(self.values_for_operate) != len(self.columns)
             and len(self.values_for_operate) != len(self.r_type)
             and len(self.values_for_operate) != 0
@@ -69,46 +75,43 @@ class OpenTofuVersionTableYDB:
             raise ValueError(
                 "The number of values foroinsert must match columns and types."
             )
-        elif self.table_name.startswith("opentofu_version") is False:
+        if self.table_name.startswith("opentofu_version") is False:
             raise ValueError("Table name must start with 'opentofu_version'.")
-        elif self.primary_key != "version_id":
+        if self.primary_key != "version_id":
             raise ValueError("Primary key must be 'version_id'.")
-        elif self.columns[0] != "version_id":
+        if self.columns[0] != "version_id":
             raise ValueError("The first column must be 'version_id'.")
-        elif self.columns[1] != "version":
+        if self.columns[1] != "version":
             raise ValueError("The second column must be 'version'.")
-        elif self.columns[2] != "source":
+        if self.columns[2] != "source":
             raise ValueError("The third column must be 'source'.")
-        elif self.columns[3] != "downloaded_at":
+        if self.columns[3] != "downloaded_at":
             raise ValueError("The fourth column must be 'downloaded_at'.")
-        elif self.columns[4] != "sha256_hash":
+        if self.columns[4] != "sha256_hash":
             raise ValueError("The fith column must be 'sha256_hash'.")
-        elif self.columns[5] != "active":
+        if self.columns[5] != "active":
             raise ValueError("The sixth column must be 'active'.")
-        elif (
+        if (
             self.r_type[0].type != "Utf8"
             or self.r_type[1].type != "Utf8"
             or self.r_type[2].type != "Utf8"
             or self.r_type[3].type != "Utf8"
             or self.r_type[4].type != "Utf8"
-            or self.r_type[5].type != "Bool"
         ):
             raise ValueError(
                 """
                 All rows except 'active'='Bool' must be Utf8 type.
                 """
             )
-        if schema := YDBTableSchema(  # type: ignore[call-arg]
+        if self.r_type[5].type != "Bool":
+            raise ValueError("The 'active' column must be of type 'Bool'.")
+        YDBTableSchema(  # type: ignore[call-arg]
             table_name=self.table_name,
             columns=self.columns,
             r_type=self.r_type,  # type: ignore[arg-type]
             primary_key=self.primary_key,
             values_for_operate=self.values_for_operate,
-        ):
-            schema  # Validate the schema
-
-
-OpenTofuYDBTables = Union[OpenTofuVersionTableYDB]
+        )
 
 
 @pydantic_dataclass(config=ConfigDict(frozen=True))
@@ -118,7 +121,9 @@ class OpenTofuModelYDB:
     This class can be extended to create specific OpenTofu models.
     """
 
-    tables: list[OpenTofuYDBTables] = Field(
+    # pylint: disable=too-few-public-methods
+
+    tables: list[Union[OpenTofuVersionTableYDB]] = Field(
         ..., description="List of table schemas to be created in YDB"
     )
 
@@ -142,9 +147,9 @@ class OpenTofuModelYDB:
         """Post-initialization logic can be added here if needed."""
         if self.tables is None or not isinstance(self.tables, list):
             raise ValueError("tables must be a non-empty list of tofu tables.")
-        elif self.model_name is None or not isinstance(self.model_name, str):
+        if self.model_name is None or not isinstance(self.model_name, str):
             raise ValueError("model_name must be a non-empty string.")
-        elif self.version is None or not isinstance(self.version, str):
+        if self.version is None or not isinstance(self.version, str):
             raise ValueError("version must be a non-empty string.")
 
 
@@ -158,6 +163,8 @@ class OpenTofuModelDynamoDB:
     This class can be extended to create specific OpenTofu models for DynamoDB.
     """
 
+    # pylint: disable=too-few-public-methods
+
     tables: list[DynamoDBTableSchema] = Field(
         ..., description="List of table schemas to be created in YDB"
     )
@@ -167,4 +174,3 @@ class OpenTofuModelDynamoDB:
 
     def __post_init__(self) -> None:
         """Post-initialization logic can be added here if needed."""
-        pass

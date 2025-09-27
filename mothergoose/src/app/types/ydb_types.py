@@ -1,3 +1,5 @@
+"""YDB types module"""
+
 from typing import Literal, Union
 
 from pydantic import BaseModel, ConfigDict, RootModel
@@ -40,6 +42,7 @@ class YDBBytes(BaseModel):
 
 
 class YDBType(
+    # pylint: disable=too-few-public-methods
     RootModel[
         Union[
             YDBUtf8,

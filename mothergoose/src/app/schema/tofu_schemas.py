@@ -1,3 +1,5 @@
+"""Schemas for OpenTofu backend options and binary file information."""
+
 import re
 
 from pydantic import BaseModel, field_validator

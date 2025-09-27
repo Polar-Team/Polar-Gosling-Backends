@@ -1,3 +1,7 @@
+"""
+Pydantic base models for YDB schemas.
+"""
+
 from pydantic import BaseModel, ConfigDict
 
 

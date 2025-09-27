@@ -1,3 +1,5 @@
+"""Utility functions for generating version IDs and other identifiers."""
+
 import functools
 import hashlib
 from typing import Any

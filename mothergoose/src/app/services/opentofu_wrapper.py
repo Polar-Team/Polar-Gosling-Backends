@@ -2,9 +2,9 @@
 
 import os
 import subprocess
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from accessify import private, protected
+from accessify import private
 
 from app.schema.tofu_schemas import OpenTofuBackendOptions
 from app.util.logging import logged
@@ -24,38 +24,26 @@ class OpenTofuWrapper:
         self.tofu_bin = tofu_bin
         self.backend_options = backend_options
 
-    @private
-    def __run(
-        self, args: List[str], capture_output: bool = False
-    ) -> subprocess.CompletedProcess:
-        cmd = [self.tofu_bin] + args
-        return subprocess.run(
-            cmd,
-            cwd=self.working_dir,
-            check=True,
-            capture_output=capture_output,
-            text=True,
-        )
-
-    @protected
-    def _init(self) -> None:
-        self.backend_options
+    def init(self) -> None:
+        """Initialize the OpenTofu working directory."""
         self.__run(["init"])
 
-    @protected
-    def _plan(self, out_file: Optional[str] = None) -> str:
+    def plan(self, out_file: Optional[str] = None) -> str:
+        """Create an OpenTofu plan."""
+        result = Any
         args = ["plan"]
         if out_file:
             args += ["-out", out_file]
             result = self.__run(args, capture_output=True)
         return result.stdout
 
-    @protected
-    def _apply(
+    def apply(
         self,
         plan_file: Optional[str] = None,
         auto_approve: bool = True,
     ) -> str:
+        """Apply the OpenTofu plan."""
+        result = Any
         args = ["apply"]
         if plan_file:
             args.append(plan_file)
@@ -64,10 +52,26 @@ class OpenTofuWrapper:
                 result = self.__run(args, capture_output=True)
         return result.stdout
 
-    @protected
-    def _destroy(self, auto_approve: bool = True) -> str:
+    def destroy(self, auto_approve: bool = True) -> str:
+        """Destroy the OpenTofu managed infrastructure."""
+        result = Any
         args = ["destroy"]
         if auto_approve:
             args.append("-auto-approve")
             result = self.__run(args, capture_output=True)
         return result.stdout
+
+    @private
+    def __run(
+        self, args: List[str], capture_output: bool = False
+    ) -> subprocess.CompletedProcess:
+        """Run the OpenTofu command with the given arguments."""
+
+        cmd = [self.tofu_bin] + args
+        return subprocess.run(
+            cmd,
+            cwd=self.working_dir,
+            check=True,
+            capture_output=capture_output,
+            text=True,
+        )

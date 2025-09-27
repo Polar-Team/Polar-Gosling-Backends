@@ -4,11 +4,22 @@ import logging
 from functools import wraps
 from typing import Any, Callable, TypeVar
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)  # pylint: disable=no-member
 F = TypeVar("F", bound=Callable[..., Any])
 
 
 def logged(cls: Any = None, *, name: str = "") -> Any:
+    """Class decorator to add a logger to the class.
+    The logger is initialized in the __init__ method of the class.
+    Args:
+        cls: The class to decorate.
+        name: Optional name for the logger. If not provided, it defaults to
+              "<ClassName>-<MethodName>".
+    Returns:
+        The decorated class with a logger attribute.
+    """
+    # pylint: disable=no-member
+
     def logged_for_init(func: F) -> Any:
         @wraps(func)
         def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:

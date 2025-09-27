@@ -5,7 +5,6 @@ import tempfile
 import pytest
 
 from app.services.download_and_update_opentofu_binary import (
-    OpenTofuBinary,
     OpenTofuDownloadGithub,
     OpenTofuUpdateGithub,
     OpenTofuDownloadFromOtherSource,

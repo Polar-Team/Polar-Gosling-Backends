@@ -1,3 +1,7 @@
+"""
+Database table schema definitions for YDB and DynamoDB.
+"""
+
 from typing import Any, Tuple, Union
 
 from pydantic import Field
@@ -10,6 +14,10 @@ YDBTypes = Union[YDBUtf8 | YDBInt64 | YDBDouble | YDBBytes | YDBBool]
 
 
 class YDBTableSchema(PydanticBaseModelORM):
+    """
+    Schema for a YDB table.
+    """
+
     table_name: str = Field(..., description="Name of the YDB table")
     columns: Tuple[str, ...] = Field(
         ..., description="List of key column names for the table"

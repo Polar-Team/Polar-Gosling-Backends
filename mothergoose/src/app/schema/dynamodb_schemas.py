@@ -1,3 +1,7 @@
+"""
+Schemas for DynamoDB configuration and table definitions.
+"""
+
 from pydantic import Field, field_validator
 
 from app.model.opentofu_models import OpenTofuModelDynamoDB
@@ -32,11 +36,14 @@ class DynamoDBConfig(PydanticBaseModelORM):
         """
         Validate and convert botocore_config to a dictionary if it is not None.
         """
+        result = None
         if value is None:
-            return {}
+            result = {}
         elif isinstance(value, dict):
-            return value
-        raise ValueError("botocore_config must be a dictionary or None.")
+            result = value
+        else:
+            raise ValueError("botocore_config must be a dictionary or None.")
+        return result
 
     @field_validator("endpoint_url", mode="before")
     @classmethod
@@ -44,13 +51,17 @@ class DynamoDBConfig(PydanticBaseModelORM):
         """
         Ensure endpoint_url is either None or a valid HTTP(S) URL string.
         """
+        result = None
         if value is None:
-            return value
+            result = value
         elif isinstance(value, str) and value.strip():
             if value.startswith("https://"):
-                return value
-            raise ValueError("endpoint_url must start with https://")
-        raise ValueError("endpoint_url must be a non-empty string or None.")
+                result = value
+        else:
+            raise ValueError(
+                "endpoint_url must start with https:// or be omitted value."
+            )
+        return result
 
 
 class DynamoDBSchema(PydanticBaseModelORM):

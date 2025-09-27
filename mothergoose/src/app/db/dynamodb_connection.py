@@ -3,7 +3,8 @@
 from typing import Any
 
 import aioboto3
-from aioboto3 import ClientError, ConnectionError
+from botocore.exceptions import ClientError
+from botocore.exceptions import ConnectionError as DynamoConnectionError
 
 from app.schema.dynamodb_schemas import DynamoDBSchema
 from app.util.logging import logged
@@ -12,6 +13,8 @@ from app.util.logging import logged
 @logged
 class AsyncDynamoDBConnection:
     """Asynchronous connection to DynamoDB using aioboto3."""
+
+    # pylint: disable=no-member
 
     def __init__(self, schema: DynamoDBSchema):
         self.connection_config = schema.config
@@ -35,4 +38,7 @@ class AsyncDynamoDBConnection:
                 return resource
             except ClientError as e:
                 self.error(f"Failed to connect to DynamoDB: {e}")
-                raise ConnectionError(f"Failed to connect to DynamoDB: {e}")
+                raise DynamoConnectionError() from e
+
+    async def process(self) -> Any:
+        """Process the DynamoDB operations using the provided schema."""

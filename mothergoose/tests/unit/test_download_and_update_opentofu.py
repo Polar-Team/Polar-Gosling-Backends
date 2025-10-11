@@ -369,6 +369,6 @@ def test_opentofu_update_github(ydb_schema):
         ydb_schema, install_dir=tempfile.mkdtemp(prefix="opentofu_test_")
     )
 
-    assert checker.c_version[1] == "1.10.6", (
+    assert checker.c_version[1] == updater.c_version[1], (
         "Current version is not correct in OpenTofuUpdateGithub."
     )

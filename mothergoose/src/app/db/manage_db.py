@@ -98,7 +98,7 @@ class PreparedYDBQueries:
 
         parameters = {
             f"${col}Var": (
-                searching_values[i],
+                searching_values[searching_columns.index(col)],
                 table.r_type[i].parametarized_type,
             )
             for i, col in enumerate(table.columns)
@@ -237,7 +237,8 @@ class AsyncYDBFunctionsCollections:
         Returns:
             ResultSet: The result set of the executed query.
         """
-        queries, parameters = [
+
+        configuration = [
             (
                 PreparedYDBQueries.select_with_parameters(
                     table,
@@ -249,6 +250,12 @@ class AsyncYDBFunctionsCollections:
             for table in tables
             if isinstance(table, YDBTables)
         ]
+
+        queries = []
+        parameters = []
+        for q, p in configuration:
+            queries.append(q)
+            parameters.append(p)
 
         async with pool:
             coros = [

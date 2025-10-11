@@ -1,6 +1,17 @@
 import pytest
+import os
 import time
 from testcontainers.core.container import DockerContainer
+
+os.environ["PY_TEST"] = "True"
+os.environ["DISABLE_ACCESSIFY"] = "True"
+
+
+@pytest.fixture(scope="session", name="mock_server_url")
+def mock_download_url():
+    url = "https://mockserver.com/1.10.4/tofu.zip"
+    token = "testtoken"
+    yield url, token
 
 
 @pytest.fixture(scope="session", name="ydb_container")

@@ -2,7 +2,7 @@ import os
 import platform
 
 import tempfile
-import asyncio
+
 
 import requests_mock
 import requests

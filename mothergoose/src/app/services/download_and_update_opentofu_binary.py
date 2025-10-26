@@ -435,7 +435,11 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
             )
             OpenTofuDownloadFromOtherSource.add_opentofu_bin_info(info)
         code = "FAILED"
-        for tofu in OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info():  # noqa: E501
+        for (
+            tofu
+        ) in (
+            OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info()
+        ):  # noqa: E501
             if tofu.bin_version == self.version:
                 version = tofu.bin_version
                 code = "SUCCESS"
@@ -476,6 +480,30 @@ class OpenTofuUpdate(ABC):
         await operation.process(
             table_name="opentofu_version",
         )
+
+    @protected
+    def _latest_info_update(
+        self, latest: OpenTofuBinFileInfo, source: Literal["github", "other"]
+    ) -> None:
+        for table in self.schema.model.tables:
+            if table.table_name == "opentofu_version":
+                table.values_for_operate = (
+                    self.get_version_info(
+                        latest.bin_sha256,
+                        latest.bin_version,
+                    ),
+                    latest.bin_version,
+                    source,
+                    datetime.now().isoformat(),
+                    latest.bin_sha256,
+                    True,
+                )
+        if isinstance(self.schema, YDBSchema):
+            self.info("Upserting data into YDB...")
+            asyncio.run(self._upsert_data_ydb())
+        elif isinstance(self.schema, DynamoDBSchema):
+            self.error("DynamoDB is not supported yet.")
+            raise NotImplementedError("DynamoDB is not supported yet.")
 
     @protected
     def _rollback_info_update(
@@ -682,33 +710,18 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
         rb: Optional[int] = 3,
     ) -> None:
         """Start the update process."""
-
+        self.debug(
+            f"Auth URL is ommited here you should see here empty: {auth_url}",
+        )
         if req := self.check_required_actions():
             self.info(f"Update required is {req}, starting the process...")
-            latest = self.__update_to_latest_version()
 
-            for table in self.schema.model.tables:
-                if table.table_name == "opentofu_version":
-                    table.values_for_operate = (
-                        self.get_version_info(
-                            latest.bin_sha256,
-                            latest.bin_version,
-                        ),
-                        latest.bin_version,
-                        "github",
-                        datetime.now().isoformat(),
-                        latest.bin_sha256,
-                        True,
-                    )
-
-            if isinstance(self.schema, YDBSchema):
-                self.info("Upserting data into YDB...")
-                asyncio.run(self._upsert_data_ydb())
-            elif isinstance(self.schema, DynamoDBSchema):
-                self.error("DynamoDB is not supported yet.")
-                raise NotImplementedError("DynamoDB is not supported yet.")
-
-            self._rollback_info_update(self.__download_rollback_releases(rb))
+            self._latest_info_update(
+                self.__update_to_latest_version(),
+                self._source,
+            )
+            if files := self.__download_rollback_releases(rb):
+                self._rollback_info_update(files)
 
         else:
             self.info("No update required, exiting.")
@@ -754,7 +767,9 @@ class OpenTofuUpdateOtherSource(OpenTofuUpdate):
                 for task in rollback_versions:
                     self.info(f"Downloading rollback version: {task}")
                     file_info = next(
-                        (file for file in self.files if file.bin_version == task),  # noqa: E501
+                        (
+                            file for file in self.files if file.bin_version == task
+                        ),  # noqa: E501
                         None,
                     )
                     if file_info is None:
@@ -810,6 +825,9 @@ class OpenTofuUpdateOtherSource(OpenTofuUpdate):
     ) -> None:
         """Start the update process."""
 
+        self.debug(
+            f"Rollback factor is ommited here you should see here empty: {rb}",
+        )
         if req := self.check_required_actions():
             self.info(f"Update required is {req}, starting the process...")
             latest_file = max(self.files, key=lambda x: x.bin_version)
@@ -831,28 +849,13 @@ class OpenTofuUpdateOtherSource(OpenTofuUpdate):
                 downloader.get_opentofu_bin_files_info()[-1].bin_sha256,
             )
 
-            for table in self.schema.model.tables:
-                if table.table_name == "opentofu_version":
-                    table.values_for_operate = (
-                        self.get_version_info(
-                            latest_file.bin_sha256,
-                            latest_file.bin_version,
-                        ),
-                        latest_file.bin_version,
-                        "other",
-                        datetime.now().isoformat(),
-                        latest_file.bin_sha256,
-                        True,
-                    )
+            self._latest_info_update(
+                latest_file,
+                self._source,
+            )
 
-            if isinstance(self.schema, YDBSchema):
-                self.info("Upserting data into YDB...")
-                asyncio.run(self._upsert_data_ydb())
-            elif isinstance(self.schema, DynamoDBSchema):
-                self.error("DynamoDB is not supported yet.")
-                raise NotImplementedError("DynamoDB is not supported yet.")
-
-            self._rollback_info_update(self.__download_rollback_releases())
+            if files := self.__download_rollback_releases():
+                self._rollback_info_update(files)
 
         else:
             self.info("No update required, exiting.")

@@ -12,7 +12,7 @@ import tempfile
 import zipfile
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from accessify import private, protected
 from requests import Session
@@ -21,6 +21,7 @@ from app.db.manage_db import AsyncYDBFunctionsCollections
 from app.db.ydb_connection import AsyncYDBOperations
 from app.schema.dynamodb_schemas import DynamoDBSchema
 from app.schema.tofu_schemas import OpenTofuBinFileInfo
+from app.schema.url_schemas import URLAuthSchema
 from app.schema.ydb_schemas import YDBSchema
 from app.util.generator import generate_version_id_decorator
 from app.util.logging import logged
@@ -252,11 +253,11 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
     download process from other sources.
     """
 
-    # pylint: disable=no-member
+    # pylint: disable=no-member,too-many-instance-attributes
 
     __token: str
     __bearer_token: bool = False
-    __auth_header_name: str = "Private-Token"
+    __auth_header_name: str = "PRIVATE-TOKEN"
     _opentofu_bin_files_info: list[OpenTofuBinFileInfo] = []
 
     def __init__(
@@ -434,11 +435,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
             )
             OpenTofuDownloadFromOtherSource.add_opentofu_bin_info(info)
         code = "FAILED"
-        for (
-            tofu
-        ) in (
-            OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info()
-        ):  # noqa: E501
+        for tofu in OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info():  # noqa: E501
             if tofu.bin_version == self.version:
                 version = tofu.bin_version
                 code = "SUCCESS"
@@ -479,6 +476,34 @@ class OpenTofuUpdate(ABC):
         await operation.process(
             table_name="opentofu_version",
         )
+
+    @protected
+    def _rollback_info_update(
+        self,
+        rollback: list[OpenTofuBinFileInfo],
+    ) -> None:
+        for rba in rollback:
+            for table in self.schema.model.tables:
+                if table.table_name == "opentofu_version":
+                    table.values_for_operate = (
+                        self.get_version_info(
+                            rba.bin_sha256,
+                            rba.bin_version,
+                        ),
+                        rba.bin_version,
+                        "other",
+                        datetime.now().isoformat(),
+                        rba.bin_sha256,
+                        False,
+                    )
+            if isinstance(self.schema, YDBSchema):
+                self.info("Upserting data into YDB...")
+                asyncio.run(self._upsert_data_ydb())
+            elif isinstance(self.schema, DynamoDBSchema):
+                self.error("DynamoDB is not supported yet.")
+                raise NotImplementedError(
+                    "DynamoDB is not supported yet.",
+                )
 
     @property
     async def get_current_version(
@@ -530,7 +555,11 @@ class OpenTofuUpdate(ABC):
         """Check if OpenTofu binary needs to be updated."""
 
     @abstractmethod
-    def start_update(self, rb: int) -> None:
+    def start_update(
+        self,
+        auth_url: Optional[URLAuthSchema] = None,
+        rb: Optional[int] = None,
+    ) -> None:
         """Start the update process."""
 
 
@@ -649,7 +678,8 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
 
     def start_update(
         self,
-        rb: int = 3,
+        auth_url: Optional[URLAuthSchema] = None,
+        rb: Optional[int] = 3,
     ) -> None:
         """Start the update process."""
 
@@ -678,25 +708,8 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
                 self.error("DynamoDB is not supported yet.")
                 raise NotImplementedError("DynamoDB is not supported yet.")
 
-            rollback = self.__download_rollback_releases(rb)
+            self._rollback_info_update(self.__download_rollback_releases(rb))
 
-            for rba in rollback:
-                for table in self.schema.model.tables:
-                    if table.table_name == "opentofu_version":
-                        table.values_for_operate = (
-                            self.get_version_info(
-                                rba.bin_sha256,
-                                rba.bin_version,
-                            ),
-                            rba.bin_version,
-                            "github",
-                            datetime.now().isoformat(),
-                            rba.bin_sha256,
-                            False,
-                        )
-                if isinstance(self.schema, YDBSchema):
-                    self.info("Upserting data into YDB...")
-                    asyncio.run(self._upsert_data_ydb())
         else:
             self.info("No update required, exiting.")
 
@@ -707,55 +720,139 @@ class OpenTofuUpdateOtherSource(OpenTofuUpdate):
     # pylint: disable=no-member
 
     _source: Literal["other"] = "other"
+    _rollaback: bool = False
 
     def __init__(
         self,
-        version: str,
-        url: str,
-        hash_sha256: str,
+        schema: YDBSchema | DynamoDBSchema,
+        files: list[OpenTofuBinFileInfo],
         install_dir: str | None = None,
     ) -> None:
-        self.current_version = self._get_current_version()
-        self.install_dir = install_dir or "/usr/local/bin"
-        self.url = url
-        self.version = version
-        self.hash_sha256 = hash_sha256
+        self.schema = schema
+        self.files = files
+        self.c_version = asyncio.run(self.get_current_version) or (
+            "dummy_id",
+            "0.0.0",
+            "dummy_hash",
+        )
+        self.install_dir = install_dir or f"/mnt/tofu_binary/{self.c_version}"
 
-    # @private
-    # def __download_rollback_releases(
-    #     self, rb_factor: int = 1
-    # ) -> list[OpenTofuBinFileInfo]:
-    #     """Download up to 1 previous versions from current version."""
-    #
-    #     if rb_factor < 1 or rb_factor > 3:
-    #         self.error("Rollback factor must be between 1 and 3.")
-    #         raise ValueError("Rollback factor must be between 1 and 3.")
-    #     available_versions = self.download_available_versions()
-    #     if self.c_version[1] in available_versions:
-    #         c_index = available_versions.index(self.c_version[1])
-    #         left = c_index + 1
-    #         right = c_index + (rb_factor + 1)
-    #         rollback_versions = available_versions[left:right]
-    #         for task in rollback_versions:
-    #             self.info(f"Downloading rollback version: {task}")
-    #             instance = OpenTofuDownloadGithub(
-    #                 install_dir=self.install_dir,
-    #                 version=task,
-    #             )
-    #             instance.store_downloaded_bin()
-    #
-    #   all_versions = OpenTofuDownloadGithub.get_opentofu_bin_files_info()
-    #         result = all_versions[-rb_factor:]
-    #     else:
-    #         self.error(
-    #             f"""Current version {self.c_version} not found
-    #             in available versions.
-    #             """
-    #         )
-    #         raise RuntimeError(
-    #             f"""
-    #             Current version {self.c_version} not found
-    #             in available versions.
-    #             """
-    #         )
-    #     return result
+    @private
+    def __download_rollback_releases(self) -> list[OpenTofuBinFileInfo] | list:
+        """Download all previous versions from current version."""
+
+        rb = len(self.files) - 1
+
+        result = []
+        if rb != 0 and rb < 3 and self._rollaback:
+            available_versions = self.files.bin_version
+            if self.c_version[1] in available_versions:
+                c_index = available_versions.index(self.c_version[1])
+                left = c_index + 1
+                right = c_index + (rb + 1)
+                rollback_versions = available_versions[left:right]
+                for task in rollback_versions:
+                    self.info(f"Downloading rollback version: {task}")
+                    file_info = next(
+                        (file for file in self.files if file.bin_version == task),  # noqa: E501
+                        None,
+                    )
+                    if file_info is None:
+                        self.error(f"File info for version {task} not found.")
+                        raise RuntimeError(
+                            f"File info for version {task} not found.",
+                        )
+                    instance = OpenTofuDownloadFromOtherSource(
+                        install_dir=self.install_dir,
+                        version=task,
+                        url=file_info.bin_url,
+                        hash_sha256=file_info.bin_sha256,
+                    )
+                    instance.store_downloaded_bin()
+
+                c = OpenTofuDownloadFromOtherSource
+                all_versions = c.get_opentofu_bin_files_info()
+                result = all_versions[-rb:]
+            else:
+                self.error(
+                    f"""Current version {self.c_version} not found
+                    in available versions.
+                    """
+                )
+                raise RuntimeError(
+                    f"""
+                    Current version {self.c_version} not found
+                    in available versions.
+                    """
+                )
+        return result
+
+    def download_available_versions(self) -> list[str]:
+        """Download available OpenTofu versions from other source."""
+
+        versions = [file.bin_version for file in self.files]
+        return sorted(versions, reverse=True)
+
+    def check_required_actions(self) -> bool:
+        """Check if OpenTofu binary needs to be updated."""
+
+        if (cversion := self.c_version[1]) == max(
+            file.bin_version for file in self.files
+        ):
+            self.info(f"Tofu already at the last version: {cversion}")
+            return False
+        return True
+
+    def start_update(
+        self,
+        auth_url: Optional[URLAuthSchema] = None,
+        rb: Optional[int] = None,
+    ) -> None:
+        """Start the update process."""
+
+        if req := self.check_required_actions():
+            self.info(f"Update required is {req}, starting the process...")
+            latest_file = max(self.files, key=lambda x: x.bin_version)
+            downloader = OpenTofuDownloadFromOtherSource(
+                version=latest_file.bin_version,
+                url=latest_file.bin_url,
+                hash_sha256=latest_file.bin_sha256,
+                install_dir=self.install_dir,
+            )
+            if auth_url is not None:
+                downloader.token = auth_url.token
+                downloader.bearer_token = auth_url.bearer
+                downloader.auth_header_name = auth_url.auth_header
+
+            downloader.store_downloaded_bin()
+            self.c_version = (
+                "latest_id",
+                downloader.get_opentofu_bin_files_info()[-1].bin_version,
+                downloader.get_opentofu_bin_files_info()[-1].bin_sha256,
+            )
+
+            for table in self.schema.model.tables:
+                if table.table_name == "opentofu_version":
+                    table.values_for_operate = (
+                        self.get_version_info(
+                            latest_file.bin_sha256,
+                            latest_file.bin_version,
+                        ),
+                        latest_file.bin_version,
+                        "other",
+                        datetime.now().isoformat(),
+                        latest_file.bin_sha256,
+                        True,
+                    )
+
+            if isinstance(self.schema, YDBSchema):
+                self.info("Upserting data into YDB...")
+                asyncio.run(self._upsert_data_ydb())
+            elif isinstance(self.schema, DynamoDBSchema):
+                self.error("DynamoDB is not supported yet.")
+                raise NotImplementedError("DynamoDB is not supported yet.")
+
+            self._rollback_info_update(self.__download_rollback_releases())
+
+        else:
+            self.info("No update required, exiting.")

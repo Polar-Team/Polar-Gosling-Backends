@@ -255,7 +255,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
 
     # pylint: disable=no-member,too-many-instance-attributes
 
-    __token: str
+    __token: str = None
     __bearer_token: bool = False
     __auth_header_name: str = "PRIVATE-TOKEN"
     _opentofu_bin_files_info: list[OpenTofuBinFileInfo] = []
@@ -435,11 +435,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
             )
             OpenTofuDownloadFromOtherSource.add_opentofu_bin_info(info)
         code = "FAILED"
-        for (
-            tofu
-        ) in (
-            OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info()
-        ):  # noqa: E501
+        for tofu in OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info():  # noqa: E501
             if tofu.bin_version == self.version:
                 version = tofu.bin_version
                 code = "SUCCESS"
@@ -727,13 +723,18 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
             self.info("No update required, exiting.")
 
 
+@logged
+@with_requests_session(
+    retries=3,
+    timeout=3,
+)
 class OpenTofuUpdateOtherSource(OpenTofuUpdate):
     """Class for Updating OpenTofu binary from other sources."""
 
     # pylint: disable=no-member
 
     _source: Literal["other"] = "other"
-    _rollaback: bool = False
+    _rollback: bool = False
 
     def __init__(
         self,
@@ -750,6 +751,16 @@ class OpenTofuUpdateOtherSource(OpenTofuUpdate):
         )
         self.install_dir = install_dir or f"/mnt/tofu_binary/{self.c_version}"
 
+    @property
+    def rollaback(self) -> bool:
+        """Get the rollback flag."""
+        return self._rollback
+
+    @rollaback.setter
+    def rollback(self, value: bool) -> None:
+        """Set the rollback flag."""
+        self._rollback = value
+
     @private
     def __download_rollback_releases(self) -> list[OpenTofuBinFileInfo] | list:
         """Download all previous versions from current version."""
@@ -757,8 +768,8 @@ class OpenTofuUpdateOtherSource(OpenTofuUpdate):
         rb = len(self.files) - 1
 
         result = []
-        if rb != 0 and rb < 3 and self._rollaback:
-            available_versions = self.files.bin_version
+        if rb != 0 and rb < 3 and self._rollback:
+            available_versions = self.download_available_versions()
             if self.c_version[1] in available_versions:
                 c_index = available_versions.index(self.c_version[1])
                 left = c_index + 1
@@ -768,8 +779,10 @@ class OpenTofuUpdateOtherSource(OpenTofuUpdate):
                     self.info(f"Downloading rollback version: {task}")
                     file_info = next(
                         (
-                            file for file in self.files if file.bin_version == task
-                        ),  # noqa: E501
+                            file
+                            for file in self.files
+                            if file.bin_version == task  # noqa: E501
+                        ),
                         None,
                     )
                     if file_info is None:

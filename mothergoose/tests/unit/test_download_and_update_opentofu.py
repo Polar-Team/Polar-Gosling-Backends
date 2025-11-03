@@ -8,10 +8,12 @@ import requests_mock
 import requests
 import pytest
 
+from pydantic import ValidationError
 from app.services.download_and_update_opentofu_binary import (
     OpenTofuDownloadGithub,
-    OpenTofuUpdateGithub,
     OpenTofuDownloadFromOtherSource,
+    OpenTofuUpdateGithub,
+    OpenTofuUpdateOtherSource,
 )
 from app.schema.tofu_schemas import OpenTofuBinFileInfo
 
@@ -22,11 +24,32 @@ from app.schema.ydb_schemas import (
     YDBSchema,
     OpenTofuModelYDB,
 )
+from app.schema.url_schemas import URLAuthSchema
 
 from ydb import AnonymousCredentials
 from ydb.issues import GenericError as AsyncGenericError
 from app.db.ydb_connection import AsyncYDBOperations
 from app.db.manage_db import AsyncYDBFunctionsCollections
+
+
+class MockDownloader:
+    def __init__(self, token: str, auth_header: str, bearer: bool) -> None:
+        self.token = token
+        self.auth_header = auth_header
+        self.bearer = bearer
+
+    def download(self) -> str:
+        # Simulate download logic based on auth type
+        if self.auth_header == "PRIVATE-TOKEN":
+            return f"Downloaded with GitLab token: {self.token}"
+        elif self.auth_header == "Authorization" and self.token.startswith(
+            "ghp_",
+        ):
+            return f"Downloaded with GitHub token: {self.token}"
+        elif self.auth_header == "Authorization" and self.bearer:
+            return f"Downloaded with Bearer token: {self.token}"
+        else:
+            return f"Downloaded with JWT token: {self.token}"
 
 
 class TestOpenTofuDownloadGithub(OpenTofuDownloadGithub):
@@ -370,5 +393,173 @@ def test_opentofu_update_github(ydb_schema):
     )
 
     assert checker.c_version[1] == updater.c_version[1], (
+        "Current version is not correct in OpenTofuUpdateGithub."
+    )
+
+
+@pytest.mark.parametrize(
+    "token,bearer,auth_header,expected",
+    [
+        (
+            "sometoken",
+            True,
+            "Authorization",
+            "Downloaded with Bearer token: sometoken",
+        ),
+        (
+            "header.payload.signature",
+            False,
+            "Authorization",
+            "Downloaded with JWT token: header.payload.signature",
+        ),
+        (
+            "ghp_" + "a" * 40,
+            False,
+            "Authorization",
+            "Downloaded with GitHub token: " + "ghp_" + "a" * 40,
+        ),
+        (
+            "glpat-" + "a" * 60,
+            False,
+            "PRIVATE-TOKEN",
+            "Downloaded with GitLab token: " + "glpat-" + "a" * 60,
+        ),
+    ],
+)
+def test_auth_types_valid(token, bearer, auth_header, expected):
+    schema = URLAuthSchema(token=token, bearer=bearer, auth_header=auth_header)
+    downloader = MockDownloader(schema.token, schema.auth_header, bearer)
+    assert downloader.download() == expected
+
+
+@pytest.mark.parametrize(
+    "token,bearer,auth_header",
+    [
+        ("", True, "Authorization"),
+        ("invalid.jwt", False, "Authorization"),
+        ("ghp_" + "a" * 10, False, "Authorization"),
+        ("glpat-" + "a" * 10, False, "PRIVATE-TOKEN"),
+        ("glpb-" + "a" * 60, False, "PRIVATE-TOKEN"),
+    ],
+)
+def test_auth_types_invalid(token, bearer, auth_header):
+    with pytest.raises(ValidationError):
+        URLAuthSchema(token=token, bearer=bearer, auth_header=auth_header)
+
+
+@pytest.mark.dependency(depends=["test_opentofu_update_github"])
+def test_opentofu_update_other(ydb_schema, mock_server_url):
+    """Function for testing OpenTofuUpdateOtherSource class."""
+
+    if (system := platform.system().lower()) == "linux":
+        if (arch := platform.machine().lower()) in ("x86_64", "amd64"):
+            arch = "amd64"
+        else:
+            arch = "arm64"
+            dpath_1 = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
+            dpath_2 = f"v1.10.5/tofu_1.10.5_{system}_{arch}.tar.gz"
+            dpath_3 = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
+    else:
+        arch = "amd64"
+        dpath_1 = f"v1.10.6/tofu_1.10.6_{system}_{arch}.zip"
+        dpath_2 = f"v1.10.5/tofu_1.10.5_{system}_{arch}.zip"
+        dpath_3 = f"v1.10.4/tofu_1.10.4_{system}_{arch}.zip"
+
+    response_first = requests.get(
+        f"https://github.com/opentofu/opentofu/releases/download/{dpath_3}"
+    )
+    response_second = requests.get(
+        f"https://github.com/opentofu/opentofu/releases/download/{dpath_2}"
+    )
+    url_first = "https://mockserver.com/1.10.4/tofu.zip"
+    url_second = "https://mockserver.com/1.10.5/tofu.zip"
+    updater_1 = OpenTofuUpdateOtherSource(
+        ydb_schema,
+        install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
+        files=[
+            OpenTofuBinFileInfo(
+                bin_version="1.10.4",
+                bin_url=url_first,
+                bin_sha256="88d0ab0a240039816d487625bde4152e64b8dcc3ba53b985fbdf9458cbee7fe2",  # noqa: E501
+            ),
+            OpenTofuBinFileInfo(
+                bin_version="1.10.5",
+                bin_url=url_second,
+                bin_sha256="54dfe6b4b2d4d4d4c2f56870b6e02a433b2f059b3408177092610aa8fd0dcdf0",  # noqa: E501
+            ),
+        ],
+    )
+    with requests_mock.Mocker() as m:
+        m.get(
+            url_first,
+            content=response_first.content,
+        )
+        m.get(
+            url_second,
+            content=response_second.content,
+        )
+
+        updater_1.rollback = True
+        updater_1.start_update()
+
+    assert updater_1.c_version[1] == "1.10.5", (
+        "Rollback to previous version did not work."
+    )
+
+    response_third = requests.get(
+        f"https://github.com/opentofu/opentofu/releases/download/{dpath_1}"
+    )
+    url_third = "https://mockserver.com/1.10.6/tofu.zip"
+    updater_2 = OpenTofuUpdateOtherSource(
+        ydb_schema,
+        install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
+        files=[
+            OpenTofuBinFileInfo(
+                bin_version="1.10.6",
+                bin_url=url_third,
+                bin_sha256="e8c475a6b13ac7a01ff53f1d2f55b103f2086e8454133580404f338b5a1ebaed",  # noqa: E501
+            ),
+        ],
+    )
+    with requests_mock.Mocker() as m:
+        m.get(
+            url_third,
+            content=response_third.content,
+            request_headers={
+                "PRIVATE-TOKEN": "glpat-" + "a" * 60,
+            },
+        )
+
+        updater_2.start_update(
+            auth_url=URLAuthSchema(
+                auth_header="PRIVATE-TOKEN",
+                bearer=False,
+                token="glpat-" + "a" * 60,
+            )
+        )
+
+    checker = OpenTofuUpdateOtherSource(
+        ydb_schema,
+        install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
+        files=[
+            OpenTofuBinFileInfo(
+                bin_version="1.10.6",
+                bin_url=url_first,
+                bin_sha256="e8c475a6b13ac7a01ff53f1d2f55b103f2086e8454133580404f338b5a1ebaed",  # noqa: E501
+            ),
+            OpenTofuBinFileInfo(
+                bin_version="1.10.5",
+                bin_url=url_second,
+                bin_sha256="54dfe6b4b2d4d4d4c2f56870b6e02a433b2f059b3408177092610aa8fd0dcdf0",  # noqa: E501
+            ),
+            OpenTofuBinFileInfo(
+                bin_version="1.10.4",
+                bin_url=url_first,
+                bin_sha256="88d0ab0a240039816d487625bde4152e64b8dcc3ba53b985fbdf9458cbee7fe2",  # noqa: E501
+            ),
+        ],
+    )
+
+    assert checker.c_version[1] == updater_2.c_version[1], (
         "Current version is not correct in OpenTofuUpdateGithub."
     )

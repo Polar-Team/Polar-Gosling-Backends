@@ -30,7 +30,7 @@ class URLAuthSchema(PydanticBaseModelORM):
             if not value.startswith("glpat-") or len(value) < 20:
                 raise ValueError(
                     "GitLab PRIVATE-TOKEN must start with 'glpat-'"
-                    "and be at least 60 characters"
+                    "and be at least 20 characters"
                 )
         elif info.data.get(
             "auth_header",

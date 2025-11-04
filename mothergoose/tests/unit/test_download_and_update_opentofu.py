@@ -9,7 +9,7 @@ import requests
 import pytest
 
 from pydantic import ValidationError
-from app.services.download_and_update_opentofu_binary import (
+from app.services.opentofu_binary import (
     OpenTofuDownloadGithub,
     OpenTofuDownloadFromOtherSource,
     OpenTofuUpdateGithub,

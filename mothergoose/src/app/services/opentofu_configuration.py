@@ -2,33 +2,37 @@
 
 import tempfile
 from dataclasses import dataclass
-from typing import Dict, Literal, Union, Optional, List
-from jinja2 import Environment, FileSystemLoader
+from typing import Dict, List, Literal, Optional, Union
 
 from accessify import private
+from jinja2 import Environment, FileSystemLoader
 from tofupy import Tofu
 
-from app.util.logging import logged
+from app.schema.tofu_schemas import TofuBackendS3Options, TofuProvidersVer
 from app.schema.url_schemas import URLAuthSchema
-from app.schema.tofu_schemas import (
-    OpenTofuBackendS3Options,
-    OpenTofuProvidersConstraints,
-)
+from app.util.logging import logged
 
 from .opentofu_binary import OpenTofuUpdateGithub, OpenTofuUpdateOtherSource
 
 
 @dataclass
 class TofuSetting:
-    providers: List[OpenTofuProvidersConstraints]
-    backend_s3_options: OpenTofuBackendS3Options
+    """
+    Tofu settings dataclass for OpenTofu configuration.
+    Attributes:
+        providers (List[OpenTofuProvidersConstraints]): List of provider constraints. # noqa
+        backend_s3_options (OpenTofuBackendS3Options): S3 backend options.
+    """
+
+    providers: List[TofuProvidersVer]
+    backend_s3_options: TofuBackendS3Options
 
 
 @logged
 class OpenTofuConfiguration:
     """Class for OpenTofu configuration management."""
 
-    # pylint: disable=no-member
+    # pylint: disable=no-member,too-many-instance-attributes
 
     __updater_rollback: bool = False
     __updater_auth_url: Optional[URLAuthSchema] = None
@@ -56,6 +60,7 @@ class OpenTofuConfiguration:
     ) -> None:
         self.updater = updater
         self.tofu = Tofu()
+        self.tofu_settings = tofu_settings
 
     @property
     def binary_path(self) -> str:
@@ -172,7 +177,7 @@ class OpenTofuConfiguration:
         Args:
             factor (int): Updater rollback factor to set.
         """
-        if factor < 1 and factor > 3:
+        if 1 < factor < 3:
             raise ValueError("Rollback factor must be between 1 and 3")
         self.__updater_rollback_factor = factor
 
@@ -196,6 +201,7 @@ class OpenTofuConfiguration:
     @private
     def __create_tofu_configuration_from_templates(self) -> None:
         """Create OpenTofu configuration from templates."""
+
         self.info("Creating OpenTofu configuration from templates...")
         template_loader = FileSystemLoader(
             searchpath="./templates",

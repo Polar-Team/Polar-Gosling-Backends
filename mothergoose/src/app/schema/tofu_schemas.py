@@ -5,7 +5,7 @@ import re
 from pydantic import BaseModel, field_validator
 
 
-class OpenTofuBackendS3Options(BaseModel):
+class TofuBackendS3Options(BaseModel):
     """Data schema for OpenTofu S3 backend options."""
 
     bucket: str
@@ -13,7 +13,6 @@ class OpenTofuBackendS3Options(BaseModel):
     region: str
     endpoint: str | None = None
     profile: str | None = None
-    endpoint: str | None = None
     role_arn: str | None = None
     dynamodb_table: str | None = None
 
@@ -46,7 +45,7 @@ class OpenTofuBackendS3Options(BaseModel):
         return value
 
 
-class OpenTofuProvidersConstraints(BaseModel):
+class TofuProvidersVer(BaseModel):
     """Data schema for OpenTofu providers constraints."""
 
     name: str
@@ -57,9 +56,9 @@ class OpenTofuProvidersConstraints(BaseModel):
     @classmethod
     def validate_version_constraint(cls, value: str) -> str:
         """Validate that the version constraint follows Terraform syntax."""
-        constraint_pattern = (
-            r"^(=|!=|>=|<=|>|<)?\s*\d+(\.\d+){0,2}(-[a-zA-Z0-9]+)?(\+[a-zA-Z0-9]+)?$"  # noqa
-        )
+        constraint_pattern = r"""
+        ^(=|!=|>=|<=|>|<)?\s*\d+(\.\d+){0,2}(-[a-zA-Z0-9]+)?(\+[a-zA-Z0-9]+)?$
+        """
         if not re.match(constraint_pattern, value):
             raise ValueError(f"Invalid version constraint: {value}")
         return value

@@ -1,24 +1,42 @@
 """OpenTofuConfiguration class for managing OpenTofu configurations."""
 
 import tempfile
+from dataclasses import dataclass
+from typing import Dict, List, Literal, Optional, Union
 
-# from os import symlink
-from typing import Union, Literal, Dict
 from accessify import private
-
+from jinja2 import Environment, FileSystemLoader
 from tofupy import Tofu
 
+from app.schema.tofu_schemas import TofuBackendS3Options, TofuProvidersVer
+from app.schema.url_schemas import URLAuthSchema
 from app.util.logging import logged
-from app.services.download_and_update_opentofu_binary import (
-    OpenTofuUpdateGithub,
-    OpenTofuUpdateOtherSource,
-)
+
+from .opentofu_binary import OpenTofuUpdateGithub, OpenTofuUpdateOtherSource
+
+
+@dataclass
+class TofuSetting:
+    """
+    Tofu settings dataclass for OpenTofu configuration.
+    Attributes:
+        providers (List[OpenTofuProvidersConstraints]): List of provider constraints. # noqa
+        backend_s3_options (OpenTofuBackendS3Options): S3 backend options.
+    """
+
+    providers: List[TofuProvidersVer]
+    backend_s3_options: TofuBackendS3Options
 
 
 @logged
 class OpenTofuConfiguration:
     """Class for OpenTofu configuration management."""
 
+    # pylint: disable=no-member,too-many-instance-attributes
+
+    __updater_rollback: bool = False
+    __updater_auth_url: Optional[URLAuthSchema] = None
+    __updater_rollback_factor: int = 3
     __binary_path: str = "/usr/local/bin/tofu"
     __log_level: Literal[
         "TRACE",
@@ -38,9 +56,11 @@ class OpenTofuConfiguration:
             OpenTofuUpdateGithub,
             OpenTofuUpdateOtherSource,
         ],
+        tofu_settings: TofuSetting,
     ) -> None:
         self.updater = updater
         self.tofu = Tofu()
+        self.tofu_settings = tofu_settings
 
     @property
     def binary_path(self) -> str:
@@ -105,15 +125,109 @@ class OpenTofuConfiguration:
         """
         self.__env = environment
 
+    @property
+    def updater_rollback(self) -> bool:
+        """Get the updater rollback status.
+
+        Returns:
+            bool: Updater rollback status.
+        """
+        return self.__updater_rollback
+
+    @updater_rollback.setter
+    def updater_rollback(self, rollback: bool) -> None:
+        """Set the updater rollback status.
+
+        Args:
+            rollback (bool): Updater rollback status to set.
+        """
+        self.__updater_rollback = rollback
+
+    @property
+    def updater_auth_url(self) -> Optional[URLAuthSchema]:
+        """Get the updater authentication URL.
+
+        Returns:
+            Optional[URLAuthSchema]: Updater authentication URL.
+        """
+        return self.__updater_auth_url
+
+    @updater_auth_url.setter
+    def updater_auth_url(self, auth_url: URLAuthSchema) -> None:
+        """Set the updater authentication URL.
+
+        Args:
+            auth_url (URLAuthSchema): Updater authentication URL to set.
+        """
+        self.__updater_auth_url = auth_url
+
+    @property
+    def updater_rollback_factor(self) -> int:
+        """Get the updater rollback factor.
+
+        Returns:
+            int: Updater rollback factor.
+        """
+        return self.__updater_rollback_factor
+
+    @updater_rollback_factor.setter
+    def updater_rollback_factor(self, factor: int) -> None:
+        """Set the updater rollback factor.
+
+        Args:
+            factor (int): Updater rollback factor to set.
+        """
+        if 1 < factor < 3:
+            raise ValueError("Rollback factor must be between 1 and 3")
+        self.__updater_rollback_factor = factor
+
     @private
     def __update_opentofu_binaries(self) -> str:
         """Create OpenTofu configuration from templates."""
 
-        self.updater.start_update()
+        if self.updater.c_version[0] == "dummy_id":
+            self.info("Updating OpenTofu binary...")
+            if isinstance(self.updater, OpenTofuUpdateOtherSource):
+                self.info("Using other source to update OpenTofu binary...")
+                self.updater.rollback = self.__updater_rollback
+                self.updater.start_update(auth_url=self.__updater_auth_url)
+            else:
+                self.info("Using GitHub to update OpenTofu binary...")
+                self.updater.start_update(
+                    rb=self.__updater_rollback_factor,
+                )
+        return self.updater.c_version[1]
 
     @private
-    def __create_tofu_configuration_from_templates(self) -> str:
+    def __create_tofu_configuration_from_templates(self) -> None:
         """Create OpenTofu configuration from templates."""
+
+        self.info("Creating OpenTofu configuration from templates...")
+        template_loader = FileSystemLoader(
+            searchpath="./templates",
+        )
+        template_env = Environment(loader=template_loader)
+
+        template = template_env.get_template("tofu_version.j2")
+
+        version_tf_output = template.render(
+            tofu_version=self.updater.c_version[1],
+            tofu_s3_bucket=self.tofu_settings.backend_s3_options.bucket,
+            tofu_s3_key=self.tofu_settings.backend_s3_options.key,
+            tofu_s3_region=self.tofu_settings.backend_s3_options.region,
+            tofu_s3_profile=self.tofu_settings.backend_s3_options.profile,
+            tofu_s3_endpoint=self.tofu_settings.backend_s3_options.endpoint,
+            tofu_s3_role_arn=self.tofu_settings.backend_s3_options.role_arn,
+            tofu_s3_dynamodb_table=self.tofu_settings.backend_s3_options.dynamodb_table,  # noqa
+            tofu_providers=self.tofu_settings.providers,
+        )
+
+        version_tf_path = f"{self.__tofu_workspace}/versions.tf"
+
+        with open(version_tf_path, "w", encoding="utf-8") as version_tf_file:
+            version_tf_file.write(version_tf_output)
+
+        self.info(f"OpenTofu configuration created at {version_tf_path}")
 
     def setup_topfu_configuration(self) -> None:
         """Set up OpenTofu configuration.
@@ -122,6 +236,7 @@ class OpenTofuConfiguration:
             config_path (str): Path to the OpenTofu configuration file.
         """
 
+        self.__update_opentofu_binaries()
         self.__create_tofu_configuration_from_templates()
 
         self.tofu.binary_path = self.__binary_path

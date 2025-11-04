@@ -1,0 +1,28 @@
+resource "tls_private_key" "key" {
+  algorithm = "{{ touf_vm_key_algorithm }}"
+  rsa_bits  = {{ tofu_vm_key_rsa_bits }}
+}
+
+resource "local_file" "private_key" {
+  content  = tls_private_key.key.private_key_pem
+  filename = "${path.module}/SSH_KEY"
+}
+
+module "gitlab-worker" {
+
+{% if tofu_module_source.type == "git" %}
+  source = "git::{{ tofu_module_source.url }}.git?ref={{ tofu_module_source.version }}"
+{% else %}
+  source = "{{ tofu_module_source.url }}"
+  version = "{{ tofu_module_source.version }}"
+{% endif %}
+  for_each = var.tofu_gitlab_worker_instances
+  prefix = each.key
+{% for key, value in  tofu_gitlab_worker_module_extra_variables %}
+  {{ key }} = each.value.{{ value }}
+{% endfor %
+
+{% if tofu_gitlab_worker_type  == "vm" %}
+  cloud-init = local.deb-cloud-init-gitlab-docker
+{% endif %
+}

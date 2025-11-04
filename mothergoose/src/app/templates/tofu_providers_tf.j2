@@ -1,0 +1,7 @@
+{% for provider in tofu_providers %}
+provider "{{ provider.name }}" {
+{% for key, value in provider.settings.items() %}
+  {{ key }} = {{ value }}
+{% endfor %}
+}
+{% endfor %}

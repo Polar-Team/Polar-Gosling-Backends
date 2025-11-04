@@ -771,6 +771,7 @@ dependencies = [
     { name = "grpcio-tools" },
     { name = "pydantic" },
     { name = "requests" },
+    { name = "tofupy" },
     { name = "ydb" },
 ]
 
@@ -812,6 +813,7 @@ requires-dist = [
     { name = "grpcio-tools", specifier = ">=1.71.0" },
     { name = "pydantic", specifier = ">=2.11.5" },
     { name = "requests", specifier = ">=2.32.4" },
+    { name = "tofupy", specifier = ">=1.1.1" },
     { name = "ydb", specifier = ">=3.21.6" },
 ]
 
@@ -1468,6 +1470,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d3/62/01d9f648e9b943175e0dcddf749cf31c769665d8ba08df1e989427163f33/testcontainers-4.12.0.tar.gz", hash = "sha256:13ee89cae995e643f225665aad8b200b25c4f219944a6f9c0b03249ec3f31b8d", size = 66631, upload-time = "2025-07-21T20:32:26.37Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b2/e8/9e2c392e5d671afda47b917597cac8fde6a452f5776c4c9ceb93fbd2889f/testcontainers-4.12.0-py3-none-any.whl", hash = "sha256:26caef57e642d5e8c5fcc593881cf7df3ab0f0dc9170fad22765b184e226ab15", size = 111791, upload-time = "2025-07-21T20:32:25.038Z" },
+]
+
+[[package]]
+name = "tofupy"
+version = "1.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/b4/bdd31c991b13b51467dcee8e6781606f474d1aeced9f229a23584e0059fb/tofupy-1.1.1.tar.gz", hash = "sha256:01e604df8ca9e9669ae4a78726aff63a48024fbf3649585246180941a213fb1b", size = 27362, upload-time = "2025-08-03T01:41:01.665Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/e9/b22b89de1c7af431399c72fd642efe01b03515481eb8b511053ea46a769d/tofupy-1.1.1-py3-none-any.whl", hash = "sha256:b12a75f9bcfede6b521486f2c91a9e6f5d2a68967e7623d9f67f2e236a0c000c", size = 22524, upload-time = "2025-08-03T01:41:00.099Z" },
 ]
 
 [[package]]

@@ -27,6 +27,11 @@ from app.util.generator import generate_version_id_decorator
 from app.util.logging import logged
 from app.util.requests_session import with_requests_session
 
+__all__ = [
+    "OpenTofuUpdateGithub",
+    "OpenTofuUpdateOtherSource",
+]
+
 
 class OpenTofuBinary(ABC):
     """Abstract base class for OpenTofu binary management."""
@@ -255,7 +260,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
 
     # pylint: disable=no-member,too-many-instance-attributes
 
-    __token: str = None
+    __token: Optional[str] = None
     __bearer_token: bool = False
     __auth_header_name: str = "PRIVATE-TOKEN"
     _opentofu_bin_files_info: list[OpenTofuBinFileInfo] = []
@@ -279,7 +284,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
         )
 
     @property
-    def token(self) -> str:
+    def token(self) -> str | None:
         """Get the token for authentication."""
         return self.__token
 
@@ -334,12 +339,11 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
         """Function to add token to url if needed."""
 
         header_auth = False
+        token = ""
         if self.__token is not None:
             header_auth = True
-        if self.__bearer_token:
+        if self.__bearer_token and self.__token is not None:
             token = f"Bearer {self.__token}"
-        else:
-            token = self.__token
         if header_auth:
             headers = {
                 f"{self.__auth_header_name}": f"{token}",
@@ -505,6 +509,10 @@ class OpenTofuUpdate(ABC):
     def _rollback_info_update(
         self,
         rollback: list[OpenTofuBinFileInfo],
+        source: Literal[
+            "github",
+            "other",
+        ],
     ) -> None:
         for rba in rollback:
             for table in self.schema.model.tables:
@@ -515,7 +523,7 @@ class OpenTofuUpdate(ABC):
                             rba.bin_version,
                         ),
                         rba.bin_version,
-                        "other",
+                        source,
                         datetime.now().isoformat(),
                         rba.bin_sha256,
                         False,
@@ -717,7 +725,7 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
                 self._source,
             )
             if files := self.__download_rollback_releases(rb):
-                self._rollback_info_update(files)
+                self._rollback_info_update(files, self._source)
 
         else:
             self.info("No update required, exiting.")
@@ -868,7 +876,7 @@ class OpenTofuUpdateOtherSource(OpenTofuUpdate):
             )
 
             if files := self.__download_rollback_releases():
-                self._rollback_info_update(files)
+                self._rollback_info_update(files, self._source)
 
         else:
             self.info("No update required, exiting.")

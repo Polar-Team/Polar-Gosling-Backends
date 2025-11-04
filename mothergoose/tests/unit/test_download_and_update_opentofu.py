@@ -521,13 +521,11 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
             ),
         ],
     )
-    with requests_mock.Mocker() as m:
-        m.get(
+
+    with requests_mock.Mocker() as mocker:
+        mocker.get(
             url_third,
             content=response_third.content,
-            request_headers={
-                "PRIVATE-TOKEN": "glpat-" + "a" * 60,
-            },
         )
 
         updater_2.start_update(

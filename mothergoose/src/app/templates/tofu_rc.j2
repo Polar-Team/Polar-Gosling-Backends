@@ -1,0 +1,17 @@
+provider_installation {
+{% for mirror in morrors%}
+  network_mirror {
+    url = "{{ mirror.url }}"
+{% if mirror.include is defined and mirror.include|d('')|length > 0 %}
+    include = {{ mirror.include }}
+{% elif mirror.exclude is defined and mirror.exclude|d('')|length > 0%}
+    exclude = {{ mirror.exclude }}
+{% endif %}
+  }
+{% if direct_exclude is defined and direct_exclude == true %}
+ direct {
+    exclude = ["registry.terraform.io/*/*"]
+ }
+{% endif %}
+}
+

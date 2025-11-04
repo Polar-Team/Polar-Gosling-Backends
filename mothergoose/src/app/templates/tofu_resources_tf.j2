@@ -8,35 +8,21 @@ resource "local_file" "private_key" {
   filename = "${path.module}/SSH_KEY"
 }
 
-resource "random_integer" "postfix" {
-  depends_on = [tls_private_key.key]
-  length     = 16
-  special    = false
-  keepers = {
- {% for tofu_runner_keeper in tofu_runner_keepers%}
-    "{{ tofu_runner_keeper.name }}" = "{{ tofu_runner_keeper.value }}"
-  {% endfor %}
-  }
-
-
 module "gitlab-worker" {
 
-  source = "git::https://linru.gitlab.yandexcloud.net/networking/terraform-modules-linde-gas-rus/yandex-cloud/yandex-cloud-compute-instance-module-linde-gas-rus.git?ref=tags/1.0.5-runner"
-{% for worker in  tofu_gitlab_workers %}
-  name               = "{{ worker.name }}-${random_integer.postfix.result}"
-  zone               = "{{ worker.zone }}"
-  platform_id        = "{{ worker.platform_id }}"
-  image_family      = "{{ worker.image_family }}"
-  image_project_id  = "{{ worker.image_project_id }}"
-  subnet_id         = "{{ worker.subnet_id }}"
-  ssh_key_path      = local_file.private_key.filename
-  ssh_key_user      = "{{ worker.ssh_key_user }}"
-  tags              = {{ worker.tags }}
-  cores             = {{ worker.cores }}
-  memory            = {{ worker.memory }}
-  disk_size         = {{ worker.disk_size }}
-  disk_type_id      = "{{ worker.disk_type_id }}"
-  preemptible       = {{ worker.preemptible }}
-  service_account_id= "{{ worker.service_account_id }}"
+{% if tofu_module_source.type == "git" %}
+  source = "git::{{ tofu_module_source.url }}.git?ref={{ tofu_module_source.version }}"
+{% else %}
+  source = "{{ tofu_module_source.url }}"
+  version = "{{ tofu_module_source.version }}"
+{% endif %}
+  for_each = var.tofu_gitlab_worker_instances
+  prefix = each.key
+{% for key, value in  tofu_gitlab_worker_module_extra_variables %}
+  {{ key }} = each.value.{{ value }}
 {% endfor %
+
+{% if tofu_gitlab_worker_type  == "vm" %}
+  cloud-init = local.deb-cloud-init-gitlab-docker
+{% endif %
 }

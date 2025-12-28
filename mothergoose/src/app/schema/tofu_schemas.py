@@ -1,20 +1,28 @@
 """Schemas for OpenTofu backend options and binary file information."""
 
 import re
+from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import Field, field_validator
+
+from app.model.pydantic_base_models import PydanticBaseModelORM
 
 
-class TofuBackendS3Options(BaseModel):
+class TofuBackendS3Options(PydanticBaseModelORM):
     """Data schema for OpenTofu S3 backend options."""
 
     bucket: str
     key: str
     region: str
-    endpoint: str | None = None
-    profile: str | None = None
-    role_arn: str | None = None
-    dynamodb_table: str | None = None
+    endpoint: Optional[str] = Field(None, description="Custom S3 endpoint URL")
+    profile: Optional[str] = Field(None, description="AWS profile name")
+    role_arn: Optional[str] = Field(
+        None,
+        description="AWS Role ARN for access",
+    )
+    dynamodb_table: Optional[str] = Field(
+        None, description="DynamoDB table for state locking"
+    )
 
     @field_validator("bucket", "key", "region")
     @classmethod
@@ -45,7 +53,7 @@ class TofuBackendS3Options(BaseModel):
         return value
 
 
-class TofuProvidersVer(BaseModel):
+class TofuProvidersVer(PydanticBaseModelORM):
     """Data schema for OpenTofu providers constraints."""
 
     name: str
@@ -73,7 +81,7 @@ class TofuProvidersVer(BaseModel):
         return value
 
 
-class OpenTofuBinFileInfo(BaseModel):
+class OpenTofuBinFileInfo(PydanticBaseModelORM):
     """Data schema for OpenTofu binary files information."""
 
     bin_version: str

@@ -18,7 +18,7 @@ module "worker" {
 {% endif %}
   for_each = var.tofu_worker_instances
   prefix = each.key
-{% for key, value in  tofu_worker_module_extra_variables %}
+{% for key, value in tofu_worker_module_extra_variables %}
   {{ key }} = each.value.{{ value }}
 {% endfor %}
 
@@ -31,17 +31,17 @@ module "rift" {
 {% if tofu_rift_module_source.type == "git" %}
   source = "git::{{ tofu_rift_module_source.url }}.git?ref={{ tofu_rift_module_source.version }}"
 {% else %}
-  source = "{{ tofu_module_source.url }}"
-  version = "{{ tofu_module_source.version }}"
+  source = "{{ tofu_rift_module_source.url }}"
+  version = "{{ tofu_rift_module_source.version }}"
 {% endif %}
   for_each = var.tofu_rift_instances
   prefix = each.key
-{% for key, value in  tofu_worker_module_extra_variables %}
+{% for key, value in tofu_rift_module_extra_variables %}
   {{ key }} = each.value.{{ value }}
 {% endfor %}
 
-{% if tofu_gitlab_worker_type  == "vm" %}
-  cloud-init = local.deb-cloud-init-gitlab-docker
+{% if tofu_rift_module.chassis == "vm" %}
+  cloud-init = local.cloud-init-docker
 {% endif %}
 
 {% endif %}

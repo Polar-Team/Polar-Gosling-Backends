@@ -1,7 +1,6 @@
 """Schemas for OpenTofu backend options and binary file information."""
 
 import re
-from typing import Optional
 
 from pydantic import Field, field_validator
 
@@ -14,13 +13,13 @@ class TofuBackendS3Options(PydanticBaseModelORM):
     bucket: str
     key: str
     region: str
-    endpoint: Optional[str] = Field(None, description="Custom S3 endpoint URL")
-    profile: Optional[str] = Field(None, description="AWS profile name")
-    role_arn: Optional[str] = Field(
+    endpoint: str | None = Field(None, description="Custom S3 endpoint URL")
+    profile: str | None = Field(None, description="AWS profile name")
+    role_arn: str | None = Field(
         None,
         description="AWS Role ARN for access",
     )
-    dynamodb_table: Optional[str] = Field(
+    dynamodb_table: str | None = Field(
         None, description="DynamoDB table for state locking"
     )
 

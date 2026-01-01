@@ -119,6 +119,24 @@ commands = [
     ["mypy", "src/app"],
 ]
 
+[tool.flake8]
+max-line-length = 120
+extend-ignore = ["E203", "W503"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E203", "W503"]
+
+[tool.ruff.format]
+line-ending = "auto"
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
 [tool.mypy]
 disallow_untyped_defs = true
 disallow_any_unimported = true

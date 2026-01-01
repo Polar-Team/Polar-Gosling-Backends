@@ -23,8 +23,8 @@ from app.schema.dynamodb_schemas import DynamoDBSchema
 from app.schema.tofu_schemas import OpenTofuBinFileInfo
 from app.schema.url_schemas import URLAuthSchema
 from app.schema.ydb_schemas import YDBSchema
+from app.util.base_logging import logged
 from app.util.generator import generate_version_id_decorator
-from app.util.logging import logged
 from app.util.requests_session import with_requests_session
 
 __all__ = [
@@ -186,6 +186,9 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
                 with open(zip_path, "rb") as file:
                     sha256.update(file.read())
                 downloaded_sum = sha256.hexdigest()
+            else:
+                logged.error("SHA256 hash calculation failed.")
+                raise RuntimeError("SHA256 hash calculation failed.")
             self.info(f"Downloaded file hash: {downloaded_sum}")
             self.__check_shasum(downloaded_sum)
             self.info("Extracting...")
@@ -370,6 +373,9 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
                 with open(zip_path, "rb") as file:
                     sha256.update(file.read())
                 downloaded_sum = sha256.hexdigest()
+            else:
+                logged.error("SHA256 hash calculation failed.")
+                raise RuntimeError("SHA256 hash calculation failed.")
             self.info(f"Downloaded file hash: {downloaded_sum}")
             self.__check_shasum(downloaded_sum)
             self.info("Extracting...")

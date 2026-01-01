@@ -7,7 +7,7 @@ from botocore.exceptions import ClientError
 from botocore.exceptions import ConnectionError as DynamoConnectionError
 
 from app.schema.dynamodb_schemas import DynamoDBSchema
-from app.util.logging import logged
+from app.util.base_logging import logged
 
 
 @logged

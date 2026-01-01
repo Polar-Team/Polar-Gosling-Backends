@@ -4,7 +4,7 @@ Health Check Router
 Provides health check endpoints for monitoring and load balancer health checks.
 """
 
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel
@@ -41,7 +41,7 @@ async def health_check() -> HealthResponse:
     return HealthResponse(
         status="healthy",
         # UTC timezone ensures consistent timestamps across all deployments
-        timestamp=datetime.now(UTC).isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         version=config.APP_VERSION,
         service=config.SERVICE_NAME,
     )

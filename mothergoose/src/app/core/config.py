@@ -5,7 +5,8 @@ Central configuration for the MotherGoose application.
 """
 
 import os
-import logging
+
+from app.util.base_logging import logger
 
 # Application metadata
 APP_NAME = "MotherGoose API"
@@ -27,7 +28,7 @@ if _cors_origins_env:
 else:
     # Development default - must be overridden in production
     CORS_ALLOW_ORIGINS = ["http://localhost:3000", "http://localhost:8000"]
-    logging.warning(
+    logger.warning(
         "MOTHERGOOSE_CORS_ORIGINS not set - using development defaults. "
         "Set explicit origins in production."
     )

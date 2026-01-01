@@ -11,7 +11,7 @@ from ydb import aio as YDBAsync
 from ydb.issues import GenericError as AsyncGenericError
 
 from app.schema.ydb_schemas import YDBSchema
-from app.util.logging import logged
+from app.util.base_logging import logged
 
 
 @logged

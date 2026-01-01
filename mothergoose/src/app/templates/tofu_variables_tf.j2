@@ -1,0 +1,13 @@
+variable "tofu_worker_instances" {
+  description = "Map of worker instances to create"
+  type        = map(any)
+  default     = {}
+}
+
+{% if tofu_rift_required | default(false) %}
+variable "tofu_rift_instances" {
+  description = "Map of rift instances to create"
+  type        = map(any)
+  default     = {}
+}
+{% endif %}

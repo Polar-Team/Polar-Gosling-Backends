@@ -17,6 +17,7 @@ dependencies = [
     "pydantic>=2.11.5",
     "requests>=2.32.4",
     "tofupy>=1.1.1",
+    "uvicorn>=0.34.0",
     "ydb>=3.21.6",
 ]
 
@@ -40,6 +41,7 @@ style = [
   "flake8-pyproject>=1.2.3",
 ]
 test = [
+  "httpx>=0.28.1",
   "pytest>=8.3.5",
   "pytest-asyncio>=1.1.0",
   "pytest-dependency>=0.6.0",

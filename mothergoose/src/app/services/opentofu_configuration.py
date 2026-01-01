@@ -10,7 +10,7 @@ from tofupy import Tofu
 
 from app.schema.tofu_schemas import TofuBackendS3Options, TofuProvidersVer
 from app.schema.url_schemas import URLAuthSchema
-from app.util.logging import logged
+from app.util.base_logging import logged
 
 from .opentofu_binary import OpenTofuUpdateGithub, OpenTofuUpdateOtherSource
 

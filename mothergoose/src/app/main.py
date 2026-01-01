@@ -12,8 +12,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core import config
-from app.routers import health
-from app.util.logging import logger
+from app.routers import eggs, health
+from app.util.base_logging import logger
 
 
 @asynccontextmanager
@@ -41,7 +41,7 @@ def create_app() -> FastAPI:
     Returns:
         FastAPI: Configured FastAPI application instance
     """
-    app = FastAPI(
+    application = FastAPI(
         title=config.APP_NAME,
         description=config.APP_DESCRIPTION,
         version=config.APP_VERSION,
@@ -52,7 +52,7 @@ def create_app() -> FastAPI:
     )
 
     # Configure CORS
-    app.add_middleware(
+    application.add_middleware(
         CORSMiddleware,
         allow_origins=config.CORS_ALLOW_ORIGINS,
         allow_credentials=config.CORS_ALLOW_CREDENTIALS,
@@ -61,9 +61,10 @@ def create_app() -> FastAPI:
     )
 
     # Include routers
-    app.include_router(health.router)
+    application.include_router(health.router)
+    application.include_router(eggs.router)
 
-    return app
+    return application
 
 
 # Create the application instance

@@ -52,8 +52,8 @@ class TestEggsAPI:
         }
 
         response = client.post("/eggs", json=egg_config)
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "Either project_id or group_id must be specified" in response.json()["detail"]
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert "Either project_id or group_id must be specified" in str(response.json())
 
     def test_create_egg_validation_both_gitlab_ids(self, client):
         """Test POST /eggs validates that both project_id and group_id cannot be specified."""
@@ -74,8 +74,8 @@ class TestEggsAPI:
         }
 
         response = client.post("/eggs", json=egg_config)
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "Cannot specify both project_id and group_id" in response.json()["detail"]
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert "Cannot specify both project_id and group_id" in str(response.json())
 
     def test_create_egg_with_project_id_not_implemented(self, client):
         """Test POST /eggs with valid project_id returns 501 (database not implemented)."""

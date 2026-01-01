@@ -137,22 +137,6 @@ async def create_or_update_egg(
     """
     logger.info("Creating or updating Egg: %s", egg_config.name)
 
-    # Validate configuration
-    if egg_config.gitlab.project_id is None and egg_config.gitlab.group_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Either project_id or group_id must be specified in GitLab configuration",
-        )
-
-    if (
-        egg_config.gitlab.project_id is not None
-        and egg_config.gitlab.group_id is not None
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot specify both project_id and group_id in GitLab configuration",
-        )
-
     # TODO: Implement database upsert for Egg configuration  # pylint: disable=fixme
     # This will be implemented in task 9 (Database Layer)
 

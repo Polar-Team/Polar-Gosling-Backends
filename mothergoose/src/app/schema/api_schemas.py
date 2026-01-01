@@ -9,9 +9,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import Field
+from pydantic import ConfigDict, Field, field_validator
 
-from app.model.pydantic_base_models import PydanticBaseModelORM
+from app.model.pydantic_base_models import PydanticBaseModelAPI, PydanticBaseModelORM
 
 
 class RunnerState(str, Enum):
@@ -99,7 +99,7 @@ class EggStatusResponse(PydanticBaseModelORM):
     config_hash: Optional[str] = Field(None, description="Current configuration hash")
 
 
-class EggListResponse(PydanticBaseModelORM):
+class EggListResponse(PydanticBaseModelAPI):
     """Response model for listing all Eggs."""
 
     eggs: list[str] = Field(..., description="List of Egg names")
@@ -118,7 +118,7 @@ class DeploymentPlanListResponse(PydanticBaseModelORM):
 # Request Models
 
 
-class CloudConfig(PydanticBaseModelORM):
+class CloudConfig(PydanticBaseModelAPI):
     """Cloud provider configuration."""
 
     provider: str = Field(..., description="Cloud provider (yandex or aws)")
@@ -128,23 +128,57 @@ class CloudConfig(PydanticBaseModelORM):
     )
 
 
-class ResourceConfig(PydanticBaseModelORM):
+class ResourceConfig(PydanticBaseModelAPI):
     """Resource requirements configuration."""
 
     cpu: int = Field(..., description="Number of CPU cores")
     memory: int = Field(..., description="Memory in MB")
     disk: int = Field(..., description="Disk size in GB")
 
+    @field_validator("cpu")
+    @classmethod
+    def validate_cpu(cls, value: int) -> int:
+        """Validate that CPU is positive."""
+        if value <= 0:
+            raise ValueError("CPU must be a positive integer.")
+        return value
 
-class RunnerConfig(PydanticBaseModelORM):
+    @field_validator("memory")
+    @classmethod
+    def validate_memory(cls, value: int) -> int:
+        """Validate that memory is at least 128 MB."""
+        if value < 128:
+            raise ValueError("Memory must be at least 128 MB.")
+        return value
+
+    @field_validator("disk")
+    @classmethod
+    def validate_disk(cls, value: int) -> int:
+        """Validate that disk size is at least 10 GB."""
+        if value < 10:
+            raise ValueError("Disk size must be at least 10 GB.")
+        return value
+
+
+class RunnerConfig(PydanticBaseModelAPI):
     """Runner-specific configuration."""
 
     tags: list[str] = Field(default_factory=list, description="GitLab runner tags")
     concurrent: int = Field(1, description="Maximum concurrent jobs")
     max_runners: int = Field(1, description="Maximum number of runners")
 
+    @field_validator("concurrent", "max_runners")
+    @classmethod
+    def validate_positive(cls, value: int) -> int:
+        """Validate that the value is positive."""
+        if value < 1:
+            raise ValueError(
+                "Value must be a positive integer equal or greater than 1."
+            )
+        return value
 
-class GitLabConfig(PydanticBaseModelORM):
+
+class GitLabConfig(PydanticBaseModelAPI):
     """GitLab integration configuration."""
 
     server: str = Field(..., description="GitLab server FQDN")
@@ -153,9 +187,22 @@ class GitLabConfig(PydanticBaseModelORM):
     token_secret: str = Field(..., description="Secret URI for GitLab token")
     webhook_secret: str = Field(..., description="Secret URI for webhook secret")
 
+    @field_validator("server")
+    @classmethod
+    def validate_server(cls, value: str) -> str:
+        """Validate GitLab server FQDN."""
+        if not value or "." not in value:
+            raise ValueError("GitLab server must be a valid FQDN.")
+        return value
 
-class EggConfigRequest(PydanticBaseModelORM):
+
+class EggConfigRequest(PydanticBaseModelAPI):
     """Request model for creating or updating Egg configuration."""
+
+    model_config = ConfigDict(
+        frozen=False,
+        arbitrary_types_allowed=True,
+    )
 
     name: str = Field(..., description="Egg name")
     type: RunnerType = Field(..., description="Runner type (vm or serverless)")
@@ -166,6 +213,20 @@ class EggConfigRequest(PydanticBaseModelORM):
     environment: dict[str, str] = Field(
         default_factory=dict, description="Environment variables"
     )
+
+    @field_validator("gitlab")
+    @classmethod
+    def validate_gitlab_config(cls, value: GitLabConfig) -> GitLabConfig:
+        """Validate GitLab configuration."""
+        if value.project_id is None and value.group_id is None:
+            raise ValueError(
+                "Either project_id or group_id must be specified in GitLab configuration"
+            )
+        if value.project_id is not None and value.group_id is not None:
+            raise ValueError(
+                "Cannot specify both project_id and group_id in GitLab configuration"
+            )
+        return value
 
 
 class EggConfigResponse(PydanticBaseModelORM):

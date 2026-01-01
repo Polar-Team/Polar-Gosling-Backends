@@ -2,7 +2,7 @@
 YDB Configuration and Schema Models
 """
 
-from typing import Optional
+from typing import Optional, Union
 
 from pydantic import Field, field_validator
 from ydb import AccessTokenCredentials, AnonymousCredentials, StaticCredentials
@@ -10,6 +10,8 @@ from ydb.iam.auth import MetadataUrlCredentials, ServiceAccountCredentials
 from ydb.oauth2_token_exchange import Oauth2TokenExchangeCredentials
 
 from app.model.opentofu_models import OpenTofuModelYDB
+from app.model.runners_models import RunnerModelYDB
+from app.model.audit_models import AuditModelYDB
 from app.model.pydantic_base_models import PydanticBaseModelORM
 
 
@@ -53,9 +55,9 @@ class YDBSchema(PydanticBaseModelORM):
         None, description="Default table name for operations (optional)"
     )
     version: str = Field("1.0.0", description="Schema version")
-    model: OpenTofuModelYDB = Field(
+    model: Union[OpenTofuModelYDB, RunnerModelYDB, AuditModelYDB] = Field(
         ...,
-        description="Model type for integration",
+        description="Model type for integration (OpenTofu, Runner, or Audit)",
     )
 
     @field_validator("version", mode="before")

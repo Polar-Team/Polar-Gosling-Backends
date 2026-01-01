@@ -8,8 +8,10 @@ from typing import Any, TypeVar, Union
 import ydb.aio as YDBAsync
 
 from app.model.opentofu_models import OpenTofuVersionTableYDB
+from app.model.runners_models import RunnersTableYDB, EggConfigsTableYDB
+from app.model.audit_models import AuditLogsTableYDB
 
-YDBTables = Union[OpenTofuVersionTableYDB]
+YDBTables = Union[OpenTofuVersionTableYDB, RunnersTableYDB, EggConfigsTableYDB, AuditLogsTableYDB]
 
 
 V = TypeVar("V")

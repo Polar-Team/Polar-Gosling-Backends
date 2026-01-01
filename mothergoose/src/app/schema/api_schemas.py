@@ -9,9 +9,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
 
-from app.model.pydantic_base_models import PydanticBaseModelAPI, PydanticBaseModelORM
+from app.model.pydantic_base_models import PydanticBaseModelAPI
 
 
 class RunnerState(str, Enum):
@@ -43,7 +43,7 @@ class DeploymentPlanStatus(str, Enum):
 # Response Models
 
 
-class RunnerResponse(PydanticBaseModelORM):
+class RunnerResponse(PydanticBaseModelAPI):
     """Response model for runner information."""
 
     id: str = Field(..., description="Unique runner identifier")
@@ -63,7 +63,7 @@ class RunnerResponse(PydanticBaseModelORM):
     )
 
 
-class DeploymentPlanResponse(PydanticBaseModelORM):
+class DeploymentPlanResponse(PydanticBaseModelAPI):
     """Response model for deployment plan information."""
 
     id: str = Field(..., description="Unique plan identifier")
@@ -83,7 +83,7 @@ class DeploymentPlanResponse(PydanticBaseModelORM):
     )
 
 
-class EggStatusResponse(PydanticBaseModelORM):
+class EggStatusResponse(PydanticBaseModelAPI):
     """Response model for Egg status query."""
 
     egg_name: str = Field(..., description="Name of the Egg")
@@ -106,7 +106,7 @@ class EggListResponse(PydanticBaseModelAPI):
     total: int = Field(..., description="Total number of Eggs")
 
 
-class DeploymentPlanListResponse(PydanticBaseModelORM):
+class DeploymentPlanListResponse(PydanticBaseModelAPI):
     """Response model for listing deployment plans."""
 
     plans: list[DeploymentPlanResponse] = Field(
@@ -199,11 +199,6 @@ class GitLabConfig(PydanticBaseModelAPI):
 class EggConfigRequest(PydanticBaseModelAPI):
     """Request model for creating or updating Egg configuration."""
 
-    model_config = ConfigDict(
-        frozen=False,
-        arbitrary_types_allowed=True,
-    )
-
     name: str = Field(..., description="Egg name")
     type: RunnerType = Field(..., description="Runner type (vm or serverless)")
     cloud: CloudConfig = Field(..., description="Cloud provider configuration")
@@ -229,7 +224,7 @@ class EggConfigRequest(PydanticBaseModelAPI):
         return value
 
 
-class EggConfigResponse(PydanticBaseModelORM):
+class EggConfigResponse(PydanticBaseModelAPI):
     """Response model for Egg configuration."""
 
     name: str = Field(..., description="Egg name")

@@ -22,7 +22,7 @@ module "worker" {
   {{ key }} = each.value.{{ value }}
 {% endfor %}
 
-{% if tofu_worker_module.chassis  == "vm" %}
+{% if tofu_worker_module.chassis == "vm" %}
   cloud-init = local.cloud-init-docker
 {% endif %}
 

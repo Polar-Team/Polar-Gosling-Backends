@@ -32,7 +32,7 @@ class TransactionalRunnerService:
 
     This service demonstrates how database operations should be wrapped
     in transactions to ensure atomicity.
-    
+
     Uses mock database client for testing transaction failure scenarios.
     """
 
@@ -44,7 +44,7 @@ class TransactionalRunnerService:
             db_client: Mock database client with transaction support
         """
         self.db_client = db_client
-    
+
     async def create_runner(
         self,
         egg_name: str,
@@ -58,10 +58,10 @@ class TransactionalRunnerService:
     ) -> Runner:
         """Create a runner using mock database."""
         from uuid import uuid4
-        
+
         runner_id = f"runner-{uuid4().hex[:12]}"
         now = datetime.now(timezone.utc)
-        
+
         runner = Runner(
             id=runner_id,
             egg_name=egg_name,
@@ -77,24 +77,24 @@ class TransactionalRunnerService:
             failure_count=0,
             metadata=metadata or {},
         )
-        
+
         await self.db_client.put_item(
             table_name="runners",
             item=runner.model_dump(),
         )
-        
+
         return runner
-    
+
     async def get_runner(self, runner_id: str) -> Runner:
         """Get a runner from mock database."""
         runner_data = await self.db_client.get_item(
             table_name="runners",
             key={"id": runner_id},
         )
-        
+
         if not runner_data:
             return None
-        
+
         return Runner(**runner_data)
 
     async def atomic_runner_state_update_with_audit(
@@ -420,14 +420,9 @@ async def test_atomic_runner_state_update_with_audit(
     # Verify both operations succeeded
     updated_runner = await runner_service.get_runner(runner.id)
     assert updated_runner is not None
-    assert updated_runner.state == new_state, f"Runner state should be updated to {
-        new_state
-    }, got {updated_runner.state}"
-
-    # Verify audit log was created
-    audit_log_data = await transactional_service.db_client.get_item(
-        table_name="audit_logs",
-        key={"id": f"audit-{runner.id}-{updated_runner.updated_at.timestamp()}"},
+    assert updated_runner.state == new_state, (
+        f"Runner state should be updated to {new_state}, "
+        f"got {updated_runner.state}"
     )
 
     # Note: We can't verify exact audit log ID due to timestamp precision,

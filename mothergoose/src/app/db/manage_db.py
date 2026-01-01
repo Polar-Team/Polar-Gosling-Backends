@@ -7,11 +7,13 @@ from typing import Any, TypeVar, Union
 
 import ydb.aio as YDBAsync
 
-from app.model.opentofu_models import OpenTofuVersionTableYDB
-from app.model.runners_models import RunnersTableYDB, EggConfigsTableYDB
 from app.model.audit_models import AuditLogsTableYDB
+from app.model.opentofu_models import OpenTofuVersionTableYDB
+from app.model.runners_models import EggConfigsTableYDB, RunnersTableYDB
 
-YDBTables = Union[OpenTofuVersionTableYDB, RunnersTableYDB, EggConfigsTableYDB, AuditLogsTableYDB]
+YDBTables = Union[
+    OpenTofuVersionTableYDB, RunnersTableYDB, EggConfigsTableYDB, AuditLogsTableYDB
+]
 
 
 V = TypeVar("V")
@@ -213,7 +215,7 @@ class AsyncYDBFunctionsCollections:
         queries = [
             PreparedYDBQueries.create_query(table)
             for table in tables
-            if isinstance(table, YDBTables)
+            if isinstance(table, YDBTables)  # type: ignore[arg-type]
         ]
 
         async with pool:
@@ -250,7 +252,7 @@ class AsyncYDBFunctionsCollections:
                 )
             )
             for table in tables
-            if isinstance(table, YDBTables)
+            if isinstance(table, YDBTables)  # type: ignore[arg-type]
         ]
 
         queries = []

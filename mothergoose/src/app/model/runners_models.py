@@ -5,6 +5,7 @@ This module defines table schemas for the GitOps Runner Orchestration system,
 following the pattern from opentofu_models.py where all data passes through
 schema.model.tables[x].values_for_operate.
 """
+
 # pylint: disable=duplicate-code
 
 from dataclasses import dataclass, field
@@ -18,7 +19,6 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 from app.model.pydantic_base_models import PydanticBaseModelORM
 from app.schema.db_tables import YDBTableSchema
 from app.types.ydb_types import YDBBytes, YDBInt64, YDBType, YDBUtf8
-
 
 # ============================================================================
 # Enumerations

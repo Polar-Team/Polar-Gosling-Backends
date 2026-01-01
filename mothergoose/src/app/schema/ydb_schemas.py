@@ -9,10 +9,10 @@ from ydb import AccessTokenCredentials, AnonymousCredentials, StaticCredentials
 from ydb.iam.auth import MetadataUrlCredentials, ServiceAccountCredentials
 from ydb.oauth2_token_exchange import Oauth2TokenExchangeCredentials
 
-from app.model.opentofu_models import OpenTofuModelYDB
-from app.model.runners_models import RunnerModelYDB
 from app.model.audit_models import AuditModelYDB
+from app.model.opentofu_models import OpenTofuModelYDB
 from app.model.pydantic_base_models import PydanticBaseModelORM
+from app.model.runners_models import RunnerModelYDB
 
 
 class YDBConfig(PydanticBaseModelORM):

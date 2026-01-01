@@ -4,6 +4,7 @@ Audit log models for YDB schema definitions.
 This module defines audit log schemas that are used system-wide across
 all services (MotherGoose, UglyFox, etc.) for tracking significant actions.
 """
+
 # pylint: disable=duplicate-code
 
 from dataclasses import dataclass, field
@@ -16,7 +17,6 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 from app.model.pydantic_base_models import PydanticBaseModelORM
 from app.schema.db_tables import YDBTableSchema
 from app.types.ydb_types import YDBBytes, YDBType, YDBUtf8
-
 
 # ============================================================================
 # Helper function for creating YDB types

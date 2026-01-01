@@ -32,7 +32,7 @@ class StateRecoveryService:
             db_client: Database client for querying state
         """
         self.db_client = db_client
-    
+
     async def create_runner(
         self,
         egg_name: str,
@@ -46,10 +46,10 @@ class StateRecoveryService:
     ) -> Runner:
         """Create a runner using mock database."""
         from uuid import uuid4
-        
+
         runner_id = f"runner-{uuid4().hex[:12]}"
         now = datetime.now(timezone.utc)
-        
+
         runner = Runner(
             id=runner_id,
             egg_name=egg_name,
@@ -65,38 +65,38 @@ class StateRecoveryService:
             failure_count=0,
             metadata=metadata or {},
         )
-        
+
         await self.db_client.put_item(
             table_name="runners",
             item=runner.model_dump(),
         )
-        
+
         return runner
-    
+
     async def get_runner(self, runner_id: str) -> Runner:
         """Get a runner from mock database."""
         runner_data = await self.db_client.get_item(
             table_name="runners",
             key={"id": runner_id},
         )
-        
+
         if not runner_data:
             return None
-        
+
         return Runner(**runner_data)
-    
+
     async def update_runner_state(self, runner_id: str, new_state: RunnerState) -> None:
         """Update runner state in mock database."""
         runner = await self.get_runner(runner_id)
         if not runner:
             raise ValueError(f"Runner {runner_id} not found")
-        
+
         runner_data = runner.model_dump()
         runner_data["state"] = new_state
         runner_data["updated_at"] = datetime.now(timezone.utc)
-        
+
         updated_runner = Runner(**runner_data)
-        
+
         await self.db_client.put_item(
             table_name="runners",
             item=updated_runner.model_dump(),
@@ -307,17 +307,19 @@ async def test_database_state_recovery(
         created_runners.append(runner)
 
     # Verify all runners were created
-    assert len(created_runners) == num_runners, f"Should have created {
-        num_runners
-    } runners, got {len(created_runners)}"
+    assert len(created_runners) == num_runners, (
+        f"Should have created {num_runners} runners, "
+        f"got {len(created_runners)}"
+    )
 
     # Simulate backend server restart by recovering all runners from database
     recovered_runners = await recovery_service.recover_all_runners()
 
     # Verify all runners were recovered
-    assert len(recovered_runners) == num_runners, f"Should have recovered {
-        num_runners
-    } runners, got {len(recovered_runners)}"
+    assert len(recovered_runners) == num_runners, (
+        f"Should have recovered {num_runners} runners, "
+        f"got {len(recovered_runners)}"
+    )
 
     # Create a mapping of runner IDs to recovered runners for easy lookup
     recovered_by_id = {r.id: r for r in recovered_runners}
@@ -384,9 +386,10 @@ async def test_database_state_recovery(
         # Verify the update worked
         updated_runner = await runner_service.get_runner(test_runner.id)
         assert updated_runner is not None, "Runner should exist after update"
-        assert updated_runner.state == new_state, f"State should be updated to {
-            new_state
-        }, got {updated_runner.state}"
+        assert updated_runner.state == new_state, (
+            f"State should be updated to {new_state}, "
+            f"got {updated_runner.state}"
+        )
 
 
 @pytest.mark.asyncio
@@ -530,7 +533,7 @@ async def test_database_state_recovery_preserves_timestamps(
     # Create a runner
     before_creation = datetime.now(timezone.utc)
 
-    runner = await runner_service.create_runner(
+    _runner = await runner_service.create_runner(
         egg_name="timestamp-test",
         runner_type=RunnerType.APEX,
         state=RunnerState.ACTIVE,
@@ -569,7 +572,7 @@ async def test_database_state_recovery_with_failures(
     across restarts, which is critical for UglyFox pruning decisions.
     """
     # Create runners with different failure counts
-    runner1 = await runner_service.create_runner(
+    _runner1 = await runner_service.create_runner(
         egg_name="stable-app",
         runner_type=RunnerType.APEX,
         state=RunnerState.ACTIVE,

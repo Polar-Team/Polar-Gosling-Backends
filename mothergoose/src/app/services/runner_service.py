@@ -16,10 +16,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from app.model.runners_models import Runner, RunnerState, RunnerType, CloudProvider
-from app.model.audit_models import AuditLog
-from app.db.ydb_connection import AsyncYDBOperations
 from app.db.manage_db import AsyncYDBFunctionsCollections
+from app.db.ydb_connection import AsyncYDBOperations
+from app.model.audit_models import AuditLog
+from app.model.runners_models import CloudProvider, Runner, RunnerState, RunnerType
 from app.schema.dynamodb_schemas import DynamoDBSchema
 from app.schema.ydb_schemas import YDBSchema
 
@@ -110,7 +110,7 @@ class RunnerService:
                             runner_dict[key] = value.isoformat()
                         # Convert dict to JSON bytes for metadata (YDB String type)
                         elif key == "metadata" and isinstance(value, dict):
-                            runner_dict[key] = json.dumps(value).encode('utf-8')
+                            runner_dict[key] = json.dumps(value).encode("utf-8")
                         # Handle None for Int64 fields - use 0 as default
                         elif key == "gitlab_runner_id" and value is None:
                             runner_dict[key] = 0
@@ -164,7 +164,7 @@ class RunnerService:
                         if isinstance(value, datetime):
                             runner_dict[key] = value.isoformat()
                         elif key == "metadata" and isinstance(value, dict):
-                            runner_dict[key] = json.dumps(value).encode('utf-8')
+                            runner_dict[key] = json.dumps(value).encode("utf-8")
                         elif key == "gitlab_runner_id" and value is None:
                             runner_dict[key] = 0
 
@@ -263,7 +263,7 @@ class RunnerService:
                         if isinstance(value, datetime):
                             audit_dict[key] = value.isoformat()
                         elif key == "details" and isinstance(value, dict):
-                            audit_dict[key] = json.dumps(value).encode('utf-8')
+                            audit_dict[key] = json.dumps(value).encode("utf-8")
 
                     table.values_for_operate = tuple(
                         audit_dict[col] for col in table.columns
@@ -321,12 +321,16 @@ class RunnerService:
             # Convert data from YDB storage format
             for key, value in runner_data.items():
                 # Convert ISO strings back to datetime objects
-                if key in ("created_at", "updated_at", "last_heartbeat") and isinstance(value, str):
+                if key in ("created_at", "updated_at", "last_heartbeat") and isinstance(
+                    value, str
+                ):
                     runner_data[key] = datetime.fromisoformat(value)
                 # Convert JSON bytes back to dict for metadata (YDB String type returns bytes)
                 elif key == "metadata":
                     if isinstance(value, bytes):
-                        runner_data[key] = json.loads(value.decode('utf-8')) if value else {}
+                        runner_data[key] = (
+                            json.loads(value.decode("utf-8")) if value else {}
+                        )
                     elif isinstance(value, str):
                         runner_data[key] = json.loads(value) if value else {}
                     else:

@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core import config
+from app.core.celery_app import celery_app
 from app.routers import eggs, health
 from app.util.base_logging import logger
 
@@ -22,10 +23,17 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     Application lifespan manager.
 
     Handles startup and shutdown events for the FastAPI application.
-
-    TODO: Initialize database connections, Celery workers, and background tasks
+    Initializes Celery workers and background tasks.
     """
     logger.info("MotherGoose starting up...")
+    logger.info("Celery broker: %s", celery_app.conf.broker_url)
+    logger.info("Celery result backend: %s", celery_app.conf.result_backend)
+    logger.info("Celery tasks registered: %d", len(celery_app.tasks))
+
+    # Log registered tasks
+    for task_name in sorted(celery_app.tasks.keys()):
+        if not task_name.startswith("celery."):
+            logger.info("  - %s", task_name)
 
     yield
 

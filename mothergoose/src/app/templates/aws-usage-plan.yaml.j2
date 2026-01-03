@@ -1,0 +1,73 @@
+# AWS API Gateway Usage Plan Configuration
+# This template defines rate limiting and throttling for AWS API Gateway
+# Usage Plans are applied separately from the OpenAPI specification
+
+---
+# Usage Plan for MotherGoose API
+UsagePlan:
+  name: {{ usage_plan_name | default('mothergoose-usage-plan') }}
+  description: Rate limiting and throttling for MotherGoose API
+  
+  # API Stages to apply this usage plan to
+  apiStages:
+    - apiId: {{ api_id }}
+      stage: {{ stage_name | default('prod') }}
+  
+  # Throttle settings (requests per second)
+  throttle:
+    # Burst capacity - maximum concurrent requests
+    burstLimit: {{ burst_limit | default(100) }}
+    # Steady-state rate - requests per second
+    rateLimit: {{ rate_limit | default(50) }}
+  
+  # Quota settings (total requests per period)
+  quota:
+    # Maximum number of requests per period
+    limit: {{ quota_limit | default(10000) }}
+    # Time period: DAY, WEEK, or MONTH
+    period: {{ quota_period | default('DAY') }}
+    # Offset for quota reset (0-23 for DAY, 0-6 for WEEK)
+    offset: {{ quota_offset | default(0) }}
+
+# Method-specific throttle settings
+MethodThrottleSettings:
+  # Health check endpoint
+  "GET /health":
+    burstLimit: {{ health_burst_limit | default(20) }}
+    rateLimit: {{ health_rate_limit | default(10) }}
+  
+  # Eggs list endpoint
+  "GET /eggs":
+    burstLimit: {{ eggs_burst_limit | default(10) }}
+    rateLimit: {{ eggs_rate_limit | default(5) }}
+  
+  # Egg status endpoint
+  "GET /eggs/{name}/status":
+    burstLimit: {{ egg_status_burst_limit | default(20) }}
+    rateLimit: {{ egg_status_rate_limit | default(10) }}
+  
+  # Webhook endpoint
+  "POST /webhooks/gitlab":
+    burstLimit: {{ webhook_burst_limit | default(50) }}
+    rateLimit: {{ webhook_rate_limit | default(20) }}
+  
+  # Internal sync-git endpoint
+  "POST /internal/sync-git":
+    burstLimit: {{ internal_burst_limit | default(5) }}
+    rateLimit: {{ internal_rate_limit | default(1) }}
+  
+  # Internal health-check endpoint
+  "POST /internal/health-check":
+    burstLimit: {{ internal_burst_limit | default(5) }}
+    rateLimit: {{ internal_rate_limit | default(1) }}
+
+# API Key configuration (optional - for additional access control)
+{% if enable_api_keys | default(false) %}
+ApiKeys:
+  - name: {{ api_key_name | default('mothergoose-api-key') }}
+    description: API key for MotherGoose API access
+    enabled: true
+    stageKeys:
+      - restApiId: {{ api_id }}
+        stageName: {{ stage_name | default('prod') }}
+{% endif %}

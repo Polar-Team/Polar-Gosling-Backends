@@ -46,8 +46,8 @@ def deploy_runner(
         # TODO: Implement runner deployment logic
         # 1. Determine runner type (serverless vs VM)
         # 2. Retrieve Egg configuration from database
-        # 3. Generate OpenTofu configuration
-        # 4. Deploy runner using cloud SDK
+        # 3. Render OpenTofu configuration from Jinja2 templates
+        # 4. Execute OpenTofu plan and apply to deploy runner
         # 5. Update runner state in database
         # 6. Register runner with GitLab
 

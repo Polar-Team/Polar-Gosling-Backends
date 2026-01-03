@@ -36,3 +36,15 @@ else:
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = ["*"]
 CORS_ALLOW_HEADERS = ["*"]
+
+# Cloud Trigger Authentication
+# Security: This token authenticates cloud triggers (Timer Triggers, EventBridge)
+# In production, this should be retrieved from secret manager at runtime
+# Token should be rotated regularly via self-management jobs
+TRIGGER_AUTH_TOKEN = os.getenv("MOTHERGOOSE_TRIGGER_AUTH_TOKEN")
+if not TRIGGER_AUTH_TOKEN:
+    logger.warning(
+        "MOTHERGOOSE_TRIGGER_AUTH_TOKEN not set. "
+        "Internal endpoints will reject all requests. "
+        "Set this environment variable or retrieve from secret manager in production."
+    )

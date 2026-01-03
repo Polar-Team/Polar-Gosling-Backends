@@ -1,0 +1,365 @@
+# API Gateway Configuration for MotherGoose
+# Jinja2 Template for dynamic API Gateway configuration
+# Supports both Yandex Cloud API Gateway and AWS API Gateway
+
+openapi: 3.0.0
+info:
+  title: MotherGoose API
+  version: {{ api_version | default('1.0.0') }}
+  description: |
+    GitOps Runner Orchestration Backend API
+    
+    This API provides endpoints for:
+    - Health checks
+    - Egg configuration management
+    - GitLab webhook processing
+    - Internal cloud trigger endpoints (restricted access)
+
+servers:
+  - url: {{ api_gateway_url }}
+    description: {{ environment | default('Production') }} API Gateway
+
+# Security schemes
+components:
+  securitySchemes:
+    TriggerAuth:
+      type: apiKey
+      in: header
+      name: X-Trigger-Auth
+      description: |
+        Secret token for cloud trigger authentication.
+        Required for internal endpoints only.
+    
+    WebhookAuth:
+      type: apiKey
+      in: header
+      name: X-Gitlab-Token
+      description: |
+        Per-Egg webhook secret for GitLab webhook authentication.
+        Each Egg has its own unique webhook secret.
+
+# Paths
+paths:
+  # Public endpoints
+  /health:
+    get:
+      summary: Health Check
+      description: Returns service health status
+      tags:
+        - health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                    example: {{ api_version | default('1.0.0') }}
+                  service:
+                    type: string
+                    example: mothergoose
+{% if cloud_provider == 'yandex' %}
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: {{ function_id }}
+      # Rate limiting for health endpoint
+      x-yc-apigateway-rate-limit:
+        all_requests:
+          per_second: {{ rate_limit_health_per_second | default(10) }}
+          per_minute: {{ rate_limit_health_per_minute | default(100) }}
+{% elif cloud_provider == 'aws' %}
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:{{ aws_region }}:lambda:path/2015-03-31/functions/{{ lambda_arn }}/invocations
+{% endif %}
+
+  /eggs:
+    get:
+      summary: List Eggs
+      description: List all Egg configurations
+      tags:
+        - eggs
+      responses:
+        '200':
+          description: List of Eggs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eggs:
+                    type: array
+                    items:
+                      type: string
+{% if cloud_provider == 'yandex' %}
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: {{ function_id }}
+      # Rate limiting for eggs endpoint
+      x-yc-apigateway-rate-limit:
+        all_requests:
+          per_second: {{ rate_limit_eggs_per_second | default(5) }}
+          per_minute: {{ rate_limit_eggs_per_minute | default(50) }}
+{% elif cloud_provider == 'aws' %}
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:{{ aws_region }}:lambda:path/2015-03-31/functions/{{ lambda_arn }}/invocations
+{% endif %}
+
+  /eggs/{name}/status:
+    get:
+      summary: Get Egg Status
+      description: Get deployment status for an Egg
+      tags:
+        - eggs
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Egg name
+      responses:
+        '200':
+          description: Egg status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  egg_name:
+                    type: string
+                  latest_plan:
+                    type: object
+                  deployment_history:
+                    type: array
+                    items:
+                      type: object
+                  active_runners:
+                    type: array
+                    items:
+                      type: object
+                  config_hash:
+                    type: string
+        '404':
+          description: Egg not found
+{% if cloud_provider == 'yandex' %}
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: {{ function_id }}
+      # Rate limiting for egg status endpoint
+      x-yc-apigateway-rate-limit:
+        all_requests:
+          per_second: {{ rate_limit_egg_status_per_second | default(10) }}
+          per_minute: {{ rate_limit_egg_status_per_minute | default(100) }}
+{% elif cloud_provider == 'aws' %}
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:{{ aws_region }}:lambda:path/2015-03-31/functions/{{ lambda_arn }}/invocations
+{% endif %}
+
+  /webhooks/gitlab:
+    post:
+      summary: GitLab Webhook
+      description: Receive GitLab webhook events
+      tags:
+        - webhooks
+      security:
+        - WebhookAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: GitLab webhook payload
+      responses:
+        '202':
+          description: Webhook accepted and queued for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: queued
+                  task_id:
+                    type: string
+        '401':
+          description: Invalid webhook authentication
+{% if cloud_provider == 'yandex' %}
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: {{ function_id }}
+      # Rate limiting for webhook endpoint
+      x-yc-apigateway-rate-limit:
+        all_requests:
+          per_second: {{ rate_limit_webhook_per_second | default(20) }}
+          per_minute: {{ rate_limit_webhook_per_minute | default(200) }}
+{% elif cloud_provider == 'aws' %}
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:{{ aws_region }}:lambda:path/2015-03-31/functions/{{ lambda_arn }}/invocations
+{% endif %}
+
+  # Internal endpoints (restricted access)
+  /internal/sync-git:
+    post:
+      summary: Trigger Git Sync
+      description: |
+        Trigger periodic Git synchronization from Nest repository.
+        This endpoint is invoked by cloud triggers every 5 minutes.
+        
+        **Access Restriction**: This endpoint should only be accessible
+        from cloud trigger services, not public internet.
+      tags:
+        - internal
+      security:
+        - TriggerAuth: []
+      responses:
+        '202':
+          description: Git sync task queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: queued
+                  message:
+                    type: string
+                    example: Git sync task queued successfully
+                  task_id:
+                    type: string
+        '401':
+          description: Invalid trigger authentication
+        '500':
+          description: Failed to queue task
+{% if cloud_provider == 'yandex' %}
+      # Yandex Cloud API Gateway configuration
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: {{ function_id }}
+      # Yandex Cloud access policy (restrict to Timer Trigger service account)
+      x-yc-apigateway-policy:
+        type: iam
+        service_accounts:
+          - {{ timer_trigger_sa_id }}
+      # Rate limiting for internal sync-git endpoint (triggered every 5 minutes)
+      x-yc-apigateway-rate-limit:
+        all_requests:
+          per_minute: {{ rate_limit_internal_per_minute | default(15) }}
+          per_hour: {{ rate_limit_internal_per_hour | default(100) }}
+{% elif cloud_provider == 'aws' %}
+      # AWS API Gateway configuration
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:{{ aws_region }}:lambda:path/2015-03-31/functions/{{ lambda_arn }}/invocations
+      # AWS resource policy (restrict to EventBridge Scheduler)
+      x-amazon-apigateway-resource-policy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: execute-api:Invoke
+            Resource: arn:aws:execute-api:{{ aws_region }}:{{ aws_account_id }}:{{ api_id }}/*/POST/internal/sync-git
+            Condition:
+              StringEquals:
+                aws:SourceAccount: {{ aws_account_id }}
+{% endif %}
+
+  /internal/health-check:
+    post:
+      summary: Trigger Health Check
+      description: |
+        Trigger periodic runner health check and metrics update.
+        This endpoint is invoked by cloud triggers every 10 minutes.
+        
+        **Access Restriction**: This endpoint should only be accessible
+        from cloud trigger services, not public internet.
+      tags:
+        - internal
+      security:
+        - TriggerAuth: []
+      responses:
+        '202':
+          description: Health check task queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: queued
+                  message:
+                    type: string
+                    example: Health check task queued successfully
+                  task_id:
+                    type: string
+        '401':
+          description: Invalid trigger authentication
+        '500':
+          description: Failed to queue task
+{% if cloud_provider == 'yandex' %}
+      # Yandex Cloud API Gateway configuration
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: {{ function_id }}
+      # Yandex Cloud access policy (restrict to Timer Trigger service account)
+      x-yc-apigateway-policy:
+        type: iam
+        service_accounts:
+          - {{ timer_trigger_sa_id }}
+      # Rate limiting for internal health-check endpoint (triggered every 10 minutes)
+      x-yc-apigateway-rate-limit:
+        all_requests:
+          per_minute: {{ rate_limit_internal_per_minute | default(15) }}
+          per_hour: {{ rate_limit_internal_per_hour | default(100) }}
+{% elif cloud_provider == 'aws' %}
+      # AWS API Gateway configuration
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:{{ aws_region }}:lambda:path/2015-03-31/functions/{{ lambda_arn }}/invocations
+      # AWS resource policy (restrict to EventBridge Scheduler)
+      x-amazon-apigateway-resource-policy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: execute-api:Invoke
+            Resource: arn:aws:execute-api:{{ aws_region }}:{{ aws_account_id }}:{{ api_id }}/*/POST/internal/health-check
+            Condition:
+              StringEquals:
+                aws:SourceAccount: {{ aws_account_id }}
+{% endif %}
+
+# Tags for grouping endpoints
+tags:
+  - name: health
+    description: Health check endpoints
+  - name: eggs
+    description: Egg configuration management
+  - name: webhooks
+    description: GitLab webhook processing
+  - name: internal
+    description: Internal endpoints for cloud triggers (restricted access)

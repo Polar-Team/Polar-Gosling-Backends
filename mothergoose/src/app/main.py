@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core import config
 from app.core.celery_app import celery_app
-from app.routers import eggs, health, internal
+from app.routers import eggs, health, internal, webhooks
 from app.util.base_logging import logger
 
 
@@ -72,6 +72,7 @@ def create_app() -> FastAPI:
     application.include_router(health.router)
     application.include_router(eggs.router)
     application.include_router(internal.router)
+    application.include_router(webhooks.router)
 
     return application
 

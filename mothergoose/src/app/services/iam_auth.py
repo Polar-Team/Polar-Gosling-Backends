@@ -7,9 +7,9 @@ Handles token and folder_id retrieval from magic link or static configuration.
 
 import json
 import os
-import sys
-import requests
 from typing import Literal, Union
+
+import requests
 
 from app.schema.cloud_connections_schemas import YandexCloudConnectionInfo
 from app.util.base_logging import logged
@@ -55,13 +55,13 @@ class YandexCloudIAMAuth:
                 KeyError,
                 json.JSONDecodeError,
                 requests.exceptions.ConnectionError,
-            ):
+            ) as exc:
                 if os.environ.get("PY_TEST") == "True":
                     print("Magic link data is not exist!")
                     response = "Empty"
                 else:
                     self.error("Magic link data is not exist!")
-                    raise AbsentReplyError("Magic link data is not exist!")
+                    raise AbsentReplyError("Magic link data is not exist!") from exc
             else:
                 self.info("Token was retrieved successfully.")
         else:

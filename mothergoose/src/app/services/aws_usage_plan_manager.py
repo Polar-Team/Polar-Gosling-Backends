@@ -5,8 +5,9 @@ Manages rate limiting and throttling for AWS API Gateway using Usage Plans.
 AWS handles rate limiting separately from the OpenAPI specification.
 """
 
-import boto3
 from typing import Any
+
+import boto3
 
 from app.util.base_logging import logger
 
@@ -14,7 +15,7 @@ from app.util.base_logging import logger
 class AWSUsagePlanManager:
     """
     Manager for AWS API Gateway Usage Plans.
-    
+
     Usage Plans provide rate limiting and throttling capabilities for AWS API Gateway.
     Unlike Yandex Cloud which embeds rate limits in the OpenAPI spec, AWS requires
     separate Usage Plan configuration.

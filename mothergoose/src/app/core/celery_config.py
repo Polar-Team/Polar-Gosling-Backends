@@ -59,6 +59,10 @@ elif CLOUD_PROVIDER == "aws":
             },
         },
     }
+elif CLOUD_PROVIDER == "test":
+    # Test environment - use memory broker
+    BROKER_URL = os.getenv("MOTHERGOOSE_BROKER_URL", "memory://")
+    BROKER_TRANSPORT_OPTIONS = {}
 else:
     logger.warning(
         "Unknown cloud provider '%s'. Falling back to Redis broker for development.",

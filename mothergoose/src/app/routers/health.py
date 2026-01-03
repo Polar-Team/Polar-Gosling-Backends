@@ -7,18 +7,10 @@ Provides health check endpoints for monitoring and load balancer health checks.
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel
+
 
 from app.core import config
-
-
-class HealthResponse(BaseModel):
-    """Health check response model."""
-
-    status: str
-    timestamp: str
-    version: str
-    service: str
+from app.schema.api_schemas import HealthResponse
 
 
 router = APIRouter(tags=["health"])

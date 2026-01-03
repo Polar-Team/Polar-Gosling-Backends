@@ -15,10 +15,19 @@ from typing import Dict, Any, Optional, List
 
 import pytest
 from testcontainers.core.container import DockerContainer
+from testcontainers.localstack import LocalStackContainer
 from fastapi.testclient import TestClient
+import boto3
 
+# Configure test environment BEFORE any app imports
 os.environ["PY_TEST"] = "True"
 os.environ["DISABLE_ACCESSIFY"] = "True"
+
+# Configure Celery for testing to avoid SQS/YMQ broker requirements
+# This MUST be set before any Celery or app imports
+os.environ["MOTHERGOOSE_BROKER_URL"] = "memory://"
+os.environ["MOTHERGOOSE_RESULT_BACKEND"] = "disabled"
+os.environ["MOTHERGOOSE_CLOUD_PROVIDER"] = "test"
 
 
 @pytest.fixture(scope="session", name="mock_server_url")
@@ -43,6 +52,113 @@ def ydb_container():
     ):
         time.sleep(30)  # Wait for the container to start
         yield container
+
+
+@pytest.fixture(scope="session", name="localstack_container")
+def localstack_container():
+    """
+    Fixture providing LocalStack testcontainer for AWS service integration tests.
+    
+    Provides SQS and Secrets Manager services for testing Celery task queue
+    and AWS secret management functionality.
+    """
+    with LocalStackContainer(image="localstack/localstack:latest") as localstack:
+        # Wait for LocalStack to be ready
+        time.sleep(5)
+        yield localstack
+
+
+@pytest.fixture(scope="session", name="aws_credentials")
+def aws_credentials(localstack_container):
+    """
+    Fixture providing AWS credentials and endpoint configuration for LocalStack.
+    
+    Returns a dictionary with boto3 client configuration for connecting to LocalStack.
+    """
+    return {
+        "aws_access_key_id": "test",
+        "aws_secret_access_key": "test",
+        "region_name": "us-east-1",
+        "endpoint_url": localstack_container.get_url(),
+    }
+
+
+@pytest.fixture(scope="function", name="sqs_client")
+def sqs_client(aws_credentials):
+    """
+    Fixture providing an SQS client connected to LocalStack.
+    
+    Creates a fresh SQS client for each test function.
+    """
+    client = boto3.client("sqs", **aws_credentials)
+    yield client
+
+
+@pytest.fixture(scope="function", name="sqs_queue")
+def sqs_queue(sqs_client):
+    """
+    Fixture providing a test SQS queue.
+    
+    Creates a queue for testing and cleans it up after the test.
+    """
+    queue_name = "test-celery-queue"
+    response = sqs_client.create_queue(QueueName=queue_name)
+    queue_url = response["QueueUrl"]
+    
+    yield {
+        "queue_name": queue_name,
+        "queue_url": queue_url,
+        "client": sqs_client,
+    }
+    
+    # Cleanup: Delete the queue after test
+    try:
+        sqs_client.delete_queue(QueueUrl=queue_url)
+    except Exception:
+        pass  # Ignore cleanup errors
+
+
+@pytest.fixture(scope="function", name="secrets_manager_client")
+def secrets_manager_client(aws_credentials):
+    """
+    Fixture providing an AWS Secrets Manager client connected to LocalStack.
+    
+    Creates a fresh Secrets Manager client for each test function.
+    """
+    client = boto3.client("secretsmanager", **aws_credentials)
+    yield client
+
+
+@pytest.fixture(scope="function", name="test_secret")
+def test_secret(secrets_manager_client):
+    """
+    Fixture providing a test secret in AWS Secrets Manager.
+    
+    Creates a secret for testing and cleans it up after the test.
+    """
+    secret_name = "test/webhook/secret"
+    secret_value = "test-secret-value-12345"
+    
+    # Create the secret
+    secrets_manager_client.create_secret(
+        Name=secret_name,
+        SecretString=secret_value,
+    )
+    
+    yield {
+        "secret_name": secret_name,
+        "secret_value": secret_value,
+        "client": secrets_manager_client,
+    }
+    
+    # Cleanup: Delete the secret after test
+    try:
+        secrets_manager_client.delete_secret(
+            SecretId=secret_name,
+            ForceDeleteWithoutRecovery=True,
+        )
+    except Exception:
+        pass  # Ignore cleanup errors
 
 
 @pytest.fixture(scope="module", name="client")

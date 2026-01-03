@@ -48,3 +48,28 @@ if not TRIGGER_AUTH_TOKEN:
         "Internal endpoints will reject all requests. "
         "Set this environment variable or retrieve from secret manager in production."
     )
+
+# Nest Repository Configuration
+# The Nest repository is the main GitOps repository that manages all Eggs
+# Webhooks from the Nest repository trigger immediate Git sync
+NEST_PROJECT_ID = os.getenv("MOTHERGOOSE_NEST_PROJECT_ID")
+if NEST_PROJECT_ID:
+    try:
+        NEST_PROJECT_ID = int(NEST_PROJECT_ID)
+    except ValueError:
+        logger.error(
+            "MOTHERGOOSE_NEST_PROJECT_ID must be an integer. Got: %s", NEST_PROJECT_ID
+        )
+        NEST_PROJECT_ID = None
+else:
+    logger.warning(
+        "MOTHERGOOSE_NEST_PROJECT_ID not set. "
+        "Nest repository webhooks will be identified by repository name heuristic. "
+        "Set this environment variable for accurate Nest webhook detection."
+    )
+
+# Nest repository webhook secret URI
+# Format: yc-lockbox://webhooks/nest-secret or aws-sm://webhooks/nest-secret
+NEST_WEBHOOK_SECRET_URI = os.getenv(
+    "MOTHERGOOSE_NEST_WEBHOOK_SECRET_URI", "yc-lockbox://webhooks/nest-secret"
+)

@@ -17,29 +17,15 @@ gets routed through API Gateway to internal endpoints.
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel
+
 
 from app.core import config
 from app.tasks.git_sync import sync_nest_config
 from app.tasks.maintenance import update_metrics
 from app.util.base_logging import logger
+from app.schema.api_schemas import TriggerResponse
 
 router = APIRouter(prefix="/internal", tags=["internal"])
-
-
-class TriggerResponse(BaseModel):
-    """Response model for trigger endpoints."""
-
-    status: str
-    message: str
-    task_id: str | None = None
-
-
-class YandexCloudTriggerPayload(BaseModel):
-    """Payload model for Yandex Cloud Timer Triggers."""
-
-    action: str
-    source: str
 
 
 async def verify_trigger_auth(x_trigger_auth: str = Header(...)) -> None:

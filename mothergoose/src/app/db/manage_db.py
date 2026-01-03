@@ -9,10 +9,18 @@ import ydb.aio as YDBAsync
 
 from app.model.audit_models import AuditLogsTableYDB
 from app.model.opentofu_models import OpenTofuVersionTableYDB
-from app.model.runners_models import EggConfigsTableYDB, RunnersTableYDB
+from app.model.runners_models import (
+    EggConfigsTableYDB,
+    RunnersTableYDB,
+    SyncHistoryTableYDB,
+)
 
 YDBTables = Union[
-    OpenTofuVersionTableYDB, RunnersTableYDB, EggConfigsTableYDB, AuditLogsTableYDB
+    OpenTofuVersionTableYDB,
+    RunnersTableYDB,
+    EggConfigsTableYDB,
+    AuditLogsTableYDB,
+    SyncHistoryTableYDB,
 ]
 
 

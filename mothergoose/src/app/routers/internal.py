@@ -114,17 +114,19 @@ async def trigger_git_sync(request: Request) -> TriggerResponse:
         - Should only be accessible from cloud trigger services
         - API Gateway should restrict access to internal endpoints
     """
-    # Log trigger source
+    # Determine sync type from request
+    sync_type = "periodic"
     try:
         body = await request.json()
         source = body.get("source", "unknown")
-        logger.info("Git sync triggered by: %s", source)
+        sync_type = body.get("sync_type", "periodic")
+        logger.info("Git sync triggered by: %s (type: %s)", source, sync_type)
     except Exception:  # pylint: disable=broad-exception-caught
-        logger.info("Git sync triggered by cloud scheduler")
+        logger.info("Git sync triggered by cloud scheduler (periodic)")
 
     try:
         # Queue Celery task for async processing
-        task = sync_nest_config.apply_async()
+        task = sync_nest_config.apply_async(kwargs={"sync_type": sync_type})
 
         logger.info("Git sync task queued: %s", task.id)
 

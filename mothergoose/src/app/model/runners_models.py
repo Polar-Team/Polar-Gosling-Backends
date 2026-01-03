@@ -147,6 +147,32 @@ class EggConfig(PydanticBaseModelORM):
     )
 
 
+class SyncHistory(PydanticBaseModelORM):
+    """Git sync history audit trail."""
+
+    id: str = Field(..., description="Unique sync history entry ID (PK)")
+    git_commit: str = Field(..., description="Git commit hash that was synced")
+    sync_type: str = Field(..., description="Type of sync (periodic/webhook/manual)")
+    status: SyncStatus = Field(..., description="Sync operation status")
+    changes_detected: int = Field(
+        default=0, description="Number of configuration changes detected"
+    )
+    eggs_synced: int = Field(default=0, description="Number of Eggs synced")
+    jobs_synced: int = Field(default=0, description="Number of Jobs synced")
+    uf_config_synced: bool = Field(
+        default=False, description="Whether UF config was synced"
+    )
+    error_message: Optional[str] = Field(
+        None, description="Error message if sync failed"
+    )
+    synced_at: datetime = Field(
+        default_factory=datetime.utcnow, description="Sync timestamp"
+    )
+    duration_ms: Optional[int] = Field(
+        None, description="Sync duration in milliseconds"
+    )
+
+
 # ============================================================================
 # YDB Table Schemas (for database operations)
 # ============================================================================
@@ -287,6 +313,73 @@ class EggConfigsTableYDB:
         )
 
 
+@dataclass
+class SyncHistoryTableYDB:
+    """
+    YDB table schema for sync history.
+
+    Stores audit trail of Git sync operations.
+    """
+
+    table_name: str = "sync_history"
+    columns: Tuple[str, ...] = field(
+        default_factory=lambda: (
+            "id",
+            "git_commit",
+            "sync_type",
+            "status",
+            "changes_detected",
+            "eggs_synced",
+            "jobs_synced",
+            "uf_config_synced",
+            "error_message",
+            "synced_at",
+            "duration_ms",
+        ),
+    )
+    r_type: Tuple[Union[YDBUtf8, YDBInt64, YDBBytes], ...] = field(
+        default_factory=lambda: (
+            make_ydb_type("Utf8"),  # id
+            make_ydb_type("Utf8"),  # git_commit
+            make_ydb_type("Utf8"),  # sync_type
+            make_ydb_type("Utf8"),  # status
+            make_ydb_type("Int64"),  # changes_detected
+            make_ydb_type("Int64"),  # eggs_synced
+            make_ydb_type("Int64"),  # jobs_synced
+            make_ydb_type("Utf8"),  # uf_config_synced (stored as "true"/"false")
+            make_ydb_type("Utf8"),  # error_message
+            make_ydb_type("Utf8"),  # synced_at (stored as ISO string)
+            make_ydb_type("Int64"),  # duration_ms
+        ),
+    )
+    primary_key: str = "id"
+    values_for_operate: Tuple[Any, ...] = field(
+        default_factory=lambda: (),
+    )
+
+    def __post_init__(self) -> None:
+        """Validate table schema."""
+        if len(self.columns) != len(self.r_type):
+            raise ValueError(
+                "The number of columns must match the number of row types."
+            )
+        if len(self.values_for_operate) != 0 and len(self.values_for_operate) != len(
+            self.columns
+        ):
+            raise ValueError("The number of values for operate must match columns.")
+        if self.primary_key != "id":
+            raise ValueError("Primary key must be 'id'.")
+
+        # Validate with YDBTableSchema
+        YDBTableSchema(  # type: ignore[call-arg]
+            table_name=self.table_name,
+            columns=self.columns,
+            r_type=self.r_type,  # type: ignore[arg-type]
+            primary_key=self.primary_key,
+            values_for_operate=self.values_for_operate,
+        )
+
+
 # ============================================================================
 # Pydantic Model for YDB Schema
 # ============================================================================
@@ -304,8 +397,8 @@ class RunnerModelYDB:  # pylint: disable=too-few-public-methods
     combined with this model when creating the full schema.
     """
 
-    tables: list[Union[RunnersTableYDB, EggConfigsTableYDB]] = Field(
-        ..., description="List of table schemas to be created in YDB"
+    tables: list[Union[RunnersTableYDB, EggConfigsTableYDB, SyncHistoryTableYDB]] = (
+        Field(..., description="List of table schemas to be created in YDB")
     )
 
     model_name: str = "RunnerModel"

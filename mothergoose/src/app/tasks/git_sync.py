@@ -9,6 +9,7 @@ from typing import Any
 
 from app.core.celery_app import celery_app
 from app.core.celery_base import BaseTask
+from app.services.git_sync_service import git_sync_service
 from app.util.base_logging import logger
 
 
@@ -18,11 +19,13 @@ from app.util.base_logging import logger
     bind=True,
     priority=7,
 )
-def sync_nest_config(self: BaseTask) -> dict[str, Any]:
+async def sync_nest_config(
+    self: BaseTask, sync_type: str = "periodic"
+) -> dict[str, Any]:
     """
     Synchronize Nest repository configuration to database cache.
 
-    This task is scheduled to run every 5 minutes by Celery Beat.
+    This task is scheduled to run every 5 minutes by cloud triggers.
     It can also be triggered manually via webhook when Nest repo is updated.
 
     The task performs the following steps:
@@ -34,6 +37,7 @@ def sync_nest_config(self: BaseTask) -> dict[str, Any]:
 
     Args:
         self: Task instance (bound)
+        sync_type: Type of sync (periodic/webhook/manual)
 
     Returns:
         dict: Sync result with status, commit hash, and changes detected
@@ -42,53 +46,12 @@ def sync_nest_config(self: BaseTask) -> dict[str, Any]:
         Exception: If Git sync fails after retries
     """
     task_id = self.request.id or "unknown"
-    logger.info("Starting Nest config sync in task %s", task_id)
+    logger.info("Starting Nest config sync in task %s (type: %s)", task_id, sync_type)
 
     try:
-        # TODO: Implement Git sync logic
-        # 1. Retrieve deploy key from secret storage
-        #    secret_manager.get_secret(
-        #        "yc-lockbox://deploy-keys/mothergoose-private"
-        #    )
-        #    secret_manager.get_secret("yc-lockbox://nest/repo-url")
-        #
-        # 2. Clone/Pull Nest repository
-        #    git.Repo.clone_from(
-        #        nest_repo_url,
-        #        '/tmp/nest',
-        #        env={'GIT_SSH_COMMAND': f'ssh -i {deploy_key}'}
-        #    )
-        #
-        # 3. Parse all .fly files
-        #    eggs = parse_eggs_directory('/tmp/nest/Eggs')
-        #    jobs = parse_jobs_directory('/tmp/nest/Jobs')
-        #    uf_config = parse_uf_config('/tmp/nest/UF/config.fly')
-        #
-        # 4. Update database cache
-        #    for egg in eggs:
-        #        db.upsert_egg_config(
-        #            name=egg.name,
-        #            config=egg,
-        #            git_commit=commit_hash,
-        #            synced_at=now
-        #        )
-        #
-        # 5. Log sync history
-        #    db.create_sync_history(
-        #        git_commit=commit_hash,
-        #        changes_detected=changes,
-        #        status='success'
-        #    )
-
-        result = {
-            "status": "success",
-            "task_id": task_id,
-            "git_commit": "abc123def456",  # Placeholder
-            "changes_detected": 0,
-            "eggs_synced": 0,
-            "jobs_synced": 0,
-            "message": "Nest config synced successfully (placeholder)",
-        }
+        # Execute Git sync
+        result = await git_sync_service.sync_nest_repository(sync_type=sync_type)
+        result["task_id"] = task_id
 
         logger.info("Nest config sync completed: %s", result)
         return result

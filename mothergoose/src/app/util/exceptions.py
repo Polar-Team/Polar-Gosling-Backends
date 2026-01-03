@@ -14,6 +14,6 @@ class AbsentReplyError(Exception):
         raise AbsentInfoError('Token is required but not provided.')
     """
 
-    def __init__(self, message: str = None):
+    def __init__(self, message: str | None = None):
         self.message = message
         super().__init__(self.message)

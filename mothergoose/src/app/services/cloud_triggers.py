@@ -221,12 +221,12 @@ class YandexCloudTriggerManager(CloudTriggerManager):
 
         # Wait for operation to complete
         # pylint: disable=no-member  # Protobuf generated code
-        operation_result = self.sdk.wait_operation_and_get_result(
+        operation_result: Any = self.sdk.wait_operation_and_get_result(
             operation,
             response_type=trigger_pb2.Trigger,
         )
 
-        trigger_id = operation_result.response.id
+        trigger_id: str = operation_result.response.id
         logger.info("Created %s Timer Trigger: %s", config.name, trigger_id)
 
         return trigger_id

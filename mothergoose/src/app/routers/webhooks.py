@@ -6,16 +6,18 @@ Handles GitLab webhooks for both Nest repository and Egg repositories.
 - Egg repository webhooks trigger runner deployment
 """
 
+import os
+
 from fastapi import APIRouter, Header, HTTPException, Request, status
 
-
 from app.core import config
-from app.services.egg_service import egg_service
-from app.services.secret_manager import secret_manager
+from app.schema.api_schemas import GitLabWebhookPayload, WebhookResponse
+from app.services import secret_manager
+from app.services.egg_service import EggService
+from app.services.secret_manager import SecretManager
 from app.tasks.git_sync import sync_nest_config
 from app.tasks.webhooks import process_webhook
 from app.util.base_logging import logger
-from app.schema.api_schemas import GitLabWebhookPayload, WebhookResponse
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -34,7 +36,10 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 )
 async def handle_gitlab_webhook(
     request: Request,
-    x_gitlab_token: str = Header(..., description="GitLab webhook secret token"),
+    x_gitlab_token: str = Header(
+        ...,
+        description="GitLab webhook secret token",
+    ),
 ) -> WebhookResponse:
     """
     Handle GitLab webhook events.
@@ -73,6 +78,14 @@ async def handle_gitlab_webhook(
 
         # Validate payload structure
         webhook = GitLabWebhookPayload(**payload)
+        secret_manager = SecretManager()
+
+        # Validate webhook secret against Nest webhook secret
+        if os.getenv("PY_TEST") == "True":
+            logger.info("Test endpoint url for localstack.")
+            endpoint_url = os.getenv("LOCALSTACK_URL")
+        else:
+            endpoint_url = None
 
         # Determine if this is a Nest repository webhook
         is_nest_webhook = await _is_nest_repository_webhook(webhook)
@@ -81,9 +94,8 @@ async def handle_gitlab_webhook(
             # Nest repository webhook → Validate and trigger immediate Git sync
             logger.info("Nest repository webhook detected, validating secret")
 
-            # Validate webhook secret against Nest webhook secret
             nest_webhook_secret = await secret_manager.get_secret(
-                config.NEST_WEBHOOK_SECRET_URI
+                config.NEST_WEBHOOK_SECRET_URI, endpoint_url
             )
             if x_gitlab_token != nest_webhook_secret:
                 logger.warning(
@@ -111,10 +123,13 @@ async def handle_gitlab_webhook(
 
         # Identify Egg by project_id or group_id
         egg_config = None
-        if webhook.project_id:
-            egg_config = await egg_service.get_egg_by_project_id(webhook.project_id)
-        elif webhook.group_id:
-            egg_config = await egg_service.get_egg_by_group_id(webhook.group_id)
+        if egg_service := EggService(schema=config.DEFAULT_DATABASE_SCHEMA):
+            if webhook.project_id:
+                await egg_service.get_egg_by_project_id(webhook.project_id)
+                egg_config = egg_service.egg_query_result
+            elif webhook.group_id:
+                await egg_service.get_egg_by_group_id(webhook.group_id)
+                egg_config = egg_service.egg_query_result
 
         if not egg_config:
             logger.warning(
@@ -125,7 +140,7 @@ async def handle_gitlab_webhook(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=(
-                    f"No Egg configuration found for project_id={webhook.project_id} "
+                    f"No Egg found for project_id={webhook.project_id} "
                     f"or group_id={webhook.group_id}"
                 ),
             )
@@ -135,7 +150,7 @@ async def handle_gitlab_webhook(
         # Validate webhook secret against per-Egg secret
         try:
             expected_secret = await secret_manager.get_secret(
-                egg_config.gitlab_webhook_secret_uri
+                egg_config.gitlab_webhook_secret_uri, endpoint_url=endpoint_url
             )
         except Exception as exc:
             logger.error(

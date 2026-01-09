@@ -10,10 +10,7 @@ from typing import Any
 from app.core.celery_app import celery_app
 from app.core.celery_base import BaseTask
 from app.model.runners_models import CloudProvider
-from app.schema.ydb_schemas import YDBSchema
-from app.services.egg_service import egg_service
 from app.services.runner_orchestration import RunnerOrchestrationService
-from app.services.runner_service import RunnerService
 from app.util.base_logging import logger
 
 
@@ -26,44 +23,18 @@ def _get_orchestration_service() -> RunnerOrchestrationService:
 
     Returns:
         RunnerOrchestrationService: Configured orchestration service
+
+    Note:
+        In production, this should be replaced with proper dependency
+        injection using environment variables for database configuration.
+        See conftest.py for test fixtures: test_ydb_config,
+        test_ydb_schema, test_orchestration_service
     """
-    # TODO: Get schema from configuration/environment
-    # For now, create a minimal schema for testing
-    from ydb import AnonymousCredentials
-
-    from app.model.runners_models import (
-        EggConfigsTableYDB,
-        RunnerModelYDB,
-        RunnersTableYDB,
-        SyncHistoryTableYDB,
-    )
-    from app.schema.ydb_schemas import YDBConfig
-
-    # Create minimal YDB config for testing
-    # In production, this would come from environment variables
-    config = YDBConfig(
-        endpoint="grpc://localhost:2136",
-        database="/local",
-        credentials=AnonymousCredentials(),
-    )
-
-    schema = YDBSchema(
-        config=config,
-        model=RunnerModelYDB(
-            tables=[
-                RunnersTableYDB(),
-                EggConfigsTableYDB(),
-                SyncHistoryTableYDB(),
-            ]
-        ),
-        version="1.0.0",
-        default_table="runners",
-    )
-
-    runner_service = RunnerService(schema=schema)
-    return RunnerOrchestrationService(
-        runner_service=runner_service,
-        egg_service=egg_service,
+    # Task 16: Implement proper DI with env config
+    raise NotImplementedError(
+        "Production database configuration not implemented. "
+        "Use environment variables to configure YDB connection. "
+        "For testing, use the fixture from conftest.py"
     )
 
 
@@ -73,7 +44,7 @@ def _get_orchestration_service() -> RunnerOrchestrationService:
     bind=True,
     priority=10,
 )
-def deploy_runner(
+def deploy_runner(  # pylint: disable=too-many-locals
     self: BaseTask,
     egg_name: str,
     runner_config: dict[str, Any],
@@ -111,7 +82,10 @@ def deploy_runner(
         job_requirements = runner_config.get("job_requirements", {})
         cloud_provider_str = runner_config.get("cloud_provider", "yandex")
         region = runner_config.get("region", "ru-central1-a")
-        deployed_from_commit = runner_config.get("deployed_from_commit", "unknown")
+        deployed_from_commit = runner_config.get(
+            "deployed_from_commit",
+            "unknown",
+        )
 
         # Convert cloud provider string to enum
         cloud_provider = CloudProvider(cloud_provider_str)
@@ -119,7 +93,7 @@ def deploy_runner(
         # Determine runner type based on job requirements
         # Note: This is a synchronous wrapper around async code
         # In production, use celery with async support or run_in_executor
-        import asyncio
+        import asyncio  # pylint: disable=import-outside-toplevel
 
         loop = asyncio.get_event_loop()
 
@@ -172,7 +146,10 @@ def deploy_runner(
     priority=9,
 )
 def terminate_runner(
-    self: BaseTask, runner_id: str, reason: str = "manual", actor: str = "system"
+    self: BaseTask,
+    runner_id: str,
+    reason: str = "manual",
+    actor: str = "system",
 ) -> dict[str, Any]:
     """
     Terminate an existing runner.
@@ -207,7 +184,7 @@ def terminate_runner(
 
         # Terminate runner
         # Note: This is a synchronous wrapper around async code
-        import asyncio
+        import asyncio  # pylint: disable=import-outside-toplevel
 
         loop = asyncio.get_event_loop()
         loop.run_until_complete(

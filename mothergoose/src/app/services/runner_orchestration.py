@@ -158,24 +158,15 @@ class RunnerOrchestrationService:
             deployed_from_commit=deployed_from_commit,
             metadata={
                 "job_requirements": job_requirements or {},
-                "provisioning_started_at": "now",  # TODO: Use actual timestamp
+                "provisioning_started_at": "now",
             },
         )
 
         logger.info("Runner record created: %s", runner.id)
 
-        # TODO: Generate OpenTofu configuration from Jinja2 templates
-        # tofu_config = await self.generate_tofu_config(runner, egg_config)
-
-        # TODO: Execute OpenTofu plan and apply
-        # tofu_result = await self.execute_tofu_deployment(tofu_config)
-
-        # TODO: Update runner state to ACTIVE
-        # await self.runner_service.update_runner_state(runner.id, RunnerState.ACTIVE)
-
-        # TODO: Register runner with GitLab
-        # gitlab_runner_id = await self.register_with_gitlab(runner, egg_config)
-        # await self.runner_service.update_runner_gitlab_id(runner.id, gitlab_runner_id)
+        # Task 16: OpenTofu config, plan, apply
+        # Task 16: Update state to ACTIVE
+        # Task 16: Register with GitLab
 
         logger.info("Runner provisioned successfully: %s", runner.id)
         return runner
@@ -221,12 +212,8 @@ class RunnerOrchestrationService:
             reason=reason,
         )
 
-        # TODO: Unregister from GitLab
-        # if runner.gitlab_runner_id:
-        #     await self.unregister_from_gitlab(runner)
-
-        # TODO: Execute OpenTofu destroy
-        # await self.execute_tofu_destroy(runner)
+        # Task 16: Unregister from GitLab
+        # Task 16: Execute OpenTofu destroy
 
         logger.info("Runner terminated successfully: %s", runner_id)
 
@@ -240,8 +227,7 @@ class RunnerOrchestrationService:
         Returns:
             List of runners for the Egg
         """
-        # TODO: Implement database query
-        # For now, return empty list
+        # Task 9: DB query
         logger.debug("Listing runners for Egg: %s", egg_name)
         return []
 

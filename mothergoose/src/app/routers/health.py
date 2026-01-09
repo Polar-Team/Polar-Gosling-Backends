@@ -8,10 +8,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, status
 
-
 from app.core import config
 from app.schema.api_schemas import HealthResponse
-
 
 router = APIRouter(tags=["health"])
 

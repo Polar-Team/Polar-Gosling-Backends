@@ -8,16 +8,19 @@ Provides reusable fixtures for testing the FastAPI application including:
 - YDB testcontainer for integration tests
 - Mock database client for unit testing
 """
+# pylint: disable=redefined-outer-name
+# Pytest fixtures intentionally redefine names from outer scope
 
 import os
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Generator
 
 import pytest
 from testcontainers.core.container import DockerContainer
 from testcontainers.localstack import LocalStackContainer
 from fastapi.testclient import TestClient
 import boto3
+from app.main import app
 
 # Configure test environment BEFORE any app imports
 os.environ["PY_TEST"] = "True"
@@ -31,7 +34,7 @@ os.environ["MOTHERGOOSE_CLOUD_PROVIDER"] = "test"
 
 
 @pytest.fixture(scope="session", name="mock_server_url")
-def mock_download_url():
+def mock_download_url() -> Generator[tuple[str, str], None, None]:
     """Fixture providing mock server URL for OpenTofu download tests."""
     url = "https://mockserver.com/1.10.4/tofu.zip"
     token = "testtoken"
@@ -39,7 +42,9 @@ def mock_download_url():
 
 
 @pytest.fixture(scope="session", name="ydb_container")
-def ydb_container():
+def ydb_container() -> (  # type: ignore[no-any-unimported]
+    Generator[DockerContainer, None, None]
+):
     """Fixture providing YDB testcontainer for integration tests."""
     image = "ydbplatform/local-ydb:latest"
     grpc_port = 2136
@@ -55,10 +60,12 @@ def ydb_container():
 
 
 @pytest.fixture(scope="session", name="localstack_container")
-def localstack_container():
+def localstack_container() -> (  # type: ignore[no-any-unimported]
+    Generator[LocalStackContainer, None, None]
+):
     """
     Fixture providing LocalStack testcontainer for AWS service integration tests.
-    
+
     Provides SQS and Secrets Manager services for testing Celery task queue
     and AWS secret management functionality.
     """
@@ -69,10 +76,12 @@ def localstack_container():
 
 
 @pytest.fixture(scope="session", name="aws_credentials")
-def aws_credentials(localstack_container):
+def aws_credentials(  # type: ignore[no-any-unimported]
+    localstack_container: LocalStackContainer,
+) -> Dict[str, str]:
     """
     Fixture providing AWS credentials and endpoint configuration for LocalStack.
-    
+
     Returns a dictionary with boto3 client configuration for connecting to LocalStack.
     """
     return {
@@ -83,93 +92,100 @@ def aws_credentials(localstack_container):
     }
 
 
-@pytest.fixture(scope="function", name="sqs_client")
-def sqs_client(aws_credentials):
+@pytest.fixture(scope="session", name="sqs_client")
+def sqs_client(aws_credentials: Dict[str, str]) -> Any:
     """
     Fixture providing an SQS client connected to LocalStack.
-    
+
     Creates a fresh SQS client for each test function.
     """
     client = boto3.client("sqs", **aws_credentials)
     yield client
 
 
-@pytest.fixture(scope="function", name="sqs_queue")
-def sqs_queue(sqs_client):
+@pytest.fixture(scope="session", name="sqs_queue")
+def sqs_queue(sqs_client: Any) -> Generator[Dict[str, Any], None, None]:
     """
     Fixture providing a test SQS queue.
-    
+
     Creates a queue for testing and cleans it up after the test.
     """
     queue_name = "test-celery-queue"
     response = sqs_client.create_queue(QueueName=queue_name)
     queue_url = response["QueueUrl"]
-    
+
     yield {
         "queue_name": queue_name,
         "queue_url": queue_url,
         "client": sqs_client,
     }
-    
+
     # Cleanup: Delete the queue after test
     try:
         sqs_client.delete_queue(QueueUrl=queue_url)
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         pass  # Ignore cleanup errors
 
 
-@pytest.fixture(scope="function", name="secrets_manager_client")
-def secrets_manager_client(aws_credentials):
+@pytest.fixture(scope="session", name="secrets_manager_client")
+def secrets_manager_client(
+    aws_credentials: Dict[str, str],
+) -> Any:
     """
     Fixture providing an AWS Secrets Manager client connected to LocalStack.
-    
+
     Creates a fresh Secrets Manager client for each test function.
     """
     client = boto3.client("secretsmanager", **aws_credentials)
     yield client
 
 
-@pytest.fixture(scope="function", name="test_secret")
-def test_secret(secrets_manager_client):
+@pytest.fixture(scope="session", name="test_secret")
+def test_secret(
+    secrets_manager_client: Any,
+) -> Generator[
+    Dict[str, Any],
+    None,
+    None,
+]:
     """
     Fixture providing a test secret in AWS Secrets Manager.
-    
+
     Creates a secret for testing and cleans it up after the test.
     """
     secret_name = "test/webhook/secret"
     secret_value = "test-secret-value-12345"
-    
+
     # Create the secret
     secrets_manager_client.create_secret(
         Name=secret_name,
         SecretString=secret_value,
     )
-    
+
     yield {
         "secret_name": secret_name,
         "secret_value": secret_value,
         "client": secrets_manager_client,
     }
-    
+
     # Cleanup: Delete the secret after test
     try:
         secrets_manager_client.delete_secret(
             SecretId=secret_name,
             ForceDeleteWithoutRecovery=True,
         )
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         pass  # Ignore cleanup errors
 
 
-@pytest.fixture(scope="module", name="client")
-def fastapi_test_client():
+@pytest.fixture(scope="session", name="fast_api_client")
+def fastapi_test_client() -> TestClient:
     """
     Fixture providing TestClient for FastAPI integration testing.
 
     Creates a fresh TestClient with the default application configuration.
     Uses module scope for efficiency since app configuration doesn't change.
     """
-    from app.main import app  # pylint: disable=import-outside-toplevel
 
     return TestClient(app)
 
@@ -182,7 +198,7 @@ class MockDBClient:
     failure injection capabilities for testing error handling.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize mock database with empty tables."""
         self.tables: Dict[str, Dict[str, Any]] = {
             "runners": {},
@@ -327,17 +343,79 @@ class MockDBClient:
 
 
 @pytest.fixture
-def mock_db_client():
+def mock_db_client() -> MockDBClient:
     """Fixture providing a mock database client for testing."""
     return MockDBClient()
 
 
-@pytest.fixture
-def mock_ydb_schema():
+@pytest.fixture(scope="function", name="test_ydb_config")
+def test_ydb_config() -> Any:
     """
-    Fixture providing a mock YDB schema for testing.
+    Fixture providing YDB configuration for testing.
 
-    This is a placeholder fixture for tests that need a schema object
-    but don't actually use it (they use mock_db_client instead).
+    Creates a YDB config pointing to localhost test instance.
+    This should ONLY be used in tests, never in production code.
     """
-    return None
+    # pylint: disable=import-outside-toplevel
+    from ydb import AnonymousCredentials
+    from app.schema.ydb_schemas import YDBConfig
+
+    return YDBConfig(
+        endpoint="grpc://localhost:2136",
+        database="/local",
+        credentials=AnonymousCredentials(),
+        pool_size=10,
+        root_certificates=None,
+    )
+
+
+@pytest.fixture(scope="function", name="test_ydb_schema")
+def test_ydb_schema(test_ydb_config: Any) -> Any:
+    """
+    Fixture providing a complete YDB schema for testing.
+
+    Creates a schema with all required tables for runner orchestration tests.
+    This should ONLY be used in tests, never in production code.
+    """
+    # pylint: disable=import-outside-toplevel
+    from app.model.runners_models import (
+        EggConfigsTableYDB,
+        RunnerModelYDB,
+        RunnersTableYDB,
+        SyncHistoryTableYDB,
+    )
+    from app.schema.ydb_schemas import YDBSchema
+
+    return YDBSchema(
+        config=test_ydb_config,
+        model=RunnerModelYDB(
+            tables=[
+                RunnersTableYDB(),
+                EggConfigsTableYDB(),
+                SyncHistoryTableYDB(),
+            ]
+        ),
+        version="1.0.0",
+        default_table="runners",
+    )
+
+
+@pytest.fixture(scope="function", name="test_orchestration_service")
+def test_orchestration_service(test_ydb_schema: Any) -> Any:
+    """
+    Fixture providing a RunnerOrchestrationService for testing.
+
+    Creates a service instance with test database configuration.
+    This should ONLY be used in tests, never in production code.
+    """
+    # pylint: disable=import-outside-toplevel
+    from app.services.egg_service import EggService
+    from app.services.runner_orchestration import RunnerOrchestrationService
+    from app.services.runner_service import RunnerService
+
+    runner_service = RunnerService(schema=test_ydb_schema)
+    egg_service = EggService(schema=test_ydb_schema)
+    return RunnerOrchestrationService(
+        runner_service=runner_service,
+        egg_service=egg_service,
+    )

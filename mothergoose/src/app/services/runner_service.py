@@ -11,10 +11,11 @@ Pattern:
 4. Call await operation.process(table_name="table_name")
 """
 
-import json
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import uuid4
+
+from accessify import private
 
 from app.db.manage_db import AsyncYDBFunctionsCollections
 from app.db.ydb_connection import AsyncYDBOperations
@@ -22,8 +23,10 @@ from app.model.audit_models import AuditLog
 from app.model.runners_models import CloudProvider, Runner, RunnerState, RunnerType
 from app.schema.dynamodb_schemas import DynamoDBSchema
 from app.schema.ydb_schemas import YDBSchema
+from app.util.base_logging import logged, logger
 
 
+@logged
 class RunnerService:
     """
     Service for managing runner state operations.
@@ -45,6 +48,29 @@ class RunnerService:
             schema: YDB or DynamoDB schema containing table definitions
         """
         self.schema = schema
+
+    @private
+    def __table_fetch_runners(self, runner: Runner) -> None:
+        """
+        Helper to find the runners table in the schema.
+
+        Sets table.values_for_operate for the runners table.
+
+        Raises:
+            ValueError: If runners table not found in schema
+        """
+        if isinstance(self.schema, DynamoDBSchema):
+            raise NotImplementedError("DynamoDB is not supported yet.")
+
+        for table in self.schema.model.tables:
+            if table.table_name == "runners":
+                runner_dict = runner.to_storage_dict()
+
+                table.values_for_operate = tuple(
+                    runner_dict[col] for col in table.columns
+                )
+                return
+        raise ValueError("Runners table not found in YDB schema")
 
     async def create_runner(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
         self,
@@ -99,25 +125,8 @@ class RunnerService:
             # 2. Set table.values_for_operate
             # 3. Create AsyncYDBOperations with upsert_query
             # 4. Call await operation.process(table_name="...")
-            for table in self.schema.model.tables:
-                if table.table_name == "runners":
-                    runner_dict = runner.model_dump()
 
-                    # Convert data for YDB storage
-                    # Convert datetime objects to ISO strings
-                    for key, value in runner_dict.items():
-                        if isinstance(value, datetime):
-                            runner_dict[key] = value.isoformat()
-                        # Convert dict to JSON bytes for metadata (YDB String type)
-                        elif key == "metadata" and isinstance(value, dict):
-                            runner_dict[key] = json.dumps(value).encode("utf-8")
-                        # Handle None for Int64 fields - use 0 as default
-                        elif key == "gitlab_runner_id" and value is None:
-                            runner_dict[key] = 0
-
-                    table.values_for_operate = tuple(
-                        runner_dict[col] for col in table.columns
-                    )
+            self.__table_fetch_runners(runner)
 
             operation = AsyncYDBOperations(
                 self.schema,
@@ -125,6 +134,7 @@ class RunnerService:
             )
             await operation.process(table_name="runners")
         elif isinstance(self.schema, DynamoDBSchema):
+            logger.error("DynamoDB is not supported yet.")
             raise NotImplementedError("DynamoDB is not supported yet.")
         return runner
 
@@ -154,23 +164,7 @@ class RunnerService:
 
         # Use YDB or DynamoDB for production
         if isinstance(self.schema, YDBSchema):
-            # Follow opentofu_binary.py pattern
-            for table in self.schema.model.tables:
-                if table.table_name == "runners":
-                    runner_dict = updated_runner.model_dump()
-
-                    # Convert data for YDB storage
-                    for key, value in runner_dict.items():
-                        if isinstance(value, datetime):
-                            runner_dict[key] = value.isoformat()
-                        elif key == "metadata" and isinstance(value, dict):
-                            runner_dict[key] = json.dumps(value).encode("utf-8")
-                        elif key == "gitlab_runner_id" and value is None:
-                            runner_dict[key] = 0
-
-                    table.values_for_operate = tuple(
-                        runner_dict[col] for col in table.columns
-                    )
+            self.__table_fetch_runners(updated_runner)
 
             operation = AsyncYDBOperations(
                 self.schema,
@@ -214,24 +208,8 @@ class RunnerService:
 
         # Use YDB or DynamoDB for production
         if isinstance(self.schema, YDBSchema):
-            # Follow opentofu_binary.py pattern for both tables
             # Update runner
-            for table in self.schema.model.tables:
-                if table.table_name == "runners":
-                    runner_dict = updated_runner.model_dump()
-
-                    # Convert data for YDB storage
-                    for key, value in runner_dict.items():
-                        if isinstance(value, datetime):
-                            runner_dict[key] = value.isoformat()
-                        elif key == "metadata" and isinstance(value, dict):
-                            runner_dict[key] = json.dumps(value)
-                        elif key == "gitlab_runner_id" and value is None:
-                            runner_dict[key] = 0
-
-                    table.values_for_operate = tuple(
-                        runner_dict[col] for col in table.columns
-                    )
+            self.__table_fetch_runners(updated_runner)
 
             operation = AsyncYDBOperations(
                 self.schema,
@@ -256,14 +234,11 @@ class RunnerService:
 
             for table in self.schema.model.tables:
                 if table.table_name == "audit_logs":
-                    audit_dict = audit_log.model_dump()
-
-                    # Convert data for YDB storage
-                    for key, value in audit_dict.items():
-                        if isinstance(value, datetime):
-                            audit_dict[key] = value.isoformat()
-                        elif key == "details" and isinstance(value, dict):
-                            audit_dict[key] = json.dumps(value).encode("utf-8")
+                    # Use to_storage_dict() if AuditLog has it, otherwise model_dump()
+                    if hasattr(audit_log, "to_storage_dict"):
+                        audit_dict = audit_log.to_storage_dict()
+                    else:
+                        audit_dict = audit_log.model_dump()
 
                     table.values_for_operate = tuple(
                         audit_dict[col] for col in table.columns
@@ -318,30 +293,11 @@ class RunnerService:
             row = result[0][0].rows[0]
             runner_data = {col: getattr(row, col) for col in runners_table.columns}
 
-            # Convert data from YDB storage format
-            for key, value in runner_data.items():
-                # Convert ISO strings back to datetime objects
-                if key in ("created_at", "updated_at", "last_heartbeat") and isinstance(
-                    value, str
-                ):
-                    runner_data[key] = datetime.fromisoformat(value)
-                # Convert JSON bytes back to dict for metadata (YDB String type returns bytes)
-                elif key == "metadata":
-                    if isinstance(value, bytes):
-                        runner_data[key] = (
-                            json.loads(value.decode("utf-8")) if value else {}
-                        )
-                    elif isinstance(value, str):
-                        runner_data[key] = json.loads(value) if value else {}
-                    else:
-                        runner_data[key] = {}
-                # Convert 0 back to None for gitlab_runner_id if it was None
-                elif key == "gitlab_runner_id" and value == 0:
-                    runner_data[key] = None
-
+            # Field validators in Runner model handle conversions from YDB storage
+            # - datetime strings → datetime objects
+            # - JSON bytes/strings → dict for metadata
+            # - 0 → None for optional gitlab_runner_id
             return Runner(**runner_data)
 
-        if isinstance(self.schema, DynamoDBSchema):
-            raise NotImplementedError("DynamoDB is not supported yet.")
-
-        raise ValueError("Invalid schema type")
+        logger.error("DynamoDB is not supported yet.")
+        raise NotImplementedError("DynamoDB is not supported yet.")

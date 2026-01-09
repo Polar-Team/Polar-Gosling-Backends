@@ -7,7 +7,7 @@ to interact with the MotherGoose backend.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, Dict
+from typing import Any, Dict, Optional
 
 from pydantic import Field, field_validator
 

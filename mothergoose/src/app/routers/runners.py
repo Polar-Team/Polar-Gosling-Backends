@@ -17,10 +17,7 @@ from app.schema.api_schemas import (
     TerminateRunnerRequest,
     TerminateRunnerResponse,
 )
-from app.schema.ydb_schemas import YDBSchema
-from app.services.egg_service import egg_service
 from app.services.runner_orchestration import RunnerOrchestrationService
-from app.services.runner_service import RunnerService
 from app.tasks.runners import deploy_runner as deploy_runner_task
 from app.tasks.runners import terminate_runner as terminate_runner_task
 from app.util.base_logging import logger
@@ -42,43 +39,18 @@ def _get_orchestration_service() -> RunnerOrchestrationService:
 
     Returns:
         RunnerOrchestrationService: Configured orchestration service
+
+    Note:
+        In production, this should be replaced with proper dependency
+        injection using environment variables for database configuration.
+        See conftest.py for test fixtures: test_ydb_config,
+        test_ydb_schema, test_orchestration_service
     """
-    # TODO: Get schema from configuration/environment
-    from ydb import AnonymousCredentials
-
-    from app.model.runners_models import (
-        EggConfigsTableYDB,
-        RunnerModelYDB,
-        RunnersTableYDB,
-        SyncHistoryTableYDB,
-    )
-    from app.schema.ydb_schemas import YDBConfig
-
-    # Create minimal YDB config for testing
-    # In production, this would come from environment variables
-    config = YDBConfig(
-        endpoint="grpc://localhost:2136",
-        database="/local",
-        credentials=AnonymousCredentials(),
-    )
-
-    schema = YDBSchema(
-        config=config,
-        model=RunnerModelYDB(
-            tables=[
-                RunnersTableYDB(),
-                EggConfigsTableYDB(),
-                SyncHistoryTableYDB(),
-            ]
-        ),
-        version="1.0.0",
-        default_table="runners",
-    )
-
-    runner_service = RunnerService(schema=schema)
-    return RunnerOrchestrationService(
-        runner_service=runner_service,
-        egg_service=egg_service,
+    # Task 16: Implement proper DI with env config
+    raise NotImplementedError(
+        "Production database configuration not implemented. "
+        "Use environment variables to configure YDB connection. "
+        "For testing, use the test_orchestration_service fixture from conftest.py"
     )
 
 
@@ -131,8 +103,7 @@ async def list_runners() -> List[RunnerDetailResponse]:
     """
     logger.info("Listing all runners")
 
-    # TODO: Implement database query to list all runners
-    # For now, return empty list
+    # Task 9: DB query
     return []
 
 
@@ -195,7 +166,8 @@ async def create_runner(request: CreateRunnerRequest) -> CreateRunnerResponse:
     logger.info("Creating runner for Egg: %s", request.egg_name)
 
     # Validate Egg exists
-    egg_config = await egg_service.get_egg_by_name(request.egg_name)
+    orchestration = _get_orchestration_service()
+    egg_config = await orchestration.egg_service.get_egg_by_name(request.egg_name)
     if not egg_config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -301,7 +273,8 @@ async def list_runners_by_egg(egg_name: str) -> List[RunnerDetailResponse]:
     logger.info("Listing runners for Egg: %s", egg_name)
 
     # Validate Egg exists
-    egg_config = await egg_service.get_egg_by_name(egg_name)
+    orchestration = _get_orchestration_service()
+    egg_config = await orchestration.egg_service.get_egg_by_name(egg_name)
     if not egg_config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -313,5 +286,3 @@ async def list_runners_by_egg(egg_name: str) -> List[RunnerDetailResponse]:
     runners = await orchestration.list_runners_by_egg(egg_name)
 
     return [_runner_to_response(runner) for runner in runners]
-
-

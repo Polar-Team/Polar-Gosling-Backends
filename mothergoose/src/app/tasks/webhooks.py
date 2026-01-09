@@ -9,7 +9,7 @@ from typing import Any
 
 from app.core.celery_app import celery_app
 from app.core.celery_base import BaseTask
-from app.services.egg_service import egg_service
+from app.tasks.runners import deploy_runner
 from app.util.base_logging import logger
 
 
@@ -27,7 +27,8 @@ def process_webhook(
     """
     Process GitLab webhook event asynchronously.
 
-    This task is queued when a webhook is received and processes it in the background.
+    This task is queued when a webhook is received and
+    processes it in the background.
     High priority task to ensure responsive webhook handling.
 
     The task performs the following steps:
@@ -63,7 +64,8 @@ def process_webhook(
 
     try:
         # Step 1: Retrieve Egg configuration
-        # This is a synchronous call in a Celery task, so we need to handle async
+        # This is a synchronous call in a Celery task,
+        # so we need to handle async
         # In production, use asyncio.run() or make the task async
         # egg_config = asyncio.run(egg_service.get_egg_by_name(egg_name))
         # For now, we'll log and continue with placeholder logic
@@ -88,14 +90,15 @@ def process_webhook(
 
         elif object_kind == "pipeline":
             # Pipeline event → Check if jobs are pending
-            pipeline_status = webhook_payload.get("object_attributes", {}).get(
-                "status"
+            pipeline_status = (
+                webhook_payload.get("object_attributes", {}).get("status"),
             )
             if pipeline_status in ["pending", "running"]:
                 should_deploy_runner = True
                 deployment_reason = f"pipeline_{pipeline_status}"
                 logger.info(
-                    "Pipeline %s detected, runner deployment required", pipeline_status
+                    "Pipeline %s detected, runner deployment required",
+                    pipeline_status,
                 )
 
         elif object_kind == "push":
@@ -105,40 +108,58 @@ def process_webhook(
             if ref.startswith("refs/heads/"):
                 should_deploy_runner = True
                 deployment_reason = "push_to_branch"
-                logger.info("Push to branch detected, runner deployment may be required")
+                logger.info("Push to branch detected - runner deploy.")
 
         elif object_kind == "merge_request":
             # Merge request event → May trigger MR pipeline
-            mr_action = webhook_payload.get("object_attributes", {}).get("action")
+            object_attributes = webhook_payload.get("object_attributes", {})
+            mr_action = object_attributes.get("action")
             if mr_action in ["open", "update", "reopen"]:
                 should_deploy_runner = True
                 deployment_reason = f"merge_request_{mr_action}"
                 logger.info(
-                    "Merge request %s detected, runner deployment may be required",
+                    "Merge request %s detected - runner deploy.",
                     mr_action,
                 )
 
         # Step 3: Trigger runner deployment if needed
         if should_deploy_runner:
+            # Extract job requirements from webhook payload
+            job_requirements = {}
+            if object_kind == "job":
+                job_attributes = webhook_payload.get("build", {})
+                job_requirements = {
+                    "job_id": job_attributes.get("id"),
+                    "job_name": job_attributes.get("name"),
+                    "stage": job_attributes.get("stage"),
+                    "tags": job_attributes.get("tag_list", []),
+                }
+
             logger.info(
                 "Triggering runner deployment for Egg %s (reason: %s)",
                 egg_name,
                 deployment_reason,
             )
 
-            # TODO: Queue runner deployment task
-            # from app.tasks.runners import deploy_runner
-            # deploy_runner.apply_async(
-            #     kwargs={
-            #         "egg_name": egg_name,
-            #         "webhook_payload": webhook_payload,
-            #         "deployment_reason": deployment_reason,
-            #     }
-            # )
+            # Queue runner deployment task
+            deployed_from_commit = webhook_payload.get("after", "unknown")
+            deploy_task = deploy_runner.apply_async(
+                kwargs={
+                    "egg_name": egg_name,
+                    "runner_config": {
+                        "job_requirements": job_requirements or {},
+                        "cloud_provider": "yandex",
+                        "region": "ru-central1-a",
+                        "deployed_from_commit": deployed_from_commit,
+                    },
+                },
+                priority=10,
+            )
 
             result = {
                 "status": "runner_deployment_queued",
                 "task_id": task_id,
+                "deployment_task_id": deploy_task.id,
                 "egg_name": egg_name,
                 "webhook_type": object_kind,
                 "deployment_reason": deployment_reason,
@@ -160,22 +181,12 @@ def process_webhook(
                 "webhook_type": object_kind,
                 "project_id": project_id,
                 "group_id": group_id,
-                "message": f"Webhook processed, no action required for {object_kind}",
+                "message": f"""
+                    Webhook processed, no action required for {object_kind}
+                    """,
             }
 
-        # Step 4: Log webhook event for audit
-        # TODO: Create audit log entry
-        # await db.create_audit_log(
-        #     actor=webhook_payload.get("user_username", "unknown"),
-        #     action="webhook_processed",
-        #     resource_type="egg",
-        #     resource_id=egg_name,
-        #     details={
-        #         "webhook_type": object_kind,
-        #         "deployment_triggered": should_deploy_runner,
-        #         "deployment_reason": deployment_reason,
-        #     }
-        # )
+        # Task 9: Create audit log
 
         logger.info("Webhook processing completed: %s", result)
         return result

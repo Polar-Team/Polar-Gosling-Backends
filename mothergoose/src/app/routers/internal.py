@@ -18,12 +18,11 @@ gets routed through API Gateway to internal endpoints.
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
-
 from app.core import config
+from app.schema.api_schemas import TriggerResponse
 from app.tasks.git_sync import sync_nest_config
 from app.tasks.maintenance import update_metrics
 from app.util.base_logging import logger
-from app.schema.api_schemas import TriggerResponse
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 

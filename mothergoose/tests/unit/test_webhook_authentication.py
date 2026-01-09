@@ -173,14 +173,15 @@ def client():
 
 
 @pytest.fixture(autouse=True)
-def clear_egg_cache():
+def clear_egg_cache(test_ydb_schema):
     """Clear egg service cache and secret manager cache before each test."""
     from app.services.secret_manager import secret_manager  # pylint: disable=import-outside-toplevel
+    from app.services.egg_service import EggService  # pylint: disable=import-outside-toplevel
 
-    egg_service._eggs_cache.clear()
+    # Initialize a temporary egg service for cache clearing
+    # Note: EggService doesn't have a cache, so we just clear secret_manager cache
     secret_manager.cache.clear()
     yield
-    egg_service._eggs_cache.clear()
     secret_manager.cache.clear()
 
 
@@ -235,8 +236,7 @@ async def test_webhook_authentication_rejects_invalid_secret(
     if invalid_secret == valid_secret:
         invalid_secret = valid_secret + "_invalid"
 
-    # Clear caches to prevent state pollution between Hypothesis examples
-    egg_service._eggs_cache.clear()
+    # Clear secret manager cache to prevent state pollution between Hypothesis examples
     secret_manager.cache.clear()
 
     # Set up environment variable for the valid secret
@@ -584,8 +584,7 @@ async def test_webhook_authentication_group_level_egg(
     if invalid_secret == valid_secret:
         invalid_secret = valid_secret + "_invalid"
 
-    # Clear caches to prevent state pollution between Hypothesis examples
-    egg_service._eggs_cache.clear()
+    # Clear secret manager cache to prevent state pollution between Hypothesis examples
     secret_manager.cache.clear()
 
     # Set up environment variable for the valid secret

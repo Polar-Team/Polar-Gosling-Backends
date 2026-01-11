@@ -10,7 +10,7 @@ or pipeline, the system should process the event and trigger appropriate actions
 
 import pytest
 from hypothesis import given, settings, strategies as st, HealthCheck
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from app.tasks.webhooks import process_webhook
 
@@ -184,6 +184,7 @@ def create_pipeline_webhook(
     egg_name=egg_names,
 )
 async def test_push_webhook_event_processing(
+    mock_deploy_runner: Any,
     project_id: int,
     ref: str,
     before_commit: str,
@@ -277,6 +278,7 @@ async def test_push_webhook_event_processing(
     egg_name=egg_names,
 )
 async def test_merge_request_webhook_event_processing(
+    mock_deploy_runner: Any,
     project_id: int,
     action: str,
     username: str,
@@ -342,9 +344,7 @@ async def test_merge_request_webhook_event_processing(
         assert "deployment_reason" in result, (
             "Result should contain 'deployment_reason' when deployment is triggered"
         )
-        assert (
-            result["deployment_reason"] == f"merge_request_{action}"
-        ), (
+        assert result["deployment_reason"] == f"merge_request_{action}", (
             f"Deployment reason should be 'merge_request_{action}', "
             f"got '{result['deployment_reason']}'"
         )
@@ -370,6 +370,7 @@ async def test_merge_request_webhook_event_processing(
     egg_name=egg_names,
 )
 async def test_pipeline_webhook_event_processing(
+    mock_deploy_runner: Any,
     project_id: int,
     status: str,
     ref: str,
@@ -437,9 +438,7 @@ async def test_pipeline_webhook_event_processing(
         assert "deployment_reason" in result, (
             "Result should contain 'deployment_reason' when deployment is triggered"
         )
-        assert (
-            result["deployment_reason"] == f"pipeline_{status}"
-        ), (
+        assert result["deployment_reason"] == f"pipeline_{status}", (
             f"Deployment reason should be 'pipeline_{status}', "
             f"got '{result['deployment_reason']}'"
         )
@@ -452,7 +451,7 @@ async def test_pipeline_webhook_event_processing(
 
 
 @pytest.mark.asyncio
-async def test_push_webhook_example() -> None:
+async def test_push_webhook_example(mock_deploy_runner: Any) -> None:
     """
     Example test demonstrating push webhook event processing.
 
@@ -482,7 +481,7 @@ async def test_push_webhook_example() -> None:
 
 
 @pytest.mark.asyncio
-async def test_merge_request_webhook_example() -> None:
+async def test_merge_request_webhook_example(mock_deploy_runner: Any) -> None:
     """
     Example test demonstrating merge request webhook event processing.
 
@@ -510,7 +509,7 @@ async def test_merge_request_webhook_example() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_webhook_example() -> None:
+async def test_pipeline_webhook_example(mock_deploy_runner: Any) -> None:
     """
     Example test demonstrating pipeline webhook event processing.
 
@@ -539,7 +538,7 @@ async def test_pipeline_webhook_example() -> None:
 
 
 @pytest.mark.asyncio
-async def test_push_to_tag_no_deployment() -> None:
+async def test_push_to_tag_no_deployment(mock_deploy_runner: Any) -> None:
     """
     Test that push events to tags do not trigger runner deployment.
 
@@ -568,7 +567,7 @@ async def test_push_to_tag_no_deployment() -> None:
 
 
 @pytest.mark.asyncio
-async def test_merge_request_close_no_deployment() -> None:
+async def test_merge_request_close_no_deployment(mock_deploy_runner: Any) -> None:
     """
     Test that merge request close events do not trigger runner deployment.
 
@@ -596,7 +595,7 @@ async def test_merge_request_close_no_deployment() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_success_no_deployment() -> None:
+async def test_pipeline_success_no_deployment(mock_deploy_runner: Any) -> None:
     """
     Test that successful pipeline events do not trigger runner deployment.
 

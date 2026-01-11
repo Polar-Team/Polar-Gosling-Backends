@@ -8,64 +8,27 @@ This module tests that for any webhook request without a valid shared secret,
 the request should be rejected with 401 Unauthorized.
 """
 
-from app.services.egg_service import egg_service
-from app.model.runners_models import EggConfig
-from hypothesis import given, settings, strategies as st, HealthCheck
-from fastapi.testclient import TestClient
-from fastapi import status
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+import asyncio
+from app.services.secret_manager import secret_manager
+from app.services.egg_service import EggService
+from app.model.runners_models import (
+    RunnerModelYDB,
+    EggConfigsTableYDB,
+    RunnersTableYDB,
+    SyncHistoryTableYDB,
+)
+from app.schema.ydb_schemas import YDBConfig, YDBSchema
+from app.db.manage_db import AsyncYDBFunctionsCollections
+from app.db.ydb_connection import AsyncYDBOperations
+from ydb import AnonymousCredentials
 from typing import Any, Dict, Optional
-import os
+from unittest.mock import MagicMock, patch
 
-
-# Hypothesis strategies for generating test data
-project_ids = st.integers(min_value=1, max_value=999999)
-group_ids = st.integers(min_value=1, max_value=999999)
-
-# Generate egg names using ASCII alphanumeric characters plus hyphens and underscores
-# HTTP headers must be ASCII-only
-egg_names = st.text(
-    alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_",
-    min_size=3,
-    max_size=20,
-).filter(
-    lambda x: x
-    and not x.startswith("-")
-    and not x.endswith("-")
-    and not x.startswith("_")
-    and not x.endswith("_")
-)
-
-gitlab_servers = st.sampled_from(
-    [
-        "gitlab.com",
-        "gitlab.company.com",
-        "gitlab.internal.com",
-        "git.example.org",
-    ]
-)
-
-# Generate random webhook secrets (valid and invalid)
-# HTTP headers must be ASCII-only, so we constrain to ASCII printable characters
-webhook_secrets = st.text(
-    alphabet=st.characters(min_codepoint=33, max_codepoint=126),  # ASCII printable
-    min_size=16,
-    max_size=64,
-)
-
-# Generate invalid webhook secrets (empty, whitespace, wrong format)
-# HTTP headers must be ASCII-only
-invalid_secrets = st.one_of(
-    st.just(""),  # Empty string
-    # Whitespace only (no newlines in headers)
-    st.text(alphabet=" \t", min_size=1, max_size=10),
-    st.text(
-        alphabet=st.characters(min_codepoint=33, max_codepoint=126),  # ASCII printable
-        min_size=1,
-        max_size=15,
-    ),  # Too short
-)
+import pytest_asyncio
+import pytest
+from fastapi import status
+from fastapi.testclient import TestClient
+from app.model.runners_models import EggConfig, generate_new_eggconfig
 
 
 def create_egg_config(
@@ -94,13 +57,15 @@ def create_egg_config(
         },
     }
 
-    return EggConfig(
+    return generate_new_eggconfig(
         name=name,
         config=config,
         git_commit=commit,
-        git_repo_url_secret="yc-lockbox://nest/repo-url",
-        gitlab_token_secret_uri=f"yc-lockbox://gitlab/{gitlab_server}/{name}/runner-token",
-        gitlab_webhook_secret_uri=f"yc-lockbox://gitlab/{gitlab_server}/{name}/webhook-secret",
+        git_repo_url_secret="aws-sm://nest/repo-url",
+        gitlab_token_secret_uri=f"aws-sm://gitlab/{gitlab_server}/{name}/runner-token",
+        gitlab_webhook_secret_uri=f"aws-sm://gitlab/{gitlab_server}/{
+            name
+        }/webhook-secret",
     )
 
 
@@ -131,45 +96,105 @@ def create_webhook_payload(
     return payload
 
 
-def get_secret_env_var(gitlab_server: str, egg_name: str) -> str:
+def get_secret_name(gitlab_server: str, egg_name: str) -> str:
     """
-    Get the environment variable name for a webhook secret.
+    Get the AWS Secrets Manager secret name for a webhook secret.
 
-    The secret URI is: yc-lockbox://gitlab/{server}/{egg-name}/webhook-secret
-    - secret_id = "gitlab/{server}/{egg-name}"
-    - key = "webhook-secret"
-
-    The secret manager replaces all special characters (slashes, dots, hyphens)
-    with underscores to create valid environment variable names.
-
-    Env var format: YC_LOCKBOX_{SECRET_ID_CLEAN}_{KEY_CLEAN}
-    where CLEAN means all /, ., - replaced with _
+    The secret URI is: aws-sm://gitlab/{server}/{egg-name}/webhook-secret
+    For AWS Secrets Manager, the secret name is: gitlab/{server}/{egg-name}/webhook-secret
 
     Args:
         gitlab_server: GitLab server FQDN
         egg_name: Egg name
 
     Returns:
-        Environment variable name
+        Secret name for AWS Secrets Manager
     """
-    # The secret_id is "gitlab/{server}/{egg-name}"
-    # Replace all special characters with underscores
-    secret_id = (
-        f"gitlab/{gitlab_server}/{egg_name}".upper()
-        .replace("/", "_")
-        .replace(".", "_")
-        .replace("-", "_")
+    return f"gitlab/{gitlab_server}/{egg_name}/webhook-secret"
+
+
+@pytest.fixture(scope="module", name="test_ydb_schema")
+def ydb_schema(ydb_container) -> YDBSchema:
+    """
+    Fixture to provide YDB configuration with real YDB container.
+
+    This creates a YDB schema connected to a real YDB database running
+    in a testcontainer, allowing integration tests with minimal mocks.
+    """
+    config = YDBConfig(
+        endpoint=f"grpc://{ydb_container.get_container_host_ip()}:{
+            ydb_container.get_exposed_port(2136)
+        }",
+        database="/local",
+        credentials=AnonymousCredentials(),
     )
-    key = "webhook-secret".upper().replace("-", "_")
-    return f"YC_LOCKBOX_{secret_id}_{key}"
+    model = RunnerModelYDB(
+        tables=[
+            EggConfigsTableYDB(),
+            RunnersTableYDB(),
+            SyncHistoryTableYDB(),
+        ]
+    )
+    schema = YDBSchema(
+        config=config,
+        model=model,
+    )
+    yield schema
+
+    delete_operation = AsyncYDBOperations(
+        schema, AsyncYDBFunctionsCollections.drop_tables
+    )
+
+    async def process():
+        await delete_operation.process()
+
+    asyncio.run(process())
 
 
 @pytest.fixture
-def client():
-    """Fixture providing TestClient for FastAPI integration testing."""
-    from app.main import app  # pylint: disable=import-outside-toplevel
+def egg_service(test_ydb_schema):
+    """Fixture providing a fresh EggService instance for each test."""
 
-    return TestClient(app)
+    return EggService(schema=test_ydb_schema)
+
+
+@pytest_asyncio.fixture(scope="module", autouse=True)
+async def setup_ydb_tables(test_ydb_schema):
+    """
+    Create YDB tables before tests run.
+
+    This fixture ensures that all required tables (runners, egg_configs, sync_history)
+    exist in the YDB database before tests execute.
+
+    Tables are created with IF NOT EXISTS semantics by catching the "path exist" error.
+    """
+
+    operation = AsyncYDBOperations(
+        test_ydb_schema,
+        AsyncYDBFunctionsCollections.create_tables,
+    )
+
+    try:
+        await operation.process()
+    except Exception as e:
+        # Tables might already exist - check if error is about existing tables
+        error_msg = str(e)
+        if "path exist" not in error_msg.lower():
+            # If it's not about existing tables, re-raise the error
+            raise
+
+    yield
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_localstack_url(localstack_container):
+    """Set LOCALSTACK_URL environment variable for all tests in this module."""
+    import os
+
+    os.environ["LOCALSTACK_URL"] = localstack_container.get_url()
+    yield
+    if "LOCALSTACK_URL" in os.environ:
+        del os.environ["LOCALSTACK_URL"]
 
 
 @pytest.fixture(autouse=True)
@@ -202,25 +227,10 @@ def mock_celery_tasks():
 
 # Feature: gitops-runner-orchestration, Property 33: Webhook Authentication
 @pytest.mark.asyncio
-@settings(
-    max_examples=100,
-    deadline=None,
-    suppress_health_check=[HealthCheck.function_scoped_fixture],
-)
-@given(
-    project_id=project_ids,
-    egg_name=egg_names,
-    gitlab_server=gitlab_servers,
-    valid_secret=webhook_secrets,
-    invalid_secret=st.one_of(invalid_secrets, webhook_secrets),
-)
 async def test_webhook_authentication_rejects_invalid_secret(
-    client: TestClient,
-    project_id: int,
-    egg_name: str,
-    gitlab_server: str,
-    valid_secret: str,
-    invalid_secret: str,
+    fast_api_client,
+    egg_service: Any,
+    secrets_manager_client: Any,
 ) -> None:
     """
     Property 33: Webhook Authentication
@@ -230,8 +240,11 @@ async def test_webhook_authentication_rejects_invalid_secret(
 
     Validates: Requirements 16.1
     """
-    from app.services.secret_manager import secret_manager  # pylint: disable=import-outside-toplevel
-
+    egg_name = "egg-name-example-123asdfa"
+    project_id = 123456
+    gitlab_server = "gitlab.com"
+    valid_secret = "valid-webhook-secret-12345235asdf"
+    invalid_secret = "invalid-webhook-secret-67890sdfasdglkj"
     # Ensure invalid secret is different from valid secret
     if invalid_secret == valid_secret:
         invalid_secret = valid_secret + "_invalid"
@@ -239,9 +252,19 @@ async def test_webhook_authentication_rejects_invalid_secret(
     # Clear secret manager cache to prevent state pollution between Hypothesis examples
     secret_manager.cache.clear()
 
-    # Set up environment variable for the valid secret
-    secret_env_var = get_secret_env_var(gitlab_server, egg_name)
-    os.environ[secret_env_var] = valid_secret
+    # Create secret in localstack
+    secret_name = get_secret_name(gitlab_server, egg_name)
+    try:
+        secrets_manager_client.create_secret(
+            Name=secret_name,
+            SecretString=valid_secret,
+        )
+    except secrets_manager_client.exceptions.ResourceExistsException:
+        # Secret already exists, update it
+        secrets_manager_client.put_secret_value(
+            SecretId=secret_name,
+            SecretString=valid_secret,
+        )
 
     try:
         # Create Egg configuration
@@ -251,6 +274,7 @@ async def test_webhook_authentication_rejects_invalid_secret(
             gitlab_server=gitlab_server,
             commit="abc123",
         )
+
         await egg_service.upsert_egg(egg)
 
         # Create webhook payload
@@ -261,13 +285,14 @@ async def test_webhook_authentication_rejects_invalid_secret(
         )
 
         # Test 1: Request with invalid secret should be rejected
-        response_invalid = client.post(
+        response_invalid = fast_api_client.post(
             "/webhooks/gitlab",
             json=payload,
             headers={"X-Gitlab-Token": invalid_secret},
         )
 
-        assert response_invalid.status_code == status.HTTP_401_UNAUTHORIZED, (
+        response_status = status.HTTP_401_UNAUTHORIZED
+        assert response_invalid.status_code == response_status, (
             f"Webhook with invalid secret should be rejected with 401, "
             f"got {response_invalid.status_code}"
         )
@@ -276,7 +301,7 @@ async def test_webhook_authentication_rejects_invalid_secret(
         secret_manager.cache.clear()
 
         # Test 2: Request with valid secret should be accepted
-        response_valid = client.post(
+        response_valid = fast_api_client.post(
             "/webhooks/gitlab",
             json=payload,
             headers={"X-Gitlab-Token": valid_secret},
@@ -291,31 +316,23 @@ async def test_webhook_authentication_rejects_invalid_secret(
         )
 
     finally:
-        # Clean up environment variable
-        if secret_env_var in os.environ:
-            del os.environ[secret_env_var]
+        # Clean up secret
+        try:
+            secrets_manager_client.delete_secret(
+                SecretId=secret_name,
+                ForceDeleteWithoutRecovery=True,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass  # Ignore cleanup errors
         # Clear cache after test
         secret_manager.cache.clear()
 
 
 @pytest.mark.asyncio
-@settings(
-    max_examples=100,
-    deadline=None,
-    suppress_health_check=[HealthCheck.function_scoped_fixture],
-)
-@given(
-    project_id=project_ids,
-    egg_name=egg_names,
-    gitlab_server=gitlab_servers,
-    valid_secret=webhook_secrets,
-)
 async def test_webhook_authentication_rejects_missing_header(
-    client: TestClient,
-    project_id: int,
-    egg_name: str,
-    gitlab_server: str,
-    valid_secret: str,
+    fast_api_client,
+    egg_service: Any,
+    secrets_manager_client: Any,
 ) -> None:
     """
     Property 33: Webhook Authentication (Missing Header)
@@ -325,9 +342,25 @@ async def test_webhook_authentication_rejects_missing_header(
 
     Validates: Requirements 16.1
     """
-    # Set up environment variable for the valid secret
-    secret_env_var = get_secret_env_var(gitlab_server, egg_name)
-    os.environ[secret_env_var] = valid_secret
+
+    egg_name = "egg-name-example-1239876"
+    project_id = 123456
+    gitlab_server = "gitlab.com"
+    valid_secret = "valid-webhook-secret-123450sdf"
+
+    # Create secret in localstack
+    secret_name = get_secret_name(gitlab_server, egg_name)
+    try:
+        secrets_manager_client.create_secret(
+            Name=secret_name,
+            SecretString=valid_secret,
+        )
+    except secrets_manager_client.exceptions.ResourceExistsException:
+        # Secret already exists, update it
+        secrets_manager_client.put_secret_value(
+            SecretId=secret_name,
+            SecretString=valid_secret,
+        )
 
     try:
         # Create Egg configuration
@@ -337,6 +370,7 @@ async def test_webhook_authentication_rejects_missing_header(
             gitlab_server=gitlab_server,
             commit="abc123",
         )
+
         await egg_service.upsert_egg(egg)
 
         # Create webhook payload
@@ -347,26 +381,34 @@ async def test_webhook_authentication_rejects_missing_header(
         )
 
         # Request without X-Gitlab-Token header should be rejected
-        response = client.post(
+        response = fast_api_client.post(
             "/webhooks/gitlab",
             json=payload,
             # No X-Gitlab-Token header
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY, (
-            f"Webhook without X-Gitlab-Token header should be rejected with 422, "
-            f"got {response.status_code}"
+        response_status = status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == response_status, (
+            "Webhook without X-Gitlab-Token header "
+            f"should be rejected with 422, got {response.status_code}"
         )
 
     finally:
-        # Clean up environment variable
-        if secret_env_var in os.environ:
-            del os.environ[secret_env_var]
+        # Clean up secret
+        try:
+            secrets_manager_client.delete_secret(
+                SecretId=secret_name,
+                ForceDeleteWithoutRecovery=True,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass  # Ignore cleanup errors
 
 
 @pytest.mark.asyncio
 async def test_webhook_authentication_example_valid_secret(
     client: TestClient,
+    egg_service: Any,
+    secrets_manager_client: Any,
 ) -> None:
     """Example test: Webhook with valid secret is accepted."""
     egg_name = "test-app"
@@ -374,8 +416,11 @@ async def test_webhook_authentication_example_valid_secret(
     gitlab_server = "gitlab.com"
     valid_secret = "valid-webhook-secret-12345"
 
-    secret_env_var = get_secret_env_var(gitlab_server, egg_name)
-    os.environ[secret_env_var] = valid_secret
+    secret_name = get_secret_name(gitlab_server, egg_name)
+    secrets_manager_client.create_secret(
+        Name=secret_name,
+        SecretString=valid_secret,
+    )
 
     try:
         egg = create_egg_config(
@@ -405,13 +450,20 @@ async def test_webhook_authentication_example_valid_secret(
         assert response.json()["status"] == "queued"
 
     finally:
-        if secret_env_var in os.environ:
-            del os.environ[secret_env_var]
+        try:
+            secrets_manager_client.delete_secret(
+                SecretId=secret_name,
+                ForceDeleteWithoutRecovery=True,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
 
 
 @pytest.mark.asyncio
 async def test_webhook_authentication_example_invalid_secret(
     client: TestClient,
+    egg_service: Any,
+    secrets_manager_client: Any,
 ) -> None:
     """Example test: Webhook with invalid secret is rejected."""
     egg_name = "test-app"
@@ -420,8 +472,11 @@ async def test_webhook_authentication_example_invalid_secret(
     valid_secret = "valid-webhook-secret-12345"
     invalid_secret = "wrong-secret"
 
-    secret_env_var = get_secret_env_var(gitlab_server, egg_name)
-    os.environ[secret_env_var] = valid_secret
+    secret_name = get_secret_name(gitlab_server, egg_name)
+    secrets_manager_client.create_secret(
+        Name=secret_name,
+        SecretString=valid_secret,
+    )
 
     try:
         egg = create_egg_config(
@@ -448,13 +503,20 @@ async def test_webhook_authentication_example_invalid_secret(
         assert "Invalid webhook secret" in response.json()["detail"]
 
     finally:
-        if secret_env_var in os.environ:
-            del os.environ[secret_env_var]
+        try:
+            secrets_manager_client.delete_secret(
+                SecretId=secret_name,
+                ForceDeleteWithoutRecovery=True,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
 
 
 @pytest.mark.asyncio
 async def test_webhook_authentication_example_missing_header(
     client: TestClient,
+    egg_service: Any,
+    secrets_manager_client: Any,
 ) -> None:
     """Example test: Webhook without X-Gitlab-Token header is rejected."""
     egg_name = "test-app"
@@ -462,8 +524,11 @@ async def test_webhook_authentication_example_missing_header(
     gitlab_server = "gitlab.com"
     valid_secret = "valid-webhook-secret-12345"
 
-    secret_env_var = get_secret_env_var(gitlab_server, egg_name)
-    os.environ[secret_env_var] = valid_secret
+    secret_name = get_secret_name(gitlab_server, egg_name)
+    secrets_manager_client.create_secret(
+        Name=secret_name,
+        SecretString=valid_secret,
+    )
 
     try:
         egg = create_egg_config(
@@ -489,21 +554,31 @@ async def test_webhook_authentication_example_missing_header(
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     finally:
-        if secret_env_var in os.environ:
-            del os.environ[secret_env_var]
+        try:
+            secrets_manager_client.delete_secret(
+                SecretId=secret_name,
+                ForceDeleteWithoutRecovery=True,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
 
 
 @pytest.mark.asyncio
 async def test_webhook_authentication_nest_repository(
     client: TestClient,
+    secrets_manager_client: Any,
 ) -> None:
     """Example test: Nest repository webhook authentication."""
     nest_project_id = 99999
     nest_secret = "nest-webhook-secret-12345"
 
-    # NEST_WEBHOOK_SECRET_URI = "yc-lockbox://webhooks/nest-secret"
-    # secret_id = "webhooks", key = "nest-secret"
-    os.environ["YC_LOCKBOX_WEBHOOKS_NEST_SECRET"] = nest_secret
+    # NEST_WEBHOOK_SECRET_URI = "aws-sm://webhooks/nest-secret"
+    # Create the secret in localstack
+    secret_name = "webhooks/nest-secret"
+    secrets_manager_client.create_secret(
+        Name=secret_name,
+        SecretString=nest_secret,
+    )
 
     try:
         # Patch the config.NEST_PROJECT_ID to match our test project
@@ -537,38 +612,27 @@ async def test_webhook_authentication_nest_repository(
                 headers={"X-Gitlab-Token": "wrong-secret"},
             )
 
-            assert (
-                response_invalid.status_code == status.HTTP_401_UNAUTHORIZED
-            ), (
+            assert response_invalid.status_code == status.HTTP_401_UNAUTHORIZED, (
                 f"Expected 401, got {response_invalid.status_code}: "
                 f"{response_invalid.json()}"
             )
 
     finally:
-        if "YC_LOCKBOX_WEBHOOKS_NEST_SECRET" in os.environ:
-            del os.environ["YC_LOCKBOX_WEBHOOKS_NEST_SECRET"]
+        # Cleanup: Delete the secret
+        try:
+            secrets_manager_client.delete_secret(
+                SecretId=secret_name,
+                ForceDeleteWithoutRecovery=True,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass  # Ignore cleanup errors
 
 
 @pytest.mark.asyncio
-@settings(
-    max_examples=50,
-    deadline=None,
-    suppress_health_check=[HealthCheck.function_scoped_fixture],
-)
-@given(
-    group_id=group_ids,
-    egg_name=egg_names,
-    gitlab_server=gitlab_servers,
-    valid_secret=webhook_secrets,
-    invalid_secret=webhook_secrets,
-)
 async def test_webhook_authentication_group_level_egg(
-    client: TestClient,
-    group_id: int,
-    egg_name: str,
-    gitlab_server: str,
-    valid_secret: str,
-    invalid_secret: str,
+    fast_api_client: TestClient,
+    egg_service: Any,
+    secrets_manager_client: Any,
 ) -> None:
     """
     Property 33: Webhook Authentication (Group-Level Egg)
@@ -578,18 +642,33 @@ async def test_webhook_authentication_group_level_egg(
 
     Validates: Requirements 16.1
     """
-    from app.services.secret_manager import secret_manager  # pylint: disable=import-outside-toplevel
+
+    egg_name = "egg-name-example-123"
+    group_id = 123454
+    gitlab_server = "gitlab.com"
+    valid_secret = "valid-webhook-secret-asdfasdf"
+    invalid_secret = "invalid-webhook-secret-9886sdg"
 
     # Ensure invalid secret is different from valid secret
     if invalid_secret == valid_secret:
         invalid_secret = valid_secret + "_invalid"
 
-    # Clear secret manager cache to prevent state pollution between Hypothesis examples
+    # Clear secret manager cache Hypothesis examples
     secret_manager.cache.clear()
 
-    # Set up environment variable for the valid secret
-    secret_env_var = get_secret_env_var(gitlab_server, egg_name)
-    os.environ[secret_env_var] = valid_secret
+    # Create secret in localstack
+    secret_name = get_secret_name(gitlab_server, egg_name)
+    try:
+        secrets_manager_client.create_secret(
+            Name=secret_name,
+            SecretString=valid_secret,
+        )
+    except secrets_manager_client.exceptions.ResourceExistsException:
+        # Secret already exists, update it
+        secrets_manager_client.put_secret_value(
+            SecretId=secret_name,
+            SecretString=valid_secret,
+        )
 
     try:
         # Create group-level Egg configuration
@@ -599,6 +678,9 @@ async def test_webhook_authentication_group_level_egg(
             gitlab_server=gitlab_server,
             commit="abc123",
         )
+
+        # Run async operation in a new event loop
+
         await egg_service.upsert_egg(egg)
 
         # Create webhook payload with group_id
@@ -609,22 +691,23 @@ async def test_webhook_authentication_group_level_egg(
         )
 
         # Test 1: Request with invalid secret should be rejected
-        response_invalid = client.post(
+        response_invalid = fast_api_client.post(
             "/webhooks/gitlab",
             json=payload,
             headers={"X-Gitlab-Token": invalid_secret},
         )
 
-        assert response_invalid.status_code == status.HTTP_401_UNAUTHORIZED, (
-            f"Group-level Egg webhook with invalid secret should be rejected, "
-            f"got {response_invalid.status_code}"
+        response_status = status.HTTP_401_UNAUTHORIZED
+        assert response_invalid.status_code == response_status, (
+            "Group-level Egg webhook with invalid secret "
+            f"should be rejected, got {response_invalid.status_code}"
         )
 
         # Clear cache again before testing valid secret
         secret_manager.cache.clear()
 
         # Test 2: Request with valid secret should be accepted
-        response_valid = client.post(
+        response_valid = fast_api_client.post(
             "/webhooks/gitlab",
             json=payload,
             headers={"X-Gitlab-Token": valid_secret},
@@ -634,13 +717,18 @@ async def test_webhook_authentication_group_level_egg(
             status.HTTP_200_OK,
             status.HTTP_202_ACCEPTED,
         ], (
-            f"Group-level Egg webhook with valid secret should be accepted, "
-            f"got {response_valid.status_code}"
+            f"Group-level Egg webhook with valid secret "
+            f"should be accepted, got {response_valid.status_code}"
         )
 
     finally:
-        # Clean up environment variable
-        if secret_env_var in os.environ:
-            del os.environ[secret_env_var]
-        # Clear cache after test
-        secret_manager.cache.clear()
+        # Clean up secret
+        try:
+            secrets_manager_client.delete_secret(
+                SecretId=secret_name,
+                ForceDeleteWithoutRecovery=True,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass  # Ignore cleanup errors
+    # Clear cache after test
+    secret_manager.cache.clear()

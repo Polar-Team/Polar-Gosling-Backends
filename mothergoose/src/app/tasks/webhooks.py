@@ -90,9 +90,7 @@ def process_webhook(
 
         elif object_kind == "pipeline":
             # Pipeline event → Check if jobs are pending
-            pipeline_status = (
-                webhook_payload.get("object_attributes", {}).get("status"),
-            )
+            pipeline_status = webhook_payload.get("object_attributes", {}).get("status")
             if pipeline_status in ["pending", "running"]:
                 should_deploy_runner = True
                 deployment_reason = f"pipeline_{pipeline_status}"

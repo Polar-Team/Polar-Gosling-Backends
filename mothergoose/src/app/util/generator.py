@@ -22,3 +22,22 @@ def generate_version_id_decorator() -> Any:
         return wrapper
 
     return decorator
+
+
+def generate_eggconfig_id_decorator() -> Any:
+    """
+    Decorator to generate an egg configuration ID by hashing the
+    egg name using SHA-256.
+    """
+
+    def decorator(func: Any) -> Any:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> str:
+            egg_name = func(*args, **kwargs)
+            data = egg_name.encode("utf-8")
+            config_id = hashlib.sha256(data).hexdigest()
+            return config_id
+
+        return wrapper
+
+    return decorator

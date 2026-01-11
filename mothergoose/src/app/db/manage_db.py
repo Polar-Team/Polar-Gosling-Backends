@@ -328,3 +328,23 @@ class AsyncYDBFunctionsCollections:
             )
             else None
         )
+
+    @staticmethod
+    async def drop_tables(  # type: ignore[no-any-unimported]
+        pool: YDBAsync.QuerySessionPool, tables: list[YDBTables]
+    ) -> None:
+        """
+        Create Tables the YDB database using the provided session pool.
+
+        Args:
+            pool (QuerySession): The session pool to use for the query.
+        """
+        queries = [
+            PreparedYDBQueries.drop_query(table)
+            for table in tables
+            if isinstance(table, YDBTables)  # type: ignore[misc,arg-type]
+        ]
+
+        async with pool:
+            coros = [pool.execute_with_retries(query) for query in queries]
+            await asyncio.gather(*coros)

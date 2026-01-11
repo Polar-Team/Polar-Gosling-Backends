@@ -20,6 +20,7 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 from app.model.pydantic_base_models import PydanticBaseModelORM
 from app.schema.db_tables import YDBTableSchema
 from app.types.ydb_types import YDBBytes, YDBInt64, YDBType, YDBUtf8
+from app.util.generator import generate_eggconfig_id_decorator
 
 # ============================================================================
 # Enumerations
@@ -228,7 +229,11 @@ class Runner(PydanticBaseModelORM):
 class EggConfig(PydanticBaseModelORM):
     """Cached Egg configuration from Git repository."""
 
+    id: str = Field(..., description="Unique egg config ID (PK)")
     name: str = Field(..., description="Egg name (PK)")
+    project_id: int = Field(0, description="GitLab project ID")
+    group_id: int = Field(0, description="GitLab group ID")
+
     config: Dict[str, Any] = Field(..., description="Parsed .fly configuration")
     git_commit: str = Field(..., description="Git commit hash this config came from")
     git_repo_url_secret: str = Field(
@@ -294,6 +299,62 @@ class EggConfig(PydanticBaseModelORM):
             data["config"] = json.dumps(data["config"]).encode("utf-8")
 
         return data
+
+
+def generate_new_eggconfig(
+    name: str,
+    git_commit: str,
+    git_repo_url_secret: str,
+    gitlab_token_secret_uri: str,
+    gitlab_webhook_secret_uri: str,
+    project_id: Optional[int] = None,
+    group_id: Optional[int] = None,
+    config: Optional[Dict[str, Any]] = None,
+    synced_at: Optional[datetime] = None,
+    created_at: Optional[datetime] = None,
+    updated_at: Optional[datetime] = None,
+) -> EggConfig:
+    """
+    Generate a new EggConfig instance with default values.
+    Args:
+        name (str): Egg name.
+        git_commit (str): Git commit hash.
+        git_repo_url_secret (str): Secret URI for Git repository URL.
+        gitlab_token_secret_uri (str): Secret URI for GitLab runner token.
+        gitlab_webhook_secret_uri (str): Secret URI for webhook validation.
+        project_id (Optional[int]): GitLab project ID. Defaults to 0.
+        group_id (Optional[int]): GitLab group ID. Defaults to 0.
+    Returns:
+        EggConfig: New EggConfig instance.
+    return EggConfig(
+        name=name,
+        project_id=project_id or 0,
+        group_id=group_id or 0,
+        config={},
+        git_commit=git_commit,
+        git_repo_url_secret=git_repo_url_secret,
+        gitlab_token_secret_uri=gitlab_token_secret_uri,
+        gitlab_webhook_secret_uri=gitlab_webhook_secret_uri,
+    )
+    """
+
+    @generate_eggconfig_id_decorator()
+    def generate_id() -> str:
+        """Generate unique egg config ID based on egg name."""
+        return name
+
+    id = generate_id()
+    return EggConfig(
+        id=id,
+        name=name,
+        project_id=project_id or 0,
+        group_id=group_id or 0,
+        config=config,
+        git_commit=git_commit,
+        git_repo_url_secret=git_repo_url_secret,
+        gitlab_token_secret_uri=gitlab_token_secret_uri,
+        gitlab_webhook_secret_uri=gitlab_webhook_secret_uri,
+    )
 
 
 class SyncHistory(PydanticBaseModelORM):
@@ -410,6 +471,9 @@ class EggConfigsTableYDB:
     table_name: str = "egg_configs"
     columns: Tuple[str, ...] = field(
         default_factory=lambda: (
+            "id",
+            "project_id",
+            "group_id",
             "name",
             "config",
             "git_commit",
@@ -421,8 +485,11 @@ class EggConfigsTableYDB:
             "updated_at",
         ),
     )
-    r_type: Tuple[Union[YDBUtf8, YDBBytes], ...] = field(
+    r_type: Tuple[Union[YDBUtf8, YDBBytes, YDBInt64], ...] = field(
         default_factory=lambda: (
+            make_ydb_type("Utf8"),  # id
+            make_ydb_type("Int64"),  # project_id
+            make_ydb_type("Int64"),  # group_id
             make_ydb_type("Utf8"),  # name
             make_ydb_type("String"),  # config (JSON bytes)
             make_ydb_type("Utf8"),  # git_commit
@@ -434,7 +501,7 @@ class EggConfigsTableYDB:
             make_ydb_type("Utf8"),  # updated_at (stored as ISO string)
         ),
     )
-    primary_key: str = "name"
+    primary_key: str = "id"
     values_for_operate: Tuple[Any, ...] = field(
         default_factory=lambda: (),
     )
@@ -449,8 +516,8 @@ class EggConfigsTableYDB:
             self.columns
         ):
             raise ValueError("The number of values for operate must match columns.")
-        if self.primary_key != "name":
-            raise ValueError("Primary key must be 'name'.")
+        if self.primary_key != "id":
+            raise ValueError("Primary key must be 'id'.")
 
         # Validate with YDBTableSchema
         YDBTableSchema(  # type: ignore[call-arg]

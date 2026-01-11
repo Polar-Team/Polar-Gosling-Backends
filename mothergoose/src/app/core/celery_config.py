@@ -100,7 +100,10 @@ elif RESULT_BACKEND_TYPE == "redis":
         "MOTHERGOOSE_REDIS_URL", "redis://localhost:6379/1"
     )
 elif RESULT_BACKEND_TYPE == "disabled":
-    CELERY_RESULT_BACKEND = None  # type: ignore[assignment]
+    # Disabled backend - use cache+memory for testing
+    CELERY_RESULT_BACKEND = os.getenv(
+        "MOTHERGOOSE_RESULT_BACKEND_URL", "cache+memory://"
+    )
 else:
     logger.warning("Unknown result backend '%s'. Using SQS.", RESULT_BACKEND_TYPE)
     CELERY_RESULT_BACKEND = "sqs://"

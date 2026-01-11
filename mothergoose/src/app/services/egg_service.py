@@ -6,8 +6,6 @@ Provides methods for querying and updating Egg configurations.
 """
 
 import json
-from datetime import datetime
-from typing import Optional
 
 from app.db.manage_db import AsyncYDBFunctionsCollections
 from app.db.ydb_connection import AsyncYDBOperations

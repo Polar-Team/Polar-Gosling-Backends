@@ -23,6 +23,7 @@ from app.model.runners_models import (
     RunnerType,
     CloudProvider,
     EggConfig,
+    generate_new_eggconfig,
 )
 from app.model.audit_models import AuditLog, AuditModelYDB, AuditLogsTableYDB
 from app.schema.ydb_schemas import YDBSchema, YDBConfig
@@ -252,7 +253,7 @@ class TransactionalRunnerService:
             )
 
             # Operation 2: Update egg config with new runner count
-            egg_config_obj = EggConfig(
+            egg_config_obj = generate_new_eggconfig(
                 name=egg_name,
                 config=egg_config,
                 git_commit=deployed_from_commit,

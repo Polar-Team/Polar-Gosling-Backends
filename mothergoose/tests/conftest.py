@@ -12,8 +12,11 @@ Provides reusable fixtures for testing the FastAPI application including:
 # Pytest fixtures intentionally redefine names from outer scope
 
 import os
+import sys
+import datetime
 import time
 from typing import Dict, Any, Optional, List, Generator
+from unittest.mock import Mock, patch
 
 import pytest
 from testcontainers.core.container import DockerContainer
@@ -29,8 +32,19 @@ os.environ["DISABLE_ACCESSIFY"] = "True"
 # Configure Celery for testing to avoid SQS/YMQ broker requirements
 # This MUST be set before any Celery or app imports
 os.environ["MOTHERGOOSE_BROKER_URL"] = "memory://"
+os.environ["MOTHERGOOSE_RESULT_BACKEND_URL"] = "cache+memory://"
 os.environ["MOTHERGOOSE_RESULT_BACKEND"] = "disabled"
 os.environ["MOTHERGOOSE_CLOUD_PROVIDER"] = "test"
+
+
+@pytest.fixture(scope="session", name="utc_now")
+def utc_now() -> datetime.datetime:
+    """Fixture providing a fixed UTC datetime for testing."""
+
+    if sys.version_info.minor >= 11:
+        return datetime.datetime.now(datetime.UTC)
+    else:
+        return datetime.datetime.utcnow()
 
 
 @pytest.fixture(scope="session", name="mock_server_url")
@@ -140,7 +154,7 @@ def secrets_manager_client(
     yield client
 
 
-@pytest.fixture(scope="session", name="test_secret")
+@pytest.fixture(scope="function", name="test_secret")
 def test_secret(
     secrets_manager_client: Any,
 ) -> Generator[
@@ -152,8 +166,12 @@ def test_secret(
     Fixture providing a test secret in AWS Secrets Manager.
 
     Creates a secret for testing and cleans it up after the test.
+    Uses function scope to ensure each test gets a fresh secret.
     """
-    secret_name = "test/webhook/secret"
+    import uuid
+
+    # Use unique secret name per test to avoid conflicts
+    secret_name = f"test/webhook/secret-{uuid.uuid4().hex[:8]}"
     secret_value = "test-secret-value-12345"
 
     # Create the secret
@@ -188,6 +206,16 @@ def fastapi_test_client() -> TestClient:
     """
 
     return TestClient(app)
+
+
+@pytest.fixture(scope="session", name="client")
+def client_alias(fast_api_client: TestClient) -> TestClient:
+    """
+    Alias fixture for fast_api_client to support tests using 'client' parameter.
+
+    This provides backward compatibility for tests that expect a 'client' fixture.
+    """
+    return fast_api_client
 
 
 class MockDBClient:
@@ -419,3 +447,21 @@ def test_orchestration_service(test_ydb_schema: Any) -> Any:
         runner_service=runner_service,
         egg_service=egg_service,
     )
+
+
+@pytest.fixture(scope="function", name="mock_deploy_runner", autouse=False)
+def mock_deploy_runner() -> Generator[Mock, None, None]:
+    """
+    Fixture that mocks the deploy_runner Celery task to avoid SQS backend issues.
+
+    This prevents the task from trying to connect to SQS/YMQ during testing.
+    """
+    with patch("app.tasks.webhooks.deploy_runner") as mock_task:
+        # Create a mock AsyncResult
+        mock_result = Mock()
+        mock_result.id = "test-task-id-12345"
+        mock_task.apply_async.return_value = mock_result
+
+        # Also mock the task itself to prevent direct calls
+        mock_task.return_value = mock_result
+        yield mock_task

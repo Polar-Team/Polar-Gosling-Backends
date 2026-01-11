@@ -6,10 +6,11 @@ operations using LocalStack testcontainers and real YDB database with minimal mo
 """
 
 import os
+import asyncio
 from typing import Any, Dict, Generator
 
 import pytest
-from fastapi import Depends, status
+from fastapi import status
 from unittest.mock import patch, MagicMock
 from ydb import AnonymousCredentials
 
@@ -17,6 +18,7 @@ from app.db.manage_db import AsyncYDBFunctionsCollections
 from app.db.ydb_connection import AsyncYDBOperations
 from app.services.egg_service import EggService
 from app.model.runners_models import (
+    generate_new_eggconfig,
     EggConfig,
     EggConfigsTableYDB,
     RunnerModelYDB,
@@ -73,7 +75,16 @@ def ydb_schema(ydb_container) -> YDBSchema:
         config=config,
         model=model,
     )
-    return schema
+    yield schema
+
+    delete_operation = AsyncYDBOperations(
+        schema, AsyncYDBFunctionsCollections.drop_tables
+    )
+
+    async def process():
+        await delete_operation.process()
+
+    asyncio.run(process())
 
 
 @pytest.fixture(scope="module", name="egg_config_instance")
@@ -243,7 +254,7 @@ async def test_webhook_authentication_with_aws_secrets_manager(
 
     try:
         # Create Egg configuration with AWS Secrets Manager URI
-        egg_config = EggConfig(
+        egg_config = generate_new_eggconfig(
             name="test-app",
             config={
                 "type": "vm",
@@ -354,7 +365,7 @@ async def test_webhook_secret_rotation_with_aws(
 
     try:
         # Create Egg configuration
-        egg_config = EggConfig(
+        egg_config = generate_new_eggconfig(
             name="rotation-test",
             config={
                 "type": "vm",
@@ -466,7 +477,7 @@ async def test_multiple_eggs_with_different_secrets(
     try:
         # Create Egg configurations in real YDB
         for egg in eggs_config:
-            egg_config = EggConfig(
+            egg_config = generate_new_eggconfig(
                 name=egg["name"],
                 config={
                     "type": "vm",

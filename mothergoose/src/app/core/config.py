@@ -7,6 +7,15 @@ Central configuration for the MotherGoose application.
 import os
 
 from app.util.base_logging import logger
+from app.model.runners_models import (
+    EggConfigsTableYDB,
+    RunnerModelYDB,
+    RunnersTableYDB,
+    SyncHistoryTableYDB,
+    RunnerModelYDB,
+)
+from app.schema.ydb_schemas import YDBSchema, YDBConfig
+from ydb import AnonymousCredentials
 
 # Application metadata
 APP_NAME = "MotherGoose API"
@@ -48,3 +57,45 @@ if not TRIGGER_AUTH_TOKEN:
         "Internal endpoints will reject all requests. "
         "Set this environment variable or retrieve from secret manager in production."
     )
+
+# Nest Repository Configuration
+# The Nest repository is the main GitOps repository that manages all Eggs
+# Webhooks from the Nest repository trigger immediate Git sync
+NEST_PROJECT_ID: int | None = None
+_nest_project_id_env = os.getenv("MOTHERGOOSE_NEST_PROJECT_ID")
+if _nest_project_id_env:
+    try:
+        NEST_PROJECT_ID = int(_nest_project_id_env)
+    except ValueError:
+        logger.error(
+            "MOTHERGOOSE_NEST_PROJECT_ID must be an integer. Got: %s",
+            _nest_project_id_env,
+        )
+        NEST_PROJECT_ID = None
+else:
+    logger.warning(
+        "MOTHERGOOSE_NEST_PROJECT_ID not set. "
+        "Nest repository webhooks will be identified by repository name heuristic. "
+        "Set this environment variable for accurate Nest webhook detection."
+    )
+
+# Nest repository webhook secret URI
+# Format: yc-lockbox://webhooks/nest-secret or aws-sm://webhooks/nest-secret
+NEST_WEBHOOK_SECRET_URI = os.getenv(
+    "MOTHERGOOSE_NEST_WEBHOOK_SECRET_URI", "aws-sm://webhooks/nest-secret"
+)
+
+DEFAULT_DATABASE_SCHEMA = YDBSchema(
+    config=YDBConfig(
+        endpoint="grpc://localhost:2136",
+        database="/local",
+        credentials=AnonymousCredentials(),
+    ),
+    model=RunnerModelYDB(
+        tables=[
+            EggConfigsTableYDB(),
+            RunnersTableYDB(),
+            SyncHistoryTableYDB(),
+        ]
+    ),
+)

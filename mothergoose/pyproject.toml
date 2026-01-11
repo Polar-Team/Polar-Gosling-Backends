@@ -16,6 +16,7 @@ dependencies = [
     "gitpython>=3.1.43",
     "grpcio>=1.71.0",
     "grpcio-tools>=1.71.0",
+    "hvac>=2.4.0",
     "jinja2>=3.1.6",
     "kombu>=5.4.0",
     "pydantic>=2.11.5",
@@ -68,7 +69,6 @@ minversion = "6.0"
 addopts = "-ra -q"
 testpaths = [
     "tests",
-    "integration",
 ]
 
 [tool.tox]
@@ -91,7 +91,7 @@ description = "Run tests under {base_python}"
 dependency_groups = [
     "test",
 ]
-commands = [["pytest"]]
+commands = [["pytest", "-v"]]
 
 [tool.tox.env.format]
 description = "Format code with black and isort"

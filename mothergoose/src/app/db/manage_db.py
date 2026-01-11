@@ -117,19 +117,24 @@ class PreparedYDBQueries:
             if col in searching_columns
         }
 
+        # Build WHERE clause only if there are searching columns
+        where_clause = ""
+        if searching_columns:
+            where_conditions = " AND ".join(
+                f"`{col}` = ${col}Var"
+                for col in searching_columns
+                if col in table.columns
+            )
+            if where_conditions:
+                where_clause = f"WHERE {where_conditions}"
+
         query = f"""
         {declaraions}
 
         SELECT
             {", ".join(f"`{col}`" for col in selected_columns if col in table.columns)}
         FROM `{table.table_name}`
-        WHERE {
-            " AND ".join(
-                f"`{col}` = ${col}Var"
-                for col in searching_columns
-                if col in table.columns
-            )
-        };
+        {where_clause};
         """
         return query, parameters
 
@@ -223,7 +228,7 @@ class AsyncYDBFunctionsCollections:
         queries = [
             PreparedYDBQueries.create_query(table)
             for table in tables
-            if isinstance(table, YDBTables)  # type: ignore[arg-type]
+            if isinstance(table, YDBTables)  # type: ignore[misc,arg-type]
         ]
 
         async with pool:
@@ -260,7 +265,7 @@ class AsyncYDBFunctionsCollections:
                 )
             )
             for table in tables
-            if isinstance(table, YDBTables)  # type: ignore[arg-type]
+            if isinstance(table, YDBTables)  # type: ignore[misc,arg-type]
         ]
 
         queries = []
@@ -323,3 +328,23 @@ class AsyncYDBFunctionsCollections:
             )
             else None
         )
+
+    @staticmethod
+    async def drop_tables(  # type: ignore[no-any-unimported]
+        pool: YDBAsync.QuerySessionPool, tables: list[YDBTables]
+    ) -> None:
+        """
+        Create Tables the YDB database using the provided session pool.
+
+        Args:
+            pool (QuerySession): The session pool to use for the query.
+        """
+        queries = [
+            PreparedYDBQueries.drop_query(table)
+            for table in tables
+            if isinstance(table, YDBTables)  # type: ignore[misc,arg-type]
+        ]
+
+        async with pool:
+            coros = [pool.execute_with_retries(query) for query in queries]
+            await asyncio.gather(*coros)

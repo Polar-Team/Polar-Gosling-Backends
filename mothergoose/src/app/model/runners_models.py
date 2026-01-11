@@ -8,6 +8,7 @@ schema.model.tables[x].values_for_operate.
 
 # pylint: disable=duplicate-code
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -19,6 +20,7 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 from app.model.pydantic_base_models import PydanticBaseModelORM
 from app.schema.db_tables import YDBTableSchema
 from app.types.ydb_types import YDBBytes, YDBInt64, YDBType, YDBUtf8
+from app.util.generator import generate_eggconfig_id_decorator
 
 # ============================================================================
 # Enumerations
@@ -93,13 +95,22 @@ class Runner(PydanticBaseModelORM):
     """Runtime state for active runners."""
 
     id: str = Field(..., description="Unique runner identifier (PK)")
-    egg_name: str = Field(..., description="Name of the Egg this runner belongs to")
-    type: RunnerType = Field(..., description="Runner type (serverless/apex/nadir)")
+    egg_name: str = Field(
+        ...,
+        description="Name of the Egg this runner belongs to",
+    )
+    type: RunnerType = Field(
+        ...,
+        description="Runner type (serverless/apex/nadir)",
+    )
     state: RunnerState = Field(..., description="Current runner state")
     cloud_provider: CloudProvider = Field(
         ..., description="Cloud provider hosting this runner"
     )
-    region: str = Field(..., description="Cloud region where runner is deployed")
+    region: str = Field(
+        ...,
+        description="Cloud region where runner is deployed",
+    )
     gitlab_runner_id: Optional[int] = Field(
         None, description="GitLab runner registration ID"
     )
@@ -107,24 +118,122 @@ class Runner(PydanticBaseModelORM):
         ..., description="Git commit hash that deployed this runner"
     )
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Runner creation timestamp"
+        default_factory=datetime.utcnow,
+        description="Runner creation timestamp",
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Last update timestamp"
+        default_factory=datetime.utcnow,
+        description="Last update timestamp",
     )
     last_heartbeat: Optional[datetime] = Field(
         None, description="Last heartbeat from runner"
     )
-    failure_count: int = Field(default=0, description="Number of consecutive failures")
+    failure_count: int = Field(
+        default=0,
+        description="Number of consecutive failures",
+    )
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional runner metadata"
     )
+
+    @field_validator("failure_count")
+    @classmethod
+    def validate_failure_count(cls, value: int) -> int:
+        """Ensure failure_count is non-negative."""
+        if value < 0:
+            raise ValueError("failure_count must be non-negative")
+        return value
+
+    @field_validator(
+        "metadata",
+        mode="before",
+    )
+    @classmethod
+    def validate_metadata(
+        cls,
+        value: Dict[str, Any] | str | bytes,
+    ) -> Dict[str, Any]:
+        """Convert metadata from storage format (JSON bytes/string) to dict."""
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, bytes):
+            # From YDB storage (String type returns bytes)
+            return json.loads(value.decode("utf-8")) if value else {}
+        if isinstance(value, str):
+            # From JSON string
+            return json.loads(value) if value else {}
+        raise ValueError("Invalid metadata format")
+
+    @field_validator(
+        "created_at",
+        "updated_at",
+        "last_heartbeat",
+        mode="before",
+    )
+    @classmethod
+    def validate_datetime(
+        cls,
+        value: datetime | str | None,
+    ) -> datetime | None:
+        """Convert datetime from storage format (ISO string) to datetime object."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            return datetime.fromisoformat(value)
+        raise ValueError("Invalid datetime format")
+
+    @field_validator("gitlab_runner_id", mode="before")
+    @classmethod
+    def validate_gitlab_runner_id_from_storage(
+        cls, value: Optional[int]
+    ) -> Optional[int]:
+        """Convert gitlab_runner_id from storage (0 → None for optional field)."""
+        if value == 0:
+            return None
+        if value is not None and value < 0:
+            raise ValueError("gitlab_runner_id must be positive if provided")
+        return value
+
+    def to_storage_dict(self) -> Dict[str, Any]:
+        """
+        Convert Runner model to storage format for YDB.
+
+        Converts:
+        - datetime → ISO string
+        - dict → JSON bytes
+        - None → 0 for optional int fields (YDB doesn't support NULL in some contexts)
+
+        Returns:
+            Dictionary with values in YDB storage format
+        """
+        data = self.model_dump()
+
+        # Convert datetime to ISO string
+        for key in ("created_at", "updated_at", "last_heartbeat"):
+            if isinstance(data[key], datetime):
+                data[key] = data[key].isoformat()
+
+        # Convert metadata dict to JSON bytes
+        if isinstance(data["metadata"], dict):
+            data["metadata"] = json.dumps(data["metadata"]).encode("utf-8")
+
+        # Convert None to 0 for gitlab_runner_id (YDB Int64 doesn't support NULL)
+        if data["gitlab_runner_id"] is None:
+            data["gitlab_runner_id"] = 0
+
+        return data
 
 
 class EggConfig(PydanticBaseModelORM):
     """Cached Egg configuration from Git repository."""
 
+    id: str = Field(..., description="Unique egg config ID (PK)")
     name: str = Field(..., description="Egg name (PK)")
+    project_id: int = Field(0, description="GitLab project ID")
+    group_id: int = Field(0, description="GitLab group ID")
+
     config: Dict[str, Any] = Field(..., description="Parsed .fly configuration")
     git_commit: str = Field(..., description="Git commit hash this config came from")
     git_repo_url_secret: str = Field(
@@ -146,6 +255,107 @@ class EggConfig(PydanticBaseModelORM):
         default_factory=datetime.utcnow, description="Last update timestamp"
     )
 
+    @field_validator(
+        "created_at",
+        "updated_at",
+        "synced_at",
+        mode="before",
+    )
+    @classmethod
+    def validate_datetime(
+        cls,
+        value: datetime | str | None,
+    ) -> datetime | None:
+        """Convert datetime from storage format (ISO string) to datetime object."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            return datetime.fromisoformat(value)
+        raise ValueError("Invalid datetime format")
+
+    def to_storage_dict(self) -> Dict[str, Any]:
+        """
+        Convert Runner model to storage format for YDB.
+
+        Converts:
+        - datetime → ISO string
+        - dict → JSON bytes
+        - None → 0 for optional int fields (YDB doesn't support NULL in some contexts)
+
+        Returns:
+            Dictionary with values in YDB storage format
+        """
+        data = self.model_dump()
+
+        # Convert datetime to ISO string
+        for key in ("created_at", "updated_at", "synced_at"):
+            if isinstance(data[key], datetime):
+                data[key] = data[key].isoformat()
+
+        # Convert config dict to JSON bytes
+        if isinstance(data["config"], dict):
+            data["config"] = json.dumps(data["config"]).encode("utf-8")
+
+        return data
+
+
+def generate_new_eggconfig(
+    name: str,
+    git_commit: str,
+    git_repo_url_secret: str,
+    gitlab_token_secret_uri: str,
+    gitlab_webhook_secret_uri: str,
+    project_id: Optional[int] = None,
+    group_id: Optional[int] = None,
+    config: Optional[Dict[str, Any]] = None,
+    synced_at: Optional[datetime] = None,
+    created_at: Optional[datetime] = None,
+    updated_at: Optional[datetime] = None,
+) -> EggConfig:
+    """
+    Generate a new EggConfig instance with default values.
+    Args:
+        name (str): Egg name.
+        git_commit (str): Git commit hash.
+        git_repo_url_secret (str): Secret URI for Git repository URL.
+        gitlab_token_secret_uri (str): Secret URI for GitLab runner token.
+        gitlab_webhook_secret_uri (str): Secret URI for webhook validation.
+        project_id (Optional[int]): GitLab project ID. Defaults to 0.
+        group_id (Optional[int]): GitLab group ID. Defaults to 0.
+    Returns:
+        EggConfig: New EggConfig instance.
+    return EggConfig(
+        name=name,
+        project_id=project_id or 0,
+        group_id=group_id or 0,
+        config={},
+        git_commit=git_commit,
+        git_repo_url_secret=git_repo_url_secret,
+        gitlab_token_secret_uri=gitlab_token_secret_uri,
+        gitlab_webhook_secret_uri=gitlab_webhook_secret_uri,
+    )
+    """
+
+    @generate_eggconfig_id_decorator()
+    def generate_id() -> str:
+        """Generate unique egg config ID based on egg name."""
+        return name
+
+    id = generate_id()
+    return EggConfig(
+        id=id,
+        name=name,
+        project_id=project_id or 0,
+        group_id=group_id or 0,
+        config=config,
+        git_commit=git_commit,
+        git_repo_url_secret=git_repo_url_secret,
+        gitlab_token_secret_uri=gitlab_token_secret_uri,
+        gitlab_webhook_secret_uri=gitlab_webhook_secret_uri,
+    )
+
 
 class SyncHistory(PydanticBaseModelORM):
     """Git sync history audit trail."""
@@ -165,7 +375,7 @@ class SyncHistory(PydanticBaseModelORM):
     error_message: Optional[str] = Field(
         None, description="Error message if sync failed"
     )
-    synced_at: datetime = Field(
+    synced_at: datetime | str = Field(
         default_factory=datetime.utcnow, description="Sync timestamp"
     )
     duration_ms: Optional[int] = Field(
@@ -261,6 +471,9 @@ class EggConfigsTableYDB:
     table_name: str = "egg_configs"
     columns: Tuple[str, ...] = field(
         default_factory=lambda: (
+            "id",
+            "project_id",
+            "group_id",
             "name",
             "config",
             "git_commit",
@@ -272,8 +485,11 @@ class EggConfigsTableYDB:
             "updated_at",
         ),
     )
-    r_type: Tuple[Union[YDBUtf8, YDBBytes], ...] = field(
+    r_type: Tuple[Union[YDBUtf8, YDBBytes, YDBInt64], ...] = field(
         default_factory=lambda: (
+            make_ydb_type("Utf8"),  # id
+            make_ydb_type("Int64"),  # project_id
+            make_ydb_type("Int64"),  # group_id
             make_ydb_type("Utf8"),  # name
             make_ydb_type("String"),  # config (JSON bytes)
             make_ydb_type("Utf8"),  # git_commit
@@ -285,7 +501,7 @@ class EggConfigsTableYDB:
             make_ydb_type("Utf8"),  # updated_at (stored as ISO string)
         ),
     )
-    primary_key: str = "name"
+    primary_key: str = "id"
     values_for_operate: Tuple[Any, ...] = field(
         default_factory=lambda: (),
     )
@@ -300,8 +516,8 @@ class EggConfigsTableYDB:
             self.columns
         ):
             raise ValueError("The number of values for operate must match columns.")
-        if self.primary_key != "name":
-            raise ValueError("Primary key must be 'name'.")
+        if self.primary_key != "id":
+            raise ValueError("Primary key must be 'id'.")
 
         # Validate with YDBTableSchema
         YDBTableSchema(  # type: ignore[call-arg]
@@ -346,7 +562,8 @@ class SyncHistoryTableYDB:
             make_ydb_type("Int64"),  # changes_detected
             make_ydb_type("Int64"),  # eggs_synced
             make_ydb_type("Int64"),  # jobs_synced
-            make_ydb_type("Utf8"),  # uf_config_synced (stored as "true"/"false")
+            # uf_config_synced (stored as "true"/"false")
+            make_ydb_type("Utf8"),
             make_ydb_type("Utf8"),  # error_message
             make_ydb_type("Utf8"),  # synced_at (stored as ISO string)
             make_ydb_type("Int64"),  # duration_ms

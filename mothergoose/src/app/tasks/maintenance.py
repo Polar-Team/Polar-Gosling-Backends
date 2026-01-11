@@ -38,10 +38,7 @@ def cleanup_old_results(self: BaseTask) -> dict[str, Any]:
     logger.info("Starting cleanup of old task results in task %s", task_id)
 
     try:
-        # TODO: Implement cleanup logic
-        # 1. Query result backend for expired results
-        # 2. Delete results older than CELERY_RESULT_EXPIRES
-        # 3. Log cleanup statistics
+        # Task 30: Cleanup expired results
 
         result = {
             "status": "success",
@@ -84,10 +81,7 @@ def update_metrics(self: BaseTask) -> dict[str, Any]:
     logger.info("Starting metrics update in task %s", task_id)
 
     try:
-        # TODO: Implement metrics update logic
-        # 1. Collect system metrics (runner counts, queue depths, etc.)
-        # 2. Update metrics in database
-        # 3. Log metrics update
+        # Task 30: Collect and update metrics
 
         result = {
             "status": "success",

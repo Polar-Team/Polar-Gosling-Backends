@@ -16,7 +16,7 @@ mg-type:
 
 .PHONY: mg-test
 mg-test:
-	cd mothergoose; uv run pytest
+	cd mothergoose; uv run pytest -v
 
 .PHONY: mg-tox-base-3.10
 mg-tox-base-3.10:

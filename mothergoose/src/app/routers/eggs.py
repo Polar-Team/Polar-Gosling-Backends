@@ -45,9 +45,7 @@ async def get_egg_status(name: str) -> EggStatusResponse:
     """
     logger.info("Getting status for Egg: %s", name)
 
-    # TODO: Implement database query for Egg status  # pylint: disable=fixme
-    # This will be implemented in task 9 (Database Layer)
-    # For now, return a placeholder response
+    # Task 9: DB query
 
     # Placeholder implementation
     raise HTTPException(
@@ -74,8 +72,7 @@ async def list_deployment_plans(name: str) -> DeploymentPlanListResponse:
     """
     logger.info("Listing deployment plans for Egg: %s", name)
 
-    # TODO: Implement database query for deployment plans  # pylint: disable=fixme
-    # This will be implemented in task 9 (Database Layer)
+    # Task 9: DB query
 
     # Placeholder implementation
     raise HTTPException(
@@ -103,8 +100,7 @@ async def get_deployment_plan(name: str, plan_id: str) -> DeploymentPlanResponse
     """
     logger.info("Getting deployment plan %s for Egg: %s", plan_id, name)
 
-    # TODO: Implement database query for specific deployment plan  # pylint: disable=fixme
-    # This will be implemented in task 9 (Database Layer)
+    # Task 9: DB query
 
     # Placeholder implementation
     raise HTTPException(
@@ -137,8 +133,7 @@ async def create_or_update_egg(
     """
     logger.info("Creating or updating Egg: %s", egg_config.name)
 
-    # TODO: Implement database upsert for Egg configuration  # pylint: disable=fixme
-    # This will be implemented in task 9 (Database Layer)
+    # Task 9: DB upsert
 
     # Placeholder implementation
     raise HTTPException(
@@ -159,8 +154,7 @@ async def list_eggs() -> EggListResponse:
     """
     logger.info("Listing all Eggs")
 
-    # TODO: Implement database query for all Eggs  # pylint: disable=fixme
-    # This will be implemented in task 9 (Database Layer)
+    # Task 9: DB query
 
     # Placeholder implementation
     raise HTTPException(

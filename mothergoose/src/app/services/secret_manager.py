@@ -192,10 +192,11 @@ class SecretMasker:
 
     # Patterns that might contain secrets
     SECRET_PATTERNS = [
-        r'token[_-]?secret\s*=\s*["\']([^"\']+)["\']',
-        r'password\s*=\s*["\']([^"\']+)["\']',
-        r'api[_-]?key\s*=\s*["\']([^"\']+)["\']',
-        r'secret\s*=\s*["\']([^"\']+)["\']',
+        r'(token[_-]?secret)\s*=\s*["\']([^"\']+)["\']',
+        r'(password)\s*=\s*["\']([^"\']+)["\']',
+        r'(api[_-]?key)\s*=\s*["\']([^"\']+)["\']',
+        r'(secret)\s*=\s*["\']([^"\']+)["\']',
+        r'(token)\s*=\s*["\']([^"\']+)["\']',
     ]
 
     # Secret URI patterns
@@ -223,7 +224,7 @@ class SecretMasker:
 
         # Mask secret values
         for pattern in SecretMasker.SECRET_PATTERNS:
-            masked = re.sub(pattern, r"\1=***MASKED***", masked)
+            masked = re.sub(pattern, r'\1=***MASKED***', masked)
 
         return masked
 

@@ -1,0 +1,60 @@
+# Health checks for OpenTofu deployment
+# Task 16: MotherGoose Backend - OpenTofu Integration for Runner Deployment
+
+{% if health_checks is defined and health_checks|length > 0 %}
+# Health check configuration
+check "runner_health" {
+  data "http" "health_endpoint" {
+    url = "{{ health_check_url }}"
+    
+    request_headers = {
+      "User-Agent" = "OpenTofu-Health-Check"
+    }
+  }
+  
+  assert {
+    condition     = data.http.health_endpoint.status_code == 200
+    error_message = "Runner health endpoint returned status ${data.http.health_endpoint.status_code}"
+  }
+}
+
+{% for check in health_checks %}
+check "{{ check.name }}" {
+  {% if check.type == "http" %}
+  data "http" "{{ check.name }}_endpoint" {
+    url = "{{ check.url }}"
+    {% if check.headers is defined %}
+    
+    request_headers = {
+      {% for key, value in check.headers.items() %}
+      "{{ key }}" = "{{ value }}"
+      {% endfor %}
+    }
+    {% endif %}
+  }
+  
+  assert {
+    condition     = data.http.{{ check.name }}_endpoint.status_code == {{ check.expected_status | default(200) }}
+    error_message = "{{ check.name }} health check failed: ${data.http.{{ check.name }}_endpoint.status_code}"
+  }
+  {% elif check.type == "command" %}
+  data "external" "{{ check.name }}_check" {
+    program = {{ check.command | tojson }}
+  }
+  
+  assert {
+    condition     = data.external.{{ check.name }}_check.result.status == "ok"
+    error_message = "{{ check.name }} health check failed: ${data.external.{{ check.name }}_check.result.message}"
+  }
+  {% elif check.type == "resource" %}
+  assert {
+    condition     = {{ check.condition }}
+    error_message = "{{ check.error_message }}"
+  }
+  {% endif %}
+}
+
+{% endfor %}
+{% else %}
+# No health checks configured
+{% endif %}

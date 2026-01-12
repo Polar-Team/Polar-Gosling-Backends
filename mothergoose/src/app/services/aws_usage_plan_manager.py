@@ -5,6 +5,8 @@ Manages rate limiting and throttling for AWS API Gateway using Usage Plans.
 AWS handles rate limiting separately from the OpenAPI specification.
 """
 
+# pylint: disable=duplicate-code
+
 from typing import Any
 
 import boto3
@@ -46,6 +48,7 @@ class AWSUsagePlanManager:
         self.session = boto3.Session(**session_kwargs)
         self.client = self.session.client("apigateway")
 
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def create_usage_plan(
         self,
         name: str,
@@ -100,6 +103,7 @@ class AWSUsagePlanManager:
 
         return response
 
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def update_method_throttle(
         self,
         usage_plan_id: str,
@@ -195,6 +199,7 @@ class AWSUsagePlanManager:
                     burst_limit=burst,
                     rate_limit=rate,
                 )
+            # pylint: disable=broad-exception-caught
             except Exception as exc:
                 logger.warning(
                     "Failed to set throttle for %s %s: %s",

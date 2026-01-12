@@ -301,6 +301,7 @@ class EggConfig(PydanticBaseModelORM):
         return data
 
 
+# pylint: disable=too-many-arguments,too-many-positional-arguments,unused-argument
 def generate_new_eggconfig(
     name: str,
     git_commit: str,
@@ -343,13 +344,13 @@ def generate_new_eggconfig(
         """Generate unique egg config ID based on egg name."""
         return name
 
-    id = generate_id()
+    egg_id = generate_id()
     return EggConfig(
-        id=id,
+        id=egg_id,
         name=name,
         project_id=project_id or 0,
         group_id=group_id or 0,
-        config=config,
+        config=config or {},
         git_commit=git_commit,
         git_repo_url_secret=git_repo_url_secret,
         gitlab_token_secret_uri=gitlab_token_secret_uri,

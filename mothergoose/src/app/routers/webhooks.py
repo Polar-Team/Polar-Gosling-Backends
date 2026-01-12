@@ -12,7 +12,6 @@ from fastapi import APIRouter, Header, HTTPException, Request, status
 
 from app.core import config
 from app.schema.api_schemas import GitLabWebhookPayload, WebhookResponse
-from app.services import secret_manager
 from app.services.egg_service import EggService
 from app.services.secret_manager import SecretManager
 from app.tasks.git_sync import sync_nest_config

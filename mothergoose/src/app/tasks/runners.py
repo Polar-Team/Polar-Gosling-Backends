@@ -120,6 +120,9 @@ def deploy_runner(  # pylint: disable=too-many-locals
             )
         )
 
+        if not runner:
+            raise RuntimeError("Runner provisioning returned None")
+
         result = {
             "status": "success",
             "task_id": task_id,

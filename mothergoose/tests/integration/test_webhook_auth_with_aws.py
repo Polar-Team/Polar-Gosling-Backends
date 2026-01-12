@@ -58,9 +58,10 @@ def ydb_schema(ydb_container) -> YDBSchema:
     in a testcontainer, allowing integration tests with minimal mocks.
     """
     config = YDBConfig(
-        endpoint=f"grpc://{ydb_container.get_container_host_ip()}:{
-            ydb_container.get_exposed_port(2136)
-        }",
+        endpoint=(
+            f"grpc://{ydb_container.get_container_host_ip()}:"
+            f"{ydb_container.get_exposed_port(2136)}"
+        ),
         database="/local",
         credentials=AnonymousCredentials(),
     )
@@ -285,9 +286,9 @@ async def test_webhook_authentication_with_aws_secrets_manager(
         assert isinstance(check_data, EggConfig), (
             "Retrieved data is not an EggConfig instance"
         )
-        assert check_data.name == "test-app", f"Expected name 'test-app', got '{
-            check_data.name
-        }'"
+        assert (
+            check_data.name == "test-app"
+        ), f"Expected name 'test-app', got '{check_data.name}'"
         assert check_data.config["gitlab"]["project_id"] == 12345, "Project ID mismatch"
 
         # Clear cache to force re-fetch from secrets manager
@@ -310,9 +311,10 @@ async def test_webhook_authentication_with_aws_secrets_manager(
         assert response_valid.status_code in [
             status.HTTP_200_OK,
             status.HTTP_202_ACCEPTED,
-        ], f"Expected 200/202 for valid secret, got {response_valid.status_code}: {
-            response_valid.text
-        }"
+        ], (
+            f"Expected 200/202 for valid secret, got {response_valid.status_code}: "
+            f"{response_valid.text}"
+        )
 
         # Test 2: Invalid secret should be rejected
         response_invalid = fast_api_client.post(
@@ -323,9 +325,10 @@ async def test_webhook_authentication_with_aws_secrets_manager(
 
         assert (
             response_invalid.status_code == status.HTTP_401_UNAUTHORIZED
-        ), f"Expected 401 for invalid secret, got {response_invalid.status_code}: {
-            response_invalid.text
-        }"
+        ), (
+            f"Expected 401 for invalid secret, got {response_invalid.status_code}: "
+            f"{response_invalid.text}"
+        )
 
     finally:
         secret_manager.cache.clear()
@@ -492,12 +495,12 @@ async def test_multiple_eggs_with_different_secrets(
                 },
                 git_commit="abc123",
                 git_repo_url_secret="aws-sm://nest/repo-url",
-                gitlab_token_secret_uri=f"aws-sm://gitlab/gitlab.com/{
-                    egg['name']
-                }/runner-token",
-                gitlab_webhook_secret_uri=f"aws-sm://{
-                    egg['secret_name']
-                }/webhook-secret",
+                gitlab_token_secret_uri=(
+                    f"aws-sm://gitlab/gitlab.com/{egg['name']}/runner-token"
+                ),
+                gitlab_webhook_secret_uri=(
+                    f"aws-sm://{egg['secret_name']}/webhook-secret"
+                ),
             )
             await egg_config_instance.upsert_egg(egg_config)
 
@@ -520,9 +523,10 @@ async def test_multiple_eggs_with_different_secrets(
             assert response.status_code in [
                 status.HTTP_200_OK,
                 status.HTTP_202_ACCEPTED,
-            ], f"Egg {egg['name']} should accept its own secret, got {
-                response.status_code
-            }"
+            ], (
+                f"Egg {egg['name']} should accept its own secret, got "
+                f"{response.status_code}"
+            )
 
             # Test 2: Wrong secret (from other Egg) is rejected
             other_egg = [e for e in eggs_config if e["name"] != egg["name"]][0]
@@ -531,9 +535,10 @@ async def test_multiple_eggs_with_different_secrets(
                 json=payload,
                 headers={"X-Gitlab-Token": other_egg["secret_value"]},
             )
-            assert response.status_code == status.HTTP_401_UNAUTHORIZED, f"Egg {
-                egg['name']
-            } should reject other Egg's secret, got {response.status_code}"
+            assert response.status_code == status.HTTP_401_UNAUTHORIZED, (
+                f"Egg {egg['name']} should reject other Egg's secret, got "
+                f"{response.status_code}"
+            )
 
     finally:
         # Cleanup

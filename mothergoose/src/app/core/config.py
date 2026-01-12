@@ -6,16 +6,16 @@ Central configuration for the MotherGoose application.
 
 import os
 
-from app.util.base_logging import logger
+from ydb import AnonymousCredentials
+
 from app.model.runners_models import (
     EggConfigsTableYDB,
     RunnerModelYDB,
     RunnersTableYDB,
     SyncHistoryTableYDB,
-    RunnerModelYDB,
 )
-from app.schema.ydb_schemas import YDBSchema, YDBConfig
-from ydb import AnonymousCredentials
+from app.schema.ydb_schemas import YDBConfig, YDBSchema
+from app.util.base_logging import logger
 
 # Application metadata
 APP_NAME = "MotherGoose API"
@@ -61,6 +61,7 @@ if not TRIGGER_AUTH_TOKEN:
 # Nest Repository Configuration
 # The Nest repository is the main GitOps repository that manages all Eggs
 # Webhooks from the Nest repository trigger immediate Git sync
+# pylint: disable=invalid-name
 NEST_PROJECT_ID: int | None = None
 _nest_project_id_env = os.getenv("MOTHERGOOSE_NEST_PROJECT_ID")
 if _nest_project_id_env:
@@ -90,7 +91,11 @@ DEFAULT_DATABASE_SCHEMA = YDBSchema(
         endpoint="grpc://localhost:2136",
         database="/local",
         credentials=AnonymousCredentials(),
+        pool_size=10,
+        root_certificates=None,
     ),
+    default_table=None,
+    version="1.0.0",
     model=RunnerModelYDB(
         tables=[
             EggConfigsTableYDB(),

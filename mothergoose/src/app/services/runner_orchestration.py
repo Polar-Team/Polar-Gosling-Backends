@@ -109,7 +109,7 @@ class RunnerOrchestrationService:
         region: str,
         deployed_from_commit: str,
         job_requirements: Optional[Dict[str, Any]] = None,
-    ) -> Runner:
+    ) -> Runner | None:
         """
         Provision a new runner with the specified configuration.
 
@@ -145,10 +145,12 @@ class RunnerOrchestrationService:
 
         # Retrieve Egg configuration
         egg_config = await self.egg_service.get_egg_by_name(egg_name)
-        if not egg_config:
-            raise ValueError(f"Egg configuration not found: {egg_name}")
+        if not egg_config:  # type: ignore[func-returns-value]
+            err_msg = f"Egg configuration not found: {egg_name}"
+            logger.error(err_msg)
+            raise ValueError(err_msg)
 
-        # Create runner record in PROVISIONING state
+        # Create runner record in PROVISIONING state  # type: ignore[unreachable]
         runner = await self.runner_service.create_runner(
             egg_name=egg_name,
             runner_type=runner_type,

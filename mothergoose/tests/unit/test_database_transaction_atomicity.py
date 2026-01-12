@@ -441,9 +441,9 @@ async def test_atomic_runner_state_update_with_audit(
     # Verify both operations succeeded
     updated_runner = await runner_service.get_runner(runner.id)
     assert updated_runner is not None
-    assert updated_runner.state == new_state, f"Runner state should be updated to {
-        new_state
-    }, got {updated_runner.state}"
+    assert (
+        updated_runner.state == new_state
+    ), f"Runner state should be updated to {new_state}, got {updated_runner.state}"
 
     # Note: We can't verify exact audit log ID due to timestamp precision,
     # but we can verify the runner was updated, which proves atomicity

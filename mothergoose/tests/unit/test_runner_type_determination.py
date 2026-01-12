@@ -93,12 +93,12 @@ def create_egg_config(
         config=config,
         git_commit=commit,
         git_repo_url_secret="yc-lockbox://nest/repo-url",
-        gitlab_token_secret_uri=f"yc-lockbox://gitlab/{gitlab_server}/{
-            name
-        }/runner-token",
-        gitlab_webhook_secret_uri=f"yc-lockbox://gitlab/{gitlab_server}/{
-            name
-        }/webhook-secret",
+        gitlab_token_secret_uri=(
+            f"yc-lockbox://gitlab/{gitlab_server}/{name}/runner-token"
+        ),
+        gitlab_webhook_secret_uri=(
+            f"yc-lockbox://gitlab/{gitlab_server}/{name}/webhook-secret"
+        ),
     )
 
 
@@ -270,9 +270,7 @@ def test_runner_type_determination_explicit_serverless_config(
     # Verify serverless is selected (explicit config overrides duration)
     assert runner_type == RunnerType.SERVERLESS, (
         f"Egg config with type='serverless' should use serverless runners "
-        f"regardless of duration ({estimated_duration} minutes), got {
-            runner_type.value
-        }"
+        f"regardless of duration ({estimated_duration} minutes), got {runner_type.value}"
     )
 
 
@@ -331,9 +329,7 @@ def test_runner_type_determination_explicit_vm_config(
     # Verify VM (apex) is selected (explicit config overrides duration)
     assert runner_type == RunnerType.APEX, (
         f"Egg config with type='vm' should use VM runners "
-        f"regardless of duration ({estimated_duration} minutes), got {
-            runner_type.value
-        }"
+        f"regardless of duration ({estimated_duration} minutes), got {runner_type.value}"
     )
 
 

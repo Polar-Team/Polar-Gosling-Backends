@@ -19,6 +19,7 @@ from app.util.base_logging import logger
     bind=True,
     priority=10,
 )
+# pylint: disable=too-many-locals
 def process_webhook(
     self: BaseTask,
     webhook_payload: dict[str, Any],

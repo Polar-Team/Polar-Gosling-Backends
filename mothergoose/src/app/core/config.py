@@ -12,7 +12,6 @@ from app.model.runners_models import (
     RunnerModelYDB,
     RunnersTableYDB,
     SyncHistoryTableYDB,
-    RunnerModelYDB,
 )
 from app.schema.ydb_schemas import YDBSchema, YDBConfig
 from ydb import AnonymousCredentials

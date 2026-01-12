@@ -41,7 +41,7 @@ write_files:
       mothergoose_api_url: {{ mothergoose_api_url }}
       metrics_interval: {{ metrics_interval | default('30s') }}
       update_check_interval: {{ update_check_interval | default('5m') }}
-  
+
   # Systemd service for Gosling runner mode
   - path: /etc/systemd/system/gosling-runner.service
     owner: root:root
@@ -51,7 +51,7 @@ write_files:
       Description=Gosling Runner Service
       After=network.target docker.service
       Requires=docker.service
-      
+
       [Service]
       Type=simple
       User=gitlab-runner
@@ -61,10 +61,10 @@ write_files:
       KillMode=mixed
       KillSignal=SIGTERM
       TimeoutStopSec=300
-      
+
       [Install]
       WantedBy=multi-user.target
-  
+
   # Health check script
   - path: /usr/local/bin/runner-health-check.sh
     owner: root:root
@@ -72,31 +72,31 @@ write_files:
     content: |
       #!/bin/bash
       # Health check script for runner
-      
+
       # Check if Gosling runner is running
       if ! systemctl is-active --quiet gosling-runner; then
         echo "ERROR: Gosling runner service is not running"
         exit 1
       fi
-      
+
       # Check if GitLab runner agent is running
       if ! pgrep -f "gitlab-runner" > /dev/null; then
         echo "ERROR: GitLab runner agent is not running"
         exit 1
       fi
-      
+
       # Check Docker daemon
       if ! docker info > /dev/null 2>&1; then
         echo "ERROR: Docker daemon is not responding"
         exit 1
       fi
-      
+
       # Check disk space
       DISK_USAGE=$(df -h / | awk 'NR==2 {print $5}' | sed 's/%//')
       if [ "$DISK_USAGE" -gt 90 ]; then
         echo "WARNING: Disk usage is at ${DISK_USAGE}%"
       fi
-      
+
       echo "OK: All health checks passed"
       exit 0
 
@@ -104,28 +104,20 @@ runcmd:
   # Install Gosling CLI
   - curl -L {{ gosling_binary_url }} -o /usr/local/bin/gosling
   - chmod +x /usr/local/bin/gosling
-  
-  # Mount OpenTofu binary from S3
-  - mkdir -p /mnt/tofu_binary
-  {% if tofu_version is defined %}
-  - aws s3 cp s3://{{ tofu_s3_bucket }}/tofu-binaries/{{ tofu_version }}/tofu /mnt/tofu_binary/{{ tofu_version }}/tofu
-  - chmod +x /mnt/tofu_binary/{{ tofu_version }}/tofu
-  - ln -s /mnt/tofu_binary/{{ tofu_version }}/tofu /usr/local/bin/tofu
-  {% endif %}
-  
+
   # Configure Docker
   - systemctl enable docker
   - systemctl start docker
   - usermod -aG docker gitlab-runner
-  
+
   # Start Gosling runner service
   - systemctl daemon-reload
   - systemctl enable gosling-runner
   - systemctl start gosling-runner
-  
+
   # Set up health check cron job
   - echo "*/5 * * * * /usr/local/bin/runner-health-check.sh >> /var/log/runner-health.log 2>&1" | crontab -u root -
-  
+
   {% if custom_commands is defined %}
   # Custom commands
   {% for cmd in custom_commands %}

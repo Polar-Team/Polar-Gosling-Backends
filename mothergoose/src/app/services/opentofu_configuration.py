@@ -1,5 +1,8 @@
 """OpenTofuConfiguration class for managing OpenTofu configurations."""
 
+import os
+import platform
+import subprocess
 import tempfile
 from dataclasses import dataclass
 from typing import Dict, List, Literal, Optional, Union
@@ -252,9 +255,11 @@ class OpenTofuConfiguration:
 
             checks_tf_output = checks_template.render(
                 health_checks=self.tofu_settings.health_checks,
-                health_check_url=self.tofu_settings.health_checks[0].get("url", "")
-                if self.tofu_settings.health_checks
-                else "",
+                health_check_url=(
+                    self.tofu_settings.health_checks[0].get("url", "")
+                    if self.tofu_settings.health_checks
+                    else ""
+                ),
             )
 
             checks_tf_path = f"{self.__tofu_workspace}/checks.tf"
@@ -279,6 +284,7 @@ class OpenTofuConfiguration:
         self.tofu.env = self.__env
         self.tofu.cwd = self.__tofu_workspace
 
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def generate_cloud_init_script(
         self,
         runner_id: str,
@@ -346,8 +352,6 @@ class OpenTofuConfiguration:
 
         self.info("Caching provider plugins to S3...")
 
-        import os
-
         for provider in self.tofu_settings.providers:
             # Find plugin file in directory
             plugin_pattern = f"terraform-provider-{provider.name}_"
@@ -383,14 +387,10 @@ class OpenTofuConfiguration:
 
         self.info("Restoring provider plugins from S3 cache...")
 
-        import os
-
         all_restored = True
 
         for provider in self.tofu_settings.providers:
             # Determine plugin filename based on platform
-            import platform
-
             system = platform.system().lower()
             arch = (
                 "amd64"
@@ -510,21 +510,35 @@ class OpenTofuConfiguration:
         self.info(f"Generating deployment plan for {egg_name}")
 
         # Run tofu plan
-        plan_result = self.tofu.plan(
-            out=f"{self.__tofu_workspace}/plan.tfplan",
-            detailed_exitcode=True,
+        # Note: tofupy doesn't support -out and -detailed-exitcode directly
+        # We'll need to use subprocess or extend tofupy
+
+        plan_path = f"{self.__tofu_workspace}/plan.tfplan"
+
+        # Run tofu plan with subprocess for full control
+        result = subprocess.run(
+            [
+                self.__binary_path,
+                "plan",
+                f"-out={plan_path}",
+                "-detailed-exitcode",
+            ],
+            cwd=self.__tofu_workspace,
+            capture_output=True,
+            text=True,
+            env=self.__env,
+            check=False,
         )
 
         # Check if plan is valid
         # Exit code 0 = no changes, 1 = error, 2 = changes present
-        is_valid = plan_result.returncode in (0, 2)
+        is_valid = result.returncode in (0, 2)
 
         if not is_valid:
-            self.error(f"OpenTofu plan failed for {egg_name}: {plan_result.stderr}")
+            self.error(f"OpenTofu plan failed for {egg_name}: {result.stderr}")
             return b"", False
 
         # Read plan binary
-        plan_path = f"{self.__tofu_workspace}/plan.tfplan"
         with open(plan_path, "rb") as f:
             plan_binary = f.read()
 
@@ -562,11 +576,18 @@ class OpenTofuConfiguration:
         with open(plan_path, "wb") as f:
             f.write(plan_binary)
 
-        # Apply the plan
-        apply_result = self.tofu.apply(plan_path, auto_approve=True)
+        # Apply the plan using subprocess for full control
+        result = subprocess.run(
+            [self.__binary_path, "apply", plan_path],
+            cwd=self.__tofu_workspace,
+            capture_output=True,
+            text=True,
+            env=self.__env,
+            check=False,
+        )
 
-        if apply_result.returncode != 0:
-            self.error(f"OpenTofu apply failed for {egg_name}: {apply_result.stderr}")
+        if result.returncode != 0:
+            self.error(f"OpenTofu apply failed for {egg_name}: {result.stderr}")
             return False
 
         self.info(f"Deployment plan applied successfully for {egg_name}")

@@ -188,7 +188,8 @@ class EggService:
                 if isinstance(egg_data.get("config"), bytes):
                     egg_data["config"] = json.loads(egg_data["config"].decode("utf-8"))
 
-                # Datetime fields: ISO string → datetime (handled by validators, but ensure they're strings)
+                # Datetime fields: ISO string → datetime
+                # (handled by validators, but ensure they're strings)
                 for key in ("synced_at", "created_at", "updated_at"):
                     if isinstance(egg_data.get(key), bytes):
                         egg_data[key] = egg_data[key].decode("utf-8")
@@ -205,4 +206,5 @@ class EggService:
 
 # Global egg service instance - will be initialized with schema
 # Import this and initialize it with a schema before use
+# pylint: disable=invalid-name
 egg_service: EggService | None = None

@@ -168,13 +168,15 @@ async def create_runner(request: CreateRunnerRequest) -> CreateRunnerResponse:
     # Validate Egg exists
     orchestration = _get_orchestration_service()
     egg_config = await orchestration.egg_service.get_egg_by_name(request.egg_name)
-    if not egg_config:
+    if not egg_config:  # type: ignore[func-returns-value]
+        err_msg = f"Egg not found: {request.egg_name}"
+        logger.error(err_msg)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Egg not found: {request.egg_name}",
+            detail=err_msg,
         )
 
-    # Trigger Celery task for runner deployment
+    # Trigger Celery task for runner deployment  # type: ignore[unreachable]
     runner_config = {
         "job_requirements": request.job_requirements or {},
         "cloud_provider": request.cloud_provider,
@@ -257,6 +259,7 @@ async def delete_runner(
     summary="List runners for an Egg",
     description="Retrieve all runners associated with a specific Egg",
 )
+# type: ignore[return]
 async def list_runners_by_egg(egg_name: str) -> List[RunnerDetailResponse]:
     """
     List all runners for a specific Egg.
@@ -275,13 +278,15 @@ async def list_runners_by_egg(egg_name: str) -> List[RunnerDetailResponse]:
     # Validate Egg exists
     orchestration = _get_orchestration_service()
     egg_config = await orchestration.egg_service.get_egg_by_name(egg_name)
-    if not egg_config:
+    if not egg_config:  # type: ignore[func-returns-value]
+        err_msg = f"Egg not found: {egg_name}"
+        logger.error(err_msg)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Egg not found: {egg_name}",
+            detail=err_msg,
         )
 
-    # Get runners for Egg
+    # Get runners for Egg  # type: ignore[unreachable]
     orchestration = _get_orchestration_service()
     runners = await orchestration.list_runners_by_egg(egg_name)
 

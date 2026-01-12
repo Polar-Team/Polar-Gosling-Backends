@@ -185,17 +185,17 @@ def create_egg_config(
         config=config,
         git_commit=commit,
         git_repo_url_secret="yc-lockbox://nest/repo-url",
-        gitlab_token_secret_uri=f"yc-lockbox://gitlab/{gitlab_server}/{
-            name
-        }/runner-token",
-        gitlab_webhook_secret_uri=f"yc-lockbox://gitlab/{gitlab_server}/{
-            name
-        }/webhook-secret",
+        gitlab_token_secret_uri=(
+            f"yc-lockbox://gitlab/{gitlab_server}/{name}/runner-token"
+        ),
+        gitlab_webhook_secret_uri=(
+            f"yc-lockbox://gitlab/{gitlab_server}/{name}/webhook-secret"
+        ),
     )
 
 
 @pytest.fixture(scope="module", name="test_ydb_schema")
-def ydb_schema(ydb_container) -> Generator[YDBSchema]:
+def ydb_schema(ydb_container) -> Generator[YDBSchema, None, None]:
     """
     Fixture to provide YDB configuration with real YDB container.
 
@@ -203,9 +203,10 @@ def ydb_schema(ydb_container) -> Generator[YDBSchema]:
     in a testcontainer, allowing integration tests with minimal mocks.
     """
     config = YDBConfig(
-        endpoint=f"grpc://{ydb_container.get_container_host_ip()}:{
-            ydb_container.get_exposed_port(2136)
-        }",
+        endpoint=(
+            f"grpc://{ydb_container.get_container_host_ip()}:"
+            f"{ydb_container.get_exposed_port(2136)}"
+        ),
         database="/local",
         credentials=AnonymousCredentials(),
     )
@@ -270,7 +271,7 @@ def egg_service(test_ydb_schema):
 
 
 @pytest.fixture(name="generated_examples", scope="module", autouse=True)
-def generate_examples() -> Generator[GenerateExamples]:
+def generate_examples() -> Generator[GenerateExamples, None, None]:
     """Fixture to generate examples for property-based tests."""
     instance = GenerateExamples()
     instance.project_ids_tests_example()

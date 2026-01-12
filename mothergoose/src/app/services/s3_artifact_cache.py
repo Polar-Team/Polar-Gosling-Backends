@@ -11,6 +11,7 @@ Task 16: MotherGoose Backend - OpenTofu Integration for Runner Deployment
 import hashlib
 import json
 import os
+import tempfile
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -32,7 +33,7 @@ class S3ArtifactCache:
     - Lock files for version consistency
     """
 
-    # pylint: disable=no-member
+    # pylint: disable=no-member,too-many-arguments,too-many-positional-arguments
 
     def __init__(
         self,
@@ -57,22 +58,22 @@ class S3ArtifactCache:
         self.endpoint_url = endpoint_url
         self.aws_access_key_id = aws_access_key_id
         self.aws_secret_access_key = aws_secret_access_key
-        self._session: Optional[aioboto3.Session] = None
+        self._session: Optional[aioboto3.Session] = None  # type: ignore[no-any-unimported]
 
-    def _get_session(self) -> aioboto3.Session:
+    def _get_session(self) -> aioboto3.Session:  # type: ignore[no-any-unimported]
         """Get or create aioboto3 session."""
         if self._session is None:
-            session_kwargs = {"region_name": self.region}
+            session_kwargs: dict = {"region_name": self.region}
             if self.aws_access_key_id and self.aws_secret_access_key:
                 session_kwargs["aws_access_key_id"] = self.aws_access_key_id
                 session_kwargs["aws_secret_access_key"] = self.aws_secret_access_key
             self._session = aioboto3.Session(**session_kwargs)
         return self._session
 
-    async def _get_s3_client(self) -> Any:
+    async def _get_s3_client(self) -> Any:  # type: ignore[misc]
         """Create S3 client with proper configuration."""
         session = self._get_session()
-        client_kwargs = {}
+        client_kwargs: dict = {}
         if self.endpoint_url:
             client_kwargs["endpoint_url"] = self.endpoint_url
         return session.client("s3", **client_kwargs)
@@ -96,14 +97,13 @@ class S3ArtifactCache:
         Returns:
             S3 key where plugin was cached
         """
-        s3_key = f"terraform-plugins/{provider_source}/{provider_version}/{
-            os.path.basename(plugin_path)
-        }"
+        s3_key = (
+            f"terraform-plugins/{provider_source}/{provider_version}/"
+            f"{os.path.basename(plugin_path)}"
+        )
 
         self.info(
-            f"Caching provider plugin {provider_name} v{provider_version} to S3: {
-                s3_key
-            }"
+            f"Caching provider plugin {provider_name} v{provider_version} to S3: {s3_key}"
         )
 
         async with await self._get_s3_client() as s3:
@@ -176,6 +176,7 @@ class S3ArtifactCache:
                 self.error(f"Failed to retrieve cached provider plugin: {e}")
                 raise
 
+    # pylint: disable=too-many-locals
     async def cache_module(
         self,
         module_name: str,
@@ -589,7 +590,6 @@ class S3ArtifactCache:
                 self.warning(
                     f"No checksum in metadata for {s3_key}, downloading to verify"
                 )
-                import tempfile
 
                 with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
                     await s3.download_fileobj(self.bucket_name, s3_key, tmp_file)

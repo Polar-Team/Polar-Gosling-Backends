@@ -63,9 +63,9 @@ def create_egg_config(
         git_commit=commit,
         git_repo_url_secret="aws-sm://nest/repo-url",
         gitlab_token_secret_uri=f"aws-sm://gitlab/{gitlab_server}/{name}/runner-token",
-        gitlab_webhook_secret_uri=f"aws-sm://gitlab/{gitlab_server}/{
-            name
-        }/webhook-secret",
+        gitlab_webhook_secret_uri=(
+            f"aws-sm://gitlab/{gitlab_server}/{name}/webhook-secret"
+        ),
     )
 
 
@@ -122,9 +122,10 @@ def ydb_schema(ydb_container) -> YDBSchema:
     in a testcontainer, allowing integration tests with minimal mocks.
     """
     config = YDBConfig(
-        endpoint=f"grpc://{ydb_container.get_container_host_ip()}:{
-            ydb_container.get_exposed_port(2136)
-        }",
+        endpoint=(
+            f"grpc://{ydb_container.get_container_host_ip()}:"
+            f"{ydb_container.get_exposed_port(2136)}"
+        ),
         database="/local",
         credentials=AnonymousCredentials(),
     )

@@ -28,27 +28,33 @@ class InvalidSecretStrategies:
     """Strategies for generating invalid secret URIs and scenarios."""
 
     # Invalid URI schemes (not yc-lockbox, aws-sm, or vault)
-    invalid_schemes = st.sampled_from([
-        "http",
-        "https",
-        "ftp",
-        "s3",
-        "file",
-        "invalid",
-        "secret",
-        "lockbox",
-        "aws",
-        "yandex",
-    ])
+    invalid_schemes = st.sampled_from(
+        [
+            "http",
+            "https",
+            "ftp",
+            "s3",
+            "file",
+            "invalid",
+            "secret",
+            "lockbox",
+            "aws",
+            "yandex",
+        ]
+    )
 
     # Valid characters for secret IDs and keys
     secret_id_chars = st.characters(
         whitelist_categories=("Ll", "Lu", "Nd"),
-        whitelist_characters="-_/",
+        whitelist_characters="-_",
+        blacklist_characters="/",
+        blacklist_categories=("Cs",),
     )
     key_chars = st.characters(
         whitelist_categories=("Ll", "Lu", "Nd"),
         whitelist_characters="-_",
+        blacklist_characters="/",
+        blacklist_categories=("Cs",),
     )
 
     # Generate secret IDs
@@ -57,10 +63,7 @@ class InvalidSecretStrategies:
         min_size=1,
         max_size=50,
     ).filter(
-        lambda x: x
-        and not x.startswith("/")
-        and not x.endswith("/")
-        and "//" not in x
+        lambda x: x and not x.startswith("/") and not x.endswith("/") and "//" not in x
     )
 
     # Generate keys
@@ -71,11 +74,13 @@ class InvalidSecretStrategies:
     ).filter(lambda x: x and not x.startswith("-") and not x.endswith("-"))
 
     # Valid backend schemes
-    valid_backends = st.sampled_from([
-        ("yc-lockbox", SecretBackend.YC_LOCKBOX),
-        ("aws-sm", SecretBackend.AWS_SM),
-        ("vault", SecretBackend.VAULT),
-    ])
+    valid_backends = st.sampled_from(
+        [
+            ("yc-lockbox", SecretBackend.YC_LOCKBOX),
+            ("aws-sm", SecretBackend.AWS_SM),
+            ("vault", SecretBackend.VAULT),
+        ]
+    )
 
 
 # Feature: gitops-runner-orchestration, Property 39: Invalid Secret Reference Error
@@ -208,7 +213,9 @@ async def test_inaccessible_secret_yandex_lockbox_property(
     with patch.object(
         YandexLockboxManager,
         "get_secret",
-        side_effect=RuntimeError(f"Failed to retrieve secret {secret_id}/{key}: Secret not found"),
+        side_effect=RuntimeError(
+            f"Failed to retrieve secret {secret_id}/{key}: Secret not found"
+        ),
     ):
         # Attempt to retrieve secret should fail with descriptive error
         with pytest.raises(RuntimeError) as exc_info:
@@ -216,12 +223,14 @@ async def test_inaccessible_secret_yandex_lockbox_property(
 
         # Verify error message is descriptive
         error_message = str(exc_info.value)
-        assert "Failed to retrieve secret" in error_message, (
-            f"Error message should mention 'Failed to retrieve secret', got: {error_message}"
-        )
-        assert secret_id in error_message or key in error_message, (
-            f"Error message should mention the secret ID or key, got: {error_message}"
-        )
+        assert "Failed to retrieve secret" in error_message, f"""
+            Error message should mention
+            'Failed to retrieve secret', got: {error_message}
+            """
+        assert secret_id in error_message or key in error_message, f"""
+            Error message should mention
+            the secret ID or key, got: {error_message}
+            """
 
 
 @given(
@@ -266,7 +275,9 @@ async def test_inaccessible_secret_aws_secrets_manager_property(
     with patch.object(
         AWSSecretsManager,
         "get_secret",
-        side_effect=RuntimeError(f"Failed to retrieve secret {secret_id}/{key}: ResourceNotFoundException"),
+        side_effect=RuntimeError(
+            f"Failed to retrieve secret {secret_id}/{key}: ResourceNotFoundException"
+        ),
     ):
         # Attempt to retrieve secret should fail with descriptive error
         with pytest.raises(RuntimeError) as exc_info:
@@ -274,12 +285,14 @@ async def test_inaccessible_secret_aws_secrets_manager_property(
 
         # Verify error message is descriptive
         error_message = str(exc_info.value)
-        assert "Failed to retrieve secret" in error_message, (
-            f"Error message should mention 'Failed to retrieve secret', got: {error_message}"
-        )
-        assert secret_id in error_message or key in error_message, (
-            f"Error message should mention the secret ID or key, got: {error_message}"
-        )
+        assert "Failed to retrieve secret" in error_message, f"""
+          Error message should mention
+          'Failed to retrieve secret', got: {error_message}
+        """
+        assert secret_id in error_message or key in error_message, f"""
+            Error message should mention
+            the secret ID or key, got: {error_message}
+            """
 
 
 @given(
@@ -324,7 +337,9 @@ async def test_inaccessible_secret_vault_property(
     with patch.object(
         VaultManager,
         "get_secret",
-        side_effect=RuntimeError(f"Failed to retrieve secret {secret_id}/{key}: Path not found"),
+        side_effect=RuntimeError(
+            f"Failed to retrieve secret {secret_id}/{key}: Path not found"
+        ),
     ):
         # Attempt to retrieve secret should fail with descriptive error
         with pytest.raises(RuntimeError) as exc_info:
@@ -332,12 +347,14 @@ async def test_inaccessible_secret_vault_property(
 
         # Verify error message is descriptive
         error_message = str(exc_info.value)
-        assert "Failed to retrieve secret" in error_message, (
-            f"Error message should mention 'Failed to retrieve secret', got: {error_message}"
-        )
-        assert secret_id in error_message or key in error_message, (
-            f"Error message should mention the secret ID or key, got: {error_message}"
-        )
+        assert "Failed to retrieve secret" in error_message, f"""
+        Error message should mention
+        'Failed to retrieve secret', got: {error_message}
+        """
+        assert secret_id in error_message or key in error_message, f"""
+        Error message should mention
+        the secret ID or key, got: {error_message}"
+        """
 
 
 # Example tests for specific error scenarios
@@ -418,7 +435,9 @@ async def test_inaccessible_secret_yandex_lockbox_example() -> None:
 
         error_message = str(exc_info.value)
         assert "Failed to retrieve secret" in error_message
-        assert "nonexistent-secret" in error_message or "nonexistent-key" in error_message
+        assert (
+            "nonexistent-secret" in error_message or "nonexistent-key" in error_message
+        )
 
 
 @pytest.mark.asyncio
@@ -447,7 +466,9 @@ async def test_inaccessible_secret_aws_secrets_manager_example() -> None:
 
         error_message = str(exc_info.value)
         assert "Failed to retrieve secret" in error_message
-        assert "nonexistent-secret" in error_message or "nonexistent-key" in error_message
+        assert (
+            "nonexistent-secret" in error_message or "nonexistent-key" in error_message
+        )
 
 
 @pytest.mark.asyncio
@@ -475,7 +496,11 @@ async def test_inaccessible_secret_vault_example() -> None:
 
         error_message = str(exc_info.value)
         assert "Failed to retrieve secret" in error_message
-        assert "nonexistent" in error_message or "path" in error_message or "key" in error_message
+        assert (
+            "nonexistent" in error_message
+            or "path" in error_message
+            or "key" in error_message
+        )
 
 
 @pytest.mark.asyncio

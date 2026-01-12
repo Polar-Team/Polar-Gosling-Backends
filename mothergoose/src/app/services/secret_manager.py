@@ -8,6 +8,7 @@ Handles retrieval of secrets from various secret storage backends:
 
 Secrets are referenced by URI in configuration files and retrieved at runtime.
 """
+
 # pylint: disable=too-many-lines
 
 import json
@@ -25,8 +26,7 @@ import yandexcloud
 from botocore.exceptions import BotoCoreError, ClientError
 from grpc import RpcError
 from hvac.exceptions import VaultError
-from yandex.cloud.lockbox.v1 import payload_service_pb2
-from yandex.cloud.lockbox.v1 import payload_service_pb2_grpc
+from yandex.cloud.lockbox.v1 import payload_service_pb2, payload_service_pb2_grpc
 
 from app.util.base_logging import logged
 
@@ -224,7 +224,7 @@ class SecretMasker:
 
         # Mask secret values
         for pattern in SecretMasker.SECRET_PATTERNS:
-            masked = re.sub(pattern, r'\1=***MASKED***', masked)
+            masked = re.sub(pattern, r"\1=***MASKED***", masked)
 
         return masked
 

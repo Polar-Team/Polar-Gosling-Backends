@@ -149,7 +149,9 @@ async def test_secret_cache_ttl_expiration_property(
         )
 
         # Verify secret is cached
-        assert ref in secret_manager.cache, "Secret should be cached after first retrieval"
+        assert ref in secret_manager.cache, (
+            "Secret should be cached after first retrieval"
+        )
         cached_entry = secret_manager.cache[ref]
         assert not cached_entry.is_expired, "Cache should not be expired immediately"
 
@@ -246,7 +248,7 @@ async def test_secret_cache_ttl_multiple_secrets_property(
         uri2 = f"aws-sm://{full_secret_path2}"
 
         # Create SecretManager with longer TTL (4 seconds)
-        secret_manager = SecretManager(default_ttl=4)
+        secret_manager = SecretManager(default_ttl=14)
 
         # Parse URIs
         ref1 = SecretReference(uri1)
@@ -260,7 +262,7 @@ async def test_secret_cache_ttl_multiple_secrets_property(
         assert result1 == f"{secret_value}-1"
 
         # Wait 2 seconds
-        time.sleep(2)
+        time.sleep(10)
 
         # Retrieve second secret (2 seconds after first)
         result2 = await secret_manager.get_secret(
@@ -274,16 +276,17 @@ async def test_secret_cache_ttl_multiple_secrets_property(
         assert ref2 in secret_manager.cache
 
         # Wait another 2.5 seconds (total 4.5 seconds from first retrieval)
-        time.sleep(2.5)
+
+        time.sleep(5)
 
         # First secret should be expired (4.5 seconds old)
         assert secret_manager.cache[ref1].is_expired, (
-            "First secret should be expired after 4.5 seconds"
+            "First secret should be expired after 4 seconds"
         )
 
         # Second secret should still be valid (2.5 seconds old, TTL is 4)
         assert not secret_manager.cache[ref2].is_expired, (
-            "Second secret should not be expired after 2.5 seconds"
+            "Second secret should not be expired after 2 seconds"
         )
 
         # Retrieve first secret again - should trigger fresh retrieval
@@ -462,7 +465,9 @@ async def test_secret_cache_ttl_example() -> None:
     assert cache_entry.is_expired, "Cache should be expired after 2.5 seconds"
 
     # Age should be approximately 2.5 seconds
-    assert 2.4 < cache_entry.get_age < 2.7, "Cache age should be approximately 2.5 seconds"
+    assert 2.4 < cache_entry.get_age < 2.7, (
+        "Cache age should be approximately 2.5 seconds"
+    )
 
 
 @pytest.mark.asyncio

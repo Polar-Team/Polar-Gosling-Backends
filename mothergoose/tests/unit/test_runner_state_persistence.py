@@ -9,6 +9,7 @@ immediately after should return the updated state.
 """
 
 import pytest
+import asyncio
 from hypothesis import given, settings, strategies as st, HealthCheck
 
 from ydb import AnonymousCredentials
@@ -48,7 +49,16 @@ def ydb_schema(ydb_container):
         model=model,
     )
 
-    return schema
+    yield schema
+
+    delete_operation = AsyncYDBOperations(
+        schema, AsyncYDBFunctionsCollections.drop_tables
+    )
+
+    async def process():
+        await delete_operation.process()
+
+    asyncio.run(process())
 
 
 @pytest.fixture(scope="module", name="runner_service")
@@ -189,9 +199,9 @@ async def test_runner_state_persistence(
     # Verify initial state is persisted
     retrieved_runner = await runner_service.get_runner(runner.id)
     assert retrieved_runner is not None, "Runner should exist after creation"
-    assert (
-        retrieved_runner.state == initial_state
-    ), f"Initial state should be {initial_state}, got {retrieved_runner.state}"
+    assert retrieved_runner.state == initial_state, f"""
+     Initial state should be {initial_state}, got {retrieved_runner.state}
+     """
 
     # Update runner state
     await runner_service.update_runner_state(runner.id, new_state)

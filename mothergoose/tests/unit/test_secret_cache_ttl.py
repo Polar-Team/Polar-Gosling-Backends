@@ -247,46 +247,49 @@ async def test_secret_cache_ttl_multiple_secrets_property(
         uri1 = f"aws-sm://{full_secret_path1}"
         uri2 = f"aws-sm://{full_secret_path2}"
 
-        # Create SecretManager with longer TTL (4 seconds)
-        secret_manager = SecretManager(default_ttl=14)
+        # Create SecretManager with longer TTL (6 seconds)
+        # Using longer TTL to account for timing imprecision in Python 3.10
+        secret_manager = SecretManager(default_ttl=6)
 
         # Parse URIs
         ref1 = SecretReference(uri1)
         ref2 = SecretReference(uri2)
 
-        # Retrieve first secret
+        # Retrieve first secret and record timestamp
         result1 = await secret_manager.get_secret(
             uri1,
             endpoint_url=aws_credentials["endpoint_url"],
         )
         assert result1 == f"{secret_value}-1"
+        first_cached_at = secret_manager.cache[ref1].cached_at
 
-        # Wait 2 seconds
-        time.sleep(10)
+        # Wait 3 seconds with buffer for timing imprecision
+        time.sleep(3.2)
 
-        # Retrieve second secret (2 seconds after first)
+        # Retrieve second secret (3 seconds after first)
         result2 = await secret_manager.get_secret(
             uri2,
             endpoint_url=aws_credentials["endpoint_url"],
         )
         assert result2 == f"{secret_value}-2"
+        second_cached_at = secret_manager.cache[ref2].cached_at
 
         # Both should be cached
         assert ref1 in secret_manager.cache
         assert ref2 in secret_manager.cache
 
-        # Wait another 2.5 seconds (total 4.5 seconds from first retrieval)
+        # Wait another 3.5 seconds (total ~6.7 seconds from first retrieval)
+        # This ensures first secret is expired (6.7 > 6) but second is not (3.5 < 6)
+        time.sleep(3.5)
 
-        time.sleep(5)
-
-        # First secret should be expired (4.5 seconds old)
+        # First secret should be expired (age > 6 seconds)
         assert secret_manager.cache[ref1].is_expired, (
-            "First secret should be expired after 4 seconds"
+            f"First secret should be expired after {time.time() - first_cached_at:.2f} seconds (TTL is 6)"
         )
 
-        # Second secret should still be valid (2.5 seconds old, TTL is 4)
+        # Second secret should still be valid (age < 6 seconds)
         assert not secret_manager.cache[ref2].is_expired, (
-            "Second secret should not be expired after 2 seconds"
+            f"Second secret should not be expired after {time.time() - second_cached_at:.2f} seconds (TTL is 6)"
         )
 
         # Retrieve first secret again - should trigger fresh retrieval

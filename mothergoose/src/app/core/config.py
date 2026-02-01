@@ -9,6 +9,7 @@ import os
 from ydb import AnonymousCredentials
 
 from app.model.runners_models import (
+    DeploymentPlansTableYDB,
     EggConfigsTableYDB,
     RunnerModelYDB,
     RunnersTableYDB,
@@ -104,3 +105,137 @@ DEFAULT_DATABASE_SCHEMA = YDBSchema(
         ]
     ),
 )
+
+
+# Database Schema Singleton
+# This will be initialized on application startup
+_ydb_schema_instance: YDBSchema | None = None
+
+
+def initialize_ydb_schema() -> YDBSchema:
+    """
+    Initialize YDB schema from environment variables.
+
+    This function reads YDB configuration from environment variables and
+    creates a YDBSchema instance for database operations.
+
+    Environment Variables:
+        MOTHERGOOSE_YDB_ENDPOINT: YDB endpoint URL (e.g., grpc://localhost:2136)
+        MOTHERGOOSE_YDB_DATABASE: YDB database name (e.g., /local)
+        MOTHERGOOSE_YDB_POOL_SIZE: Connection pool size (default: 10)
+        MOTHERGOOSE_YDB_USE_ANONYMOUS_CREDENTIALS: Use anonymous credentials (default: true for dev)
+
+    Returns:
+        YDBSchema: Initialized database schema
+
+    Raises:
+        ValueError: If required environment variables are missing or invalid
+    """
+    global _ydb_schema_instance  # pylint: disable=global-statement
+
+    # Read configuration from environment variables
+    endpoint = os.getenv("MOTHERGOOSE_YDB_ENDPOINT")
+    database = os.getenv("MOTHERGOOSE_YDB_DATABASE")
+    pool_size_str = os.getenv("MOTHERGOOSE_YDB_POOL_SIZE", "10")
+    use_anonymous = (
+        os.getenv("MOTHERGOOSE_YDB_USE_ANONYMOUS_CREDENTIALS", "true").lower() == "true"
+    )
+
+    # Validate required configuration
+    if not endpoint:
+        logger.warning(
+            "MOTHERGOOSE_YDB_ENDPOINT not set. Using default: grpc://localhost:2136"
+        )
+        endpoint = "grpc://localhost:2136"
+
+    if not database:
+        logger.warning("MOTHERGOOSE_YDB_DATABASE not set. Using default: /local")
+        database = "/local"
+
+    # Validate endpoint format
+    if not endpoint.startswith("grpc://") and not endpoint.startswith("grpcs://"):
+        raise ValueError(
+            f"Invalid YDB endpoint format: {endpoint}. "
+            "Must start with grpc:// or grpcs://"
+        )
+
+    # Parse pool size
+    try:
+        pool_size = int(pool_size_str)
+        if pool_size <= 0:
+            raise ValueError("Pool size must be positive")
+    except ValueError as e:
+        raise ValueError(
+            f"Invalid MOTHERGOOSE_YDB_POOL_SIZE: {pool_size_str}. "
+            f"Must be a positive integer. Error: {e}"
+        ) from e
+
+    # Configure credentials
+    if use_anonymous:
+        credentials = AnonymousCredentials()
+        logger.info("Using anonymous credentials for YDB connection")
+    else:
+        # Task 17: Implement production credentials (IAM, service account, etc.)
+        logger.warning(
+            "Production credentials not implemented. "
+            "Falling back to anonymous credentials. "
+            "Set MOTHERGOOSE_YDB_USE_ANONYMOUS_CREDENTIALS=false for production."
+        )
+        credentials = AnonymousCredentials()
+
+    # Create YDB configuration
+    ydb_config = YDBConfig(
+        endpoint=endpoint,
+        database=database,
+        credentials=credentials,
+        pool_size=pool_size,
+        root_certificates=None,
+    )
+
+    # Create YDB schema with all required tables
+    # pylint: disable=import-outside-toplevel
+
+    _ydb_schema_instance = YDBSchema(
+        config=ydb_config,
+        default_table=None,
+        version="1.0.0",
+        model=RunnerModelYDB(
+            tables=[
+                EggConfigsTableYDB(),
+                RunnersTableYDB(),
+                SyncHistoryTableYDB(),
+                DeploymentPlansTableYDB(),
+            ]
+        ),
+    )
+
+    logger.info(
+        "YDB schema initialized: endpoint=%s, database=%s, pool_size=%d",
+        endpoint,
+        database,
+        pool_size,
+    )
+
+    return _ydb_schema_instance
+
+
+def get_ydb_schema() -> YDBSchema:
+    """
+    Get the initialized YDB schema instance.
+
+    This function is used as a FastAPI dependency to inject the database
+    schema into route handlers.
+
+    Returns:
+        YDBSchema: The initialized database schema
+
+    Raises:
+        RuntimeError: If schema has not been initialized
+    """
+    if _ydb_schema_instance is None:
+        raise RuntimeError(
+            "YDB schema not initialized. "
+            "Call initialize_ydb_schema() during application startup."
+        )
+
+    return _ydb_schema_instance

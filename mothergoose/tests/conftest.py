@@ -203,6 +203,9 @@ def fastapi_test_client() -> TestClient:
 
     Creates a fresh TestClient with the default application configuration.
     Uses module scope for efficiency since app configuration doesn't change.
+    
+    Note: For unit tests that expect schema not to be configured,
+    use dependency_overrides to override get_ydb_schema to return None.
     """
 
     return TestClient(app)
@@ -407,6 +410,7 @@ def test_ydb_schema(test_ydb_config: Any) -> Any:
     """
     # pylint: disable=import-outside-toplevel
     from app.model.runners_models import (
+        DeploymentPlansTableYDB,
         EggConfigsTableYDB,
         RunnerModelYDB,
         RunnersTableYDB,
@@ -421,6 +425,7 @@ def test_ydb_schema(test_ydb_config: Any) -> Any:
                 RunnersTableYDB(),
                 EggConfigsTableYDB(),
                 SyncHistoryTableYDB(),
+                DeploymentPlansTableYDB(),
             ]
         ),
         version="1.0.0",

@@ -5,6 +5,8 @@ Handles runner type determination, provisioning workflow, and lifecycle manageme
 This service coordinates between Egg configurations, OpenTofu deployment, and runner state tracking.
 """
 
+# pylint: disable=duplicate-code
+
 from typing import Any, Dict, Optional
 
 from app.model.runners_models import (
@@ -16,7 +18,9 @@ from app.model.runners_models import (
 )
 from app.services.egg_service import EggService
 from app.services.runner_service import RunnerService
+from app.services.serverless_runner_deployment import ServerlessRunnerDeploymentService
 from app.util.base_logging import logger
+from app.util.runner_helpers import build_deployment_kwargs
 
 
 class RunnerOrchestrationService:
@@ -34,6 +38,9 @@ class RunnerOrchestrationService:
         self,
         runner_service: RunnerService,
         egg_service: EggService,
+        serverless_deployment_service: Optional[
+            ServerlessRunnerDeploymentService
+        ] = None,
     ) -> None:
         """
         Initialize runner orchestration service.
@@ -41,9 +48,11 @@ class RunnerOrchestrationService:
         Args:
             runner_service: Service for runner state management
             egg_service: Service for Egg configuration retrieval
+            serverless_deployment_service: Optional service for serverless deployment
         """
         self.runner_service = runner_service
         self.egg_service = egg_service
+        self.serverless_deployment_service = serverless_deployment_service
 
     def determine_runner_type(
         self,
@@ -150,7 +159,28 @@ class RunnerOrchestrationService:
             logger.error(err_msg)
             raise ValueError(err_msg)
 
-        # Create runner record in PROVISIONING state  # type: ignore[unreachable]
+        # Task 17: Route to serverless deployment if runner type is serverless
+        if runner_type == RunnerType.SERVERLESS:  # type: ignore[unreachable]
+            if not self.serverless_deployment_service:
+                raise RuntimeError(
+                    "Serverless deployment service not configured, "
+                    "but serverless runner requested"
+                )
+
+            logger.info("Routing to serverless deployment service")
+            deployment_kwargs = build_deployment_kwargs(
+                egg_name=egg_name,
+                cloud_provider=cloud_provider,
+                region=region,
+                deployed_from_commit=deployed_from_commit,
+                job_requirements=job_requirements,
+            )
+            return await self.serverless_deployment_service.deploy_serverless_runner(
+                **deployment_kwargs
+            )
+
+        # Task 18: VM runner deployment (Apex/Nadir)
+        # Create runner record in PROVISIONING state
         runner = await self.runner_service.create_runner(
             egg_name=egg_name,
             runner_type=runner_type,

@@ -67,7 +67,7 @@ class TofuProvidersVer(PydanticBaseModelORM):
         constraint_pattern = r"""
         ^(=|!=|>=|<=|>|<)?\s*\d+(\.\d+){0,2}(-[a-zA-Z0-9]+)?(\+[a-zA-Z0-9]+)?$
         """
-        if not re.match(constraint_pattern, value):
+        if not re.match(constraint_pattern, value, re.VERBOSE):
             raise ValueError(f"Invalid version constraint: {value}")
         return value
 

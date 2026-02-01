@@ -1,47 +1,48 @@
+# TLS private key for SSH access to VMs
 resource "tls_private_key" "key" {
-  algorithm = "{{ touf_vm_key_algorithm }}"
+  algorithm = "{{ tofu_vm_key_algorithm }}"
   rsa_bits  = {{ tofu_vm_key_rsa_bits }}
 }
 
+# Store SSH private key locally
 resource "local_file" "private_key" {
   content  = tls_private_key.key.private_key_pem
   filename = "${path.module}/SSH_KEY"
 }
 
+# Worker module for runner deployment
 module "worker" {
-
 {% if tofu_worker_module_source.type == "git" %}
   source = "git::{{ tofu_worker_module_source.url }}.git?ref={{ tofu_worker_module_source.version }}"
 {% else %}
-  source = "{{ tofu_worker_module_source.url }}"
+  source  = "{{ tofu_worker_module_source.url }}"
   version = "{{ tofu_worker_module_source.version }}"
 {% endif %}
+
   for_each = var.tofu_worker_instances
-  prefix = each.key
-{% for key, value in  tofu_worker_module_extra_variables %}
+  prefix   = each.key
+
+{% for key, value in tofu_worker_module_extra_variables.items() %}
   {{ key }} = each.value.{{ value }}
 {% endfor %}
+}
 
-{% if tofu_worker_module.chassis == "vm" %}
-  cloud-init = local.cloud-init-docker
-{% endif %}
-
-{% if tofu_rift_required | default(false) %}
+{% if tofu_rift_required %}
+# Rift module for artifact caching (optional)
 module "rift" {
 {% if tofu_rift_module_source.type == "git" %}
   source = "git::{{ tofu_rift_module_source.url }}.git?ref={{ tofu_rift_module_source.version }}"
 {% else %}
-  source = "{{ tofu_module_source.url }}"
-  version = "{{ tofu_module_source.version }}"
+  source  = "{{ tofu_rift_module_source.url }}"
+  version = "{{ tofu_rift_module_source.version }}"
 {% endif %}
+
   for_each = var.tofu_rift_instances
-  prefix = each.key
-{% for key, value in  tofu_worker_module_extra_variables %}
+  prefix   = each.key
+
+{% for key, value in tofu_worker_module_extra_variables.items() %}
   {{ key }} = each.value.{{ value }}
 {% endfor %}
-
-{% if tofu_gitlab_worker_type  == "vm" %}
-  cloud-init = local.deb-cloud-init-gitlab-docker
+}
 {% endif %}
 
-{% endif %}

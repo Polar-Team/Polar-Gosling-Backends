@@ -1,7 +1,11 @@
 {% for provider in tofu_providers %}
 provider "{{ provider.name }}" {
-{% for key, value in provider.settings.items() %}
-  {{ key }} = {{ value }}
-{% endfor %}
+{% if provider.name == "yandex" %}
+  # Yandex Cloud provider configuration
+  # Authentication via service account key or IAM token
+{% elif provider.name == "aws" %}
+  # AWS provider configuration
+  # Authentication via IAM role or access keys
+{% endif %}
 }
 {% endfor %}

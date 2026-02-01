@@ -49,6 +49,9 @@ body:
         - Celery Workers/Tasks
         - Authentication/IAM
         - Infrastructure/Deployment
+        - Cloud Objects Creation (triggers, api gateway)
+        - MotherGoose Application
+        - UglyFox Application
         - Documentation
         - Architecture/Design
         - General/Multiple areas

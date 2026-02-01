@@ -1,0 +1,104 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+        
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Tell us what you see!
+    validations:
+      required: true
+      
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Go to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+    validations:
+      required: true
+      
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+      placeholder: What should have happened?
+    validations:
+      required: true
+      
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: What actually happened instead?
+      placeholder: What actually happened?
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: affected-part
+    attributes:
+      label: Affected Part of Application
+      description: Which part of the application is affected by this bug?
+      multiple: true
+      options:
+        - API/Routers (webhooks, runners, eggs, internal, health)
+        - Services (AWS, Git, OpenTofu, Serverless)
+        - Database/Storage (YDB, DynamoDB, S3)
+        - Celery Workers/Tasks
+        - Authentication/IAM
+        - Infrastructure/Deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: backward-compatibility
+    attributes:
+      label: Backward Compatibility
+      description: Does this bug involve backward compatibility concerns?
+      options:
+        - "No backward compatibility concerns"
+        - "Yes - affects existing API contracts"
+        - "Yes - affects existing data structures"
+        - "Yes - affects existing configurations"
+        - "Unknown"
+    validations:
+      required: true
+      
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Please provide information about your environment
+      placeholder: |
+        - OS: [e.g., Ubuntu 22.04]
+        - Python version: [e.g., 3.13]
+        - Deployment: [e.g., Docker, AWS, Yandex Cloud]
+      
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: If applicable, add logs to help explain your problem
+      render: shell
+      
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here

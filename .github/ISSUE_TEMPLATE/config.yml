@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/Polar-Team/Polar-Gosling-Backends/discussions
+    about: For general questions and community discussions, please use GitHub Discussions

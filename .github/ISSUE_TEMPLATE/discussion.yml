@@ -1,0 +1,77 @@
+name: Discussion
+description: Start a discussion about the project
+title: "[Discussion]: "
+labels: ["discussion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for starting a discussion!
+        
+  - type: textarea
+    id: topic
+    attributes:
+      label: Discussion Topic
+      description: What would you like to discuss?
+      placeholder: Describe the topic you want to discuss
+    validations:
+      required: true
+      
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Provide any relevant context or background information
+      placeholder: Help others understand the context of this discussion
+    validations:
+      required: true
+      
+  - type: textarea
+    id: questions
+    attributes:
+      label: Questions or Points for Discussion
+      description: What specific questions or points would you like to discuss?
+      placeholder: |
+        - Question 1?
+        - Point 2 to consider
+        - Alternative approach 3
+      
+  - type: dropdown
+    id: affected-part
+    attributes:
+      label: Related Part of Application
+      description: Which part of the application is this discussion related to?
+      multiple: true
+      options:
+        - API/Routers (webhooks, runners, eggs, internal, health)
+        - Services (AWS, Git, OpenTofu, Serverless)
+        - Database/Storage (YDB, DynamoDB, S3)
+        - Celery Workers/Tasks
+        - Authentication/IAM
+        - Infrastructure/Deployment
+        - Documentation
+        - Architecture/Design
+        - General/Multiple areas
+        - Other
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: backward-compatibility
+    attributes:
+      label: Backward Compatibility Considerations
+      description: Does this discussion involve backward compatibility topics?
+      options:
+        - "No backward compatibility concerns"
+        - "Yes - discusses potential breaking changes"
+        - "Yes - discusses migration strategies"
+        - "Yes - discusses versioning"
+        - "Not applicable"
+    validations:
+      required: true
+      
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, links, or references about the discussion topic

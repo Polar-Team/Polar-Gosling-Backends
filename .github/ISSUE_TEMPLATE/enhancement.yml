@@ -1,0 +1,84 @@
+name: Enhancement
+description: Suggest an improvement to an existing feature
+title: "[Enhancement]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an enhancement!
+        
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Current Behavior
+      description: Describe the current behavior or implementation
+      placeholder: What is the current state of this feature?
+    validations:
+      required: true
+      
+  - type: textarea
+    id: proposed-enhancement
+    attributes:
+      label: Proposed Enhancement
+      description: Describe how you would like to improve this feature
+      placeholder: What improvements would you like to see?
+    validations:
+      required: true
+      
+  - type: textarea
+    id: benefits
+    attributes:
+      label: Benefits
+      description: What benefits will this enhancement provide?
+      placeholder: |
+        - Improved performance
+        - Better user experience
+        - Easier maintenance
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: affected-part
+    attributes:
+      label: Affected Part of Application
+      description: Which part of the application would this enhancement affect?
+      multiple: true
+      options:
+        - API/Routers (webhooks, runners, eggs, internal, health)
+        - Services (AWS, Git, OpenTofu, Serverless)
+        - Database/Storage (YDB, DynamoDB, S3)
+        - Celery Workers/Tasks
+        - Authentication/IAM
+        - Infrastructure/Deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: backward-compatibility
+    attributes:
+      label: Backward Compatibility
+      description: Will this enhancement affect backward compatibility?
+      options:
+        - "No backward compatibility concerns"
+        - "Yes - will introduce breaking changes to API"
+        - "Yes - will require data migration"
+        - "Yes - will require configuration changes"
+        - "Unknown - needs investigation"
+    validations:
+      required: true
+      
+  - type: textarea
+    id: implementation-ideas
+    attributes:
+      label: Implementation Ideas
+      description: If you have ideas about how to implement this enhancement, please share them
+      placeholder: Optional - any thoughts on implementation approach
+      
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or examples about the enhancement here

@@ -1,0 +1,87 @@
+name: Feature Request
+description: Suggest a new feature or capability
+title: "[Feature]: "
+labels: ["feature-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature!
+        
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem? Please describe.
+      placeholder: A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+    validations:
+      required: true
+      
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like
+      placeholder: A clear and concise description of what you want to happen.
+    validations:
+      required: true
+      
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe alternatives you've considered
+      placeholder: A clear and concise description of any alternative solutions or features you've considered.
+      
+  - type: dropdown
+    id: affected-part
+    attributes:
+      label: Affected Part of Application
+      description: Which part of the application would this feature affect?
+      multiple: true
+      options:
+        - API/Routers (webhooks, runners, eggs, internal, health)
+        - Services (AWS, Git, OpenTofu, Serverless)
+        - Database/Storage (YDB, DynamoDB, S3)
+        - Celery Workers/Tasks
+        - Authentication/IAM
+        - Infrastructure/Deployment
+        - Cloud Objects Creation (triggers, api gateway)
+        - MotherGoose Application
+        - UglyFox Application
+        - Documentation
+        - Other
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: backward-compatibility
+    attributes:
+      label: Backward Compatibility
+      description: Will this feature require breaking changes or affect backward compatibility?
+      options:
+        - "No backward compatibility concerns"
+        - "Yes - will introduce breaking changes to API"
+        - "Yes - will require data migration"
+        - "Yes - will require configuration changes"
+        - "Unknown - needs investigation"
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to you?
+      options:
+        - Low - Nice to have
+        - Medium - Would improve workflow
+        - High - Critical for our use case
+    validations:
+      required: true
+      
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or examples about the feature request here

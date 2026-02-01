@@ -384,6 +384,103 @@ class SyncHistory(PydanticBaseModelORM):
     )
 
 
+class DeploymentPlan(PydanticBaseModelORM):
+    """Deployment plan for runner infrastructure."""
+
+    id: str = Field(..., description="Unique deployment plan ID (PK)")
+    egg_name: str = Field(..., description="Name of the Egg")
+    plan_type: str = Field(..., description="Type of deployment plan")
+    config_hash: str = Field(..., description="Hash of the configuration")
+    status: DeploymentStatus = Field(..., description="Plan status")
+    plan_binary: bytes = Field(..., description="Binary deployment plan data")
+    rollback_plan_id: Optional[str] = Field(
+        None, description="ID of the plan to rollback to"
+    )
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow, description="Plan creation timestamp"
+    )
+    applied_at: Optional[datetime] = Field(
+        None, description="Plan application timestamp"
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional plan metadata"
+    )
+
+    @field_validator(
+        "created_at",
+        "applied_at",
+        mode="before",
+    )
+    @classmethod
+    def validate_datetime(
+        cls,
+        value: datetime | str | None,
+    ) -> datetime | None:
+        """Convert datetime from storage format (ISO string) to datetime object."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            return datetime.fromisoformat(value)
+        raise ValueError("Invalid datetime format")
+
+    @field_validator(
+        "metadata",
+        mode="before",
+    )
+    @classmethod
+    def validate_metadata(
+        cls,
+        value: Dict[str, Any] | str | bytes,
+    ) -> Dict[str, Any]:
+        """Convert metadata from storage format (JSON bytes/string) to dict."""
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, bytes):
+            # From YDB storage (String type returns bytes)
+            return json.loads(value.decode("utf-8")) if value else {}
+        if isinstance(value, str):
+            # From JSON string
+            return json.loads(value) if value else {}
+        raise ValueError("Invalid metadata format")
+
+    def to_storage_dict(self) -> Dict[str, Any]:
+        """
+        Convert DeploymentPlan model to storage format for YDB.
+
+        Converts:
+        - datetime → ISO string
+        - dict → JSON bytes
+        - bytes → bytes (plan_binary stays as-is)
+
+        Returns:
+            Dictionary with values in YDB storage format
+        """
+        data = self.model_dump()
+
+        # Convert datetime to ISO string
+        for key in ("created_at", "applied_at"):
+            if isinstance(data[key], datetime):
+                data[key] = data[key].isoformat()
+            elif data[key] is None:
+                data[key] = ""  # Empty string for NULL datetime
+
+        # Convert metadata dict to JSON bytes
+        if isinstance(data["metadata"], dict):
+            data["metadata"] = json.dumps(data["metadata"]).encode("utf-8")
+
+        # Ensure plan_binary is bytes
+        if not isinstance(data["plan_binary"], bytes):
+            data["plan_binary"] = b""
+
+        # Convert None to empty string for rollback_plan_id
+        if data["rollback_plan_id"] is None:
+            data["rollback_plan_id"] = ""
+
+        return data
+
+
 # ============================================================================
 # YDB Table Schemas (for database operations)
 # ============================================================================
@@ -598,6 +695,71 @@ class SyncHistoryTableYDB:
         )
 
 
+@dataclass
+class DeploymentPlansTableYDB:
+    """
+    YDB table schema for deployment plans.
+
+    Stores binary deployment plans for runner infrastructure.
+    """
+
+    table_name: str = "deployment_plans"
+    columns: Tuple[str, ...] = field(
+        default_factory=lambda: (
+            "id",
+            "egg_name",
+            "plan_type",
+            "config_hash",
+            "status",
+            "plan_binary",
+            "rollback_plan_id",
+            "created_at",
+            "applied_at",
+            "metadata",
+        ),
+    )
+    r_type: Tuple[Union[YDBUtf8, YDBBytes], ...] = field(
+        default_factory=lambda: (
+            make_ydb_type("Utf8"),  # id
+            make_ydb_type("Utf8"),  # egg_name
+            make_ydb_type("Utf8"),  # plan_type
+            make_ydb_type("Utf8"),  # config_hash
+            make_ydb_type("Utf8"),  # status
+            make_ydb_type("String"),  # plan_binary (binary data)
+            make_ydb_type("Utf8"),  # rollback_plan_id
+            make_ydb_type("Utf8"),  # created_at (stored as ISO string)
+            make_ydb_type("Utf8"),  # applied_at (stored as ISO string)
+            make_ydb_type("String"),  # metadata (JSON bytes)
+        ),
+    )
+    primary_key: str = "id"
+    values_for_operate: Tuple[Any, ...] = field(
+        default_factory=lambda: (),
+    )
+
+    def __post_init__(self) -> None:
+        """Validate table schema."""
+        if len(self.columns) != len(self.r_type):
+            raise ValueError(
+                "The number of columns must match the number of row types."
+            )
+        if len(self.values_for_operate) != 0 and len(self.values_for_operate) != len(
+            self.columns
+        ):
+            raise ValueError("The number of values for operate must match columns.")
+        if self.primary_key != "id":
+            raise ValueError("Primary key must be 'id'.")
+
+        # Validate with YDBTableSchema
+        YDBTableSchema(  # type: ignore[call-arg]
+            table_name=self.table_name,
+            columns=self.columns,
+            r_type=self.r_type,  # type: ignore[arg-type]
+            primary_key=self.primary_key,
+            values_for_operate=self.values_for_operate,
+        )
+
+
 # ============================================================================
 # Pydantic Model for YDB Schema
 # ============================================================================
@@ -615,9 +777,14 @@ class RunnerModelYDB:  # pylint: disable=too-few-public-methods
     combined with this model when creating the full schema.
     """
 
-    tables: list[Union[RunnersTableYDB, EggConfigsTableYDB, SyncHistoryTableYDB]] = (
-        Field(..., description="List of table schemas to be created in YDB")
-    )
+    tables: list[
+        Union[
+            RunnersTableYDB,
+            EggConfigsTableYDB,
+            SyncHistoryTableYDB,
+            DeploymentPlansTableYDB,
+        ]
+    ] = Field(..., description="List of table schemas to be created in YDB")
 
     model_name: str = "RunnerModel"
     version: str = "1.0.0"

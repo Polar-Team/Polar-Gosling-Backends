@@ -21,6 +21,7 @@ from app.services.runner_orchestration import RunnerOrchestrationService
 from app.tasks.runners import deploy_runner as deploy_runner_task
 from app.tasks.runners import terminate_runner as terminate_runner_task
 from app.util.base_logging import logger
+from app.util.model_converters import runner_to_response as convert_runner_to_response
 
 router = APIRouter(
     prefix="/runners",
@@ -64,22 +65,23 @@ def _runner_to_response(runner: Runner) -> RunnerDetailResponse:
     Returns:
         RunnerDetailResponse: API response model
     """
+    base_response = convert_runner_to_response(runner)
     return RunnerDetailResponse(
-        id=runner.id,
-        egg_name=runner.egg_name,
-        type=runner.type.value,
-        state=runner.state.value,
-        cloud_provider=runner.cloud_provider.value,
-        region=runner.region,
-        gitlab_runner_id=runner.gitlab_runner_id,
+        id=base_response.id,
+        egg_name=base_response.egg_name,
+        type=base_response.type,
+        state=base_response.state,
+        cloud_provider=base_response.cloud_provider,
+        region=base_response.region,
+        gitlab_runner_id=base_response.gitlab_runner_id,
         deployed_from_commit=runner.deployed_from_commit,
         created_at=runner.created_at.isoformat(),
         updated_at=runner.updated_at.isoformat(),
         last_heartbeat=(
             runner.last_heartbeat.isoformat() if runner.last_heartbeat else None
         ),
-        failure_count=runner.failure_count,
-        metadata=runner.metadata,
+        failure_count=base_response.failure_count,
+        metadata=base_response.metadata,
     )
 
 

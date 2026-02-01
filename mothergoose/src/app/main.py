@@ -8,8 +8,9 @@ Handles webhook processing, runner orchestration, and Git sync operations.
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core import config
 from app.core.celery_app import celery_app
@@ -26,6 +27,15 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     Initializes Celery workers and background tasks.
     """
     logger.info("MotherGoose starting up...")
+
+    # Initialize database schema from environment variables
+    try:
+        config.initialize_ydb_schema()
+        logger.info("Database schema initialized successfully")
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("Failed to initialize database schema: %s", e)
+        logger.warning("Application will start but database operations will fail")
+
     logger.info("Celery broker: %s", celery_app.conf.broker_url)
     logger.info("Celery result backend: %s", celery_app.conf.result_backend)
     logger.info("Celery tasks registered: %d", len(celery_app.tasks))
@@ -67,6 +77,25 @@ def create_app() -> FastAPI:
         allow_methods=config.CORS_ALLOW_METHODS,
         allow_headers=config.CORS_ALLOW_HEADERS,
     )
+
+    # Add exception handler for RuntimeError (schema not initialized)
+    @application.exception_handler(RuntimeError)
+    async def runtime_error_handler(
+        request: Request, exc: RuntimeError
+    ) -> JSONResponse:
+        """
+        Handle RuntimeError exceptions (e.g., schema not initialized).
+
+        Returns a 500 Internal Server Error response with error details.
+        """
+
+        # pylint: disable=unused-argument
+
+        logger.error("RuntimeError: %s", str(exc))
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": str(exc)},
+        )
 
     # Include routers
     application.include_router(health.router)

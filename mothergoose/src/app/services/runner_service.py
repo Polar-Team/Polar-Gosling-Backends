@@ -301,3 +301,52 @@ class RunnerService:
 
         logger.error("DynamoDB is not supported yet.")
         raise NotImplementedError("DynamoDB is not supported yet.")
+
+    async def list_runners_by_egg(self, egg_name: str) -> list[Runner]:
+        """
+        Retrieve all runners for a specific Egg from the database.
+
+        Args:
+            egg_name: Name of the Egg to query runners for
+
+        Returns:
+            List of Runner objects for the specified egg (empty list if none found)
+        """
+        # Use YDB or DynamoDB for production
+        if isinstance(self.schema, YDBSchema):
+            # Find the runners table in schema
+            runners_table = next(
+                (t for t in self.schema.model.tables if t.table_name == "runners"),
+                None,
+            )
+            if runners_table is None:
+                raise ValueError("Runners table not found in schema")
+
+            # Query using select_parameterized_query filtering by egg_name
+            operation = AsyncYDBOperations(
+                self.schema,
+                AsyncYDBFunctionsCollections.select_parameterized_query,
+            )
+
+            await operation.process(
+                selected_columns=list(runners_table.columns),
+                searching_columns=["egg_name"],
+                searching_values=[egg_name],
+            )
+
+            result = operation.result
+
+            if not result or not result[0] or not result[0][0].rows:
+                return []
+
+            # Convert result rows to Runner objects
+            runners = []
+            for row in result[0][0].rows:
+                runner_data = {col: getattr(row, col) for col in runners_table.columns}
+                # Field validators in Runner model handle conversions from YDB storage
+                runners.append(Runner(**runner_data))
+
+            return runners
+
+        logger.error("DynamoDB is not supported yet.")
+        raise NotImplementedError("DynamoDB is not supported yet.")

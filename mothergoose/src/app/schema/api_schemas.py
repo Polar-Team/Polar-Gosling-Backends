@@ -208,6 +208,9 @@ class EggConfigRequest(PydanticBaseModelAPI):
     environment: dict[str, str] = Field(
         default_factory=dict, description="Environment variables"
     )
+    git_commit: Optional[str] = Field(
+        None, description="Git commit hash (40-character SHA-1)"
+    )
 
     @field_validator("gitlab")
     @classmethod
@@ -222,6 +225,20 @@ class EggConfigRequest(PydanticBaseModelAPI):
                 "Cannot specify both project_id and group_id in GitLab configuration"
             )
         return value
+
+    @field_validator("git_commit")
+    @classmethod
+    def validate_git_commit(cls, value: Optional[str]) -> Optional[str]:
+        """Validate that git_commit is a valid SHA-1 hash (40 hex characters)."""
+        if value is None:
+            return value
+        if not isinstance(value, str):
+            raise ValueError("git_commit must be a string")
+        if len(value) != 40:
+            raise ValueError("git_commit must be a 40-character SHA-1 hash")
+        if not all(c in "0123456789abcdefABCDEF" for c in value):
+            raise ValueError("git_commit must contain only hexadecimal characters")
+        return value.lower()  # Normalize to lowercase
 
 
 class EggConfigResponse(PydanticBaseModelAPI):

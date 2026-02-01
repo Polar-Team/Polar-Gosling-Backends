@@ -195,7 +195,7 @@ class OpenTofuConfiguration:
         Args:
             factor (int): Updater rollback factor to set.
         """
-        if 1 < factor < 3:
+        if 1 <= factor <= 3:
             raise ValueError("Rollback factor must be between 1 and 3")
         self.__updater_rollback_factor = factor
 
@@ -381,7 +381,7 @@ class OpenTofuConfiguration:
         Returns:
             True if all plugins were restored from cache, False otherwise
         """
-        if not self.artifact_cache:
+        if not self.artifact_cache or not self.tofu_settings.artifact_cache_bucket:
             self.warning("Artifact cache not configured, skipping plugin restoration")
             return False
 
@@ -465,7 +465,7 @@ class OpenTofuConfiguration:
         Returns:
             True if .terraform directory was restored from cache, False otherwise
         """
-        if not self.artifact_cache:
+        if not self.artifact_cache or not self.tofu_settings.artifact_cache_bucket:
             self.warning(
                 "Artifact cache not configured, skipping .terraform restoration"
             )

@@ -473,16 +473,26 @@ class AWSSecretsManager(BaseSecretManager):
 
     # pylint: disable=no-member
 
-    def __init__(self, region: str = "us-east-1", endpoint_url: Optional[str] = None):
+    def __init__(
+        self,
+        region: str = "us-east-1",
+        endpoint_url: Optional[str] = None,
+        aws_access_key_id: Optional[str] = None,
+        aws_secret_access_key: Optional[str] = None,
+    ):
         """
         Initialize AWS Secrets Manager.
 
         Args:
             region: AWS region (default: us-east-1)
             endpoint_url: Optional endpoint URL for localstack or custom endpoints
+            aws_access_key_id: Optional AWS access key ID (for testing/localstack)
+            aws_secret_access_key: Optional AWS secret access key (for testing/localstack)
         """
         self.region = region
         self.endpoint_url = endpoint_url
+        self.aws_access_key_id = aws_access_key_id
+        self.aws_secret_access_key = aws_secret_access_key
         self._client = None
         self._session: object | None = None
 
@@ -490,7 +500,16 @@ class AWSSecretsManager(BaseSecretManager):
         """Get or create boto3 Secrets Manager client."""
         if self._client is None:
             try:
-                self._session = aioboto3.Session()
+                # Create session with explicit credentials if provided (for testing/localstack)
+                if self.aws_access_key_id and self.aws_secret_access_key:
+                    self._session = aioboto3.Session(
+                        aws_access_key_id=self.aws_access_key_id,
+                        aws_secret_access_key=self.aws_secret_access_key,
+                        region_name=self.region,
+                    )
+                else:
+                    # Use default credential chain (IAM roles, env vars, etc.)
+                    self._session = aioboto3.Session()
                 # Client will be created in async context
             except (BotoCoreError, ValueError) as exc:
                 self.error("Failed to initialize AWS SDK: %s", exc)
@@ -860,6 +879,8 @@ class SecretManager:  # pylint: disable=too-few-public-methods
         self,
         backend: SecretBackend,
         endpoint_url: Optional[str] = None,
+        aws_access_key_id: Optional[str] = None,
+        aws_secret_access_key: Optional[str] = None,
     ) -> BaseSecretManager:
         """
         Get or create secret manager for backend.
@@ -867,6 +888,8 @@ class SecretManager:  # pylint: disable=too-few-public-methods
         Args:
             backend: Secret backend type
             endpoint_url: Optional endpoint URL for AWS (localstack support)
+            aws_access_key_id: Optional AWS access key ID (for testing/localstack)
+            aws_secret_access_key: Optional AWS secret access key (for testing/localstack)
 
         Returns:
             Secret manager instance
@@ -874,9 +897,13 @@ class SecretManager:  # pylint: disable=too-few-public-methods
         # For AWS backend, we need to recreate the manager if endpoint_url changes
         # This is necessary for localstack testing
         if backend == SecretBackend.AWS_SM:
-            # Always create a new manager with the provided endpoint_url
+            # Always create a new manager with the provided endpoint_url and credentials
             # This ensures localstack tests work correctly
-            return AWSSecretsManager(endpoint_url=endpoint_url)
+            return AWSSecretsManager(
+                endpoint_url=endpoint_url,
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+            )
 
         # For other backends, use cached managers
         if backend not in self.managers:
@@ -889,13 +916,21 @@ class SecretManager:  # pylint: disable=too-few-public-methods
 
         return self.managers[backend]
 
-    async def get_secret(self, uri: str, endpoint_url: Optional[str] = None) -> str:
+    async def get_secret(
+        self,
+        uri: str,
+        endpoint_url: Optional[str] = None,
+        aws_access_key_id: Optional[str] = None,
+        aws_secret_access_key: Optional[str] = None,
+    ) -> str:
         """
         Retrieve secret value from secret storage with caching.
 
         Args:
             uri: Secret URI (e.g., yc-lockbox://deploy-keys/mothergoose-private)
             endpoint_url: Optional endpoint URL for AWS (localstack support)
+            aws_access_key_id: Optional AWS access key ID (for testing/localstack)
+            aws_secret_access_key: Optional AWS secret access key (for testing/localstack)
 
         Returns:
             Secret value as string
@@ -929,7 +964,12 @@ class SecretManager:  # pylint: disable=too-few-public-methods
 
         # Retrieve secret from backend
         try:
-            manager = self._get_manager(ref.backend, endpoint_url=endpoint_url)
+            manager = self._get_manager(
+                ref.backend,
+                endpoint_url=endpoint_url,
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+            )
             secret_value = await manager.get_secret(ref)
 
             # Cache the value

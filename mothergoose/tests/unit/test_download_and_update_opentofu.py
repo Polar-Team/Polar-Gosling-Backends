@@ -568,11 +568,11 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
             OpenTofuBinFileInfo(
                 bin_version="1.10.4",
                 bin_url=url_first,
-                bin_sha256=hashsum3,
+                bin_sha256=hashsum1,
             ),
         ],
     )
 
     assert checker.c_version[1] == updater_2.c_version[1], (
-        "Current version is not correct in OpenTofuUpdateGithub."
+        "Current version is not correct in OpenTofuUpdateOtherSource."
     )

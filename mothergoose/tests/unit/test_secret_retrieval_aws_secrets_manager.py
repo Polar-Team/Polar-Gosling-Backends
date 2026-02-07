@@ -166,6 +166,8 @@ async def test_aws_secrets_manager_secret_retrieval_property(
         manager = AWSSecretsManager(
             region=aws_credentials["region_name"],
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
 
         # Parse URI
@@ -245,6 +247,8 @@ async def test_aws_secrets_manager_secret_manager_integration_property(
         result = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
 
         # Verify secret value is returned correctly
@@ -306,6 +310,8 @@ async def test_aws_secrets_manager_secret_caching_property(
         result1 = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert result1 == secret_value
 
@@ -313,6 +319,8 @@ async def test_aws_secrets_manager_secret_caching_property(
         result2 = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert result2 == secret_value
 
@@ -320,6 +328,8 @@ async def test_aws_secrets_manager_secret_caching_property(
         result3 = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert result3 == secret_value
 
@@ -361,6 +371,8 @@ async def test_aws_secrets_manager_secret_retrieval_example(
         manager = AWSSecretsManager(
             region=aws_credentials["region_name"],
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
 
         # Parse URI and retrieve secret
@@ -409,6 +421,8 @@ async def test_aws_secrets_manager_secret_retrieval_webhook_secret_example(
         manager = AWSSecretsManager(
             region=aws_credentials["region_name"],
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
 
         # Parse URI and retrieve secret
@@ -456,6 +470,8 @@ async def test_aws_secrets_manager_secret_retrieval_nested_path_example(
         manager = AWSSecretsManager(
             region=aws_credentials["region_name"],
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
 
         # Parse URI and retrieve secret
@@ -504,6 +520,8 @@ async def test_aws_secrets_manager_secret_retrieval_key_not_found(
         manager = AWSSecretsManager(
             region=aws_credentials["region_name"],
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
 
         # Parse URI and attempt to retrieve secret

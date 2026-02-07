@@ -445,7 +445,11 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
             )
             OpenTofuDownloadFromOtherSource.add_opentofu_bin_info(info)
         code = "FAILED"
-        for tofu in OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info():  # noqa: E501
+        for (
+            tofu
+        ) in (
+            OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info()
+        ):  # noqa: E501
             if tofu.bin_version == self.version:
                 version = tofu.bin_version
                 code = "SUCCESS"

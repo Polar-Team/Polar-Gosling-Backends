@@ -262,6 +262,7 @@ def test_tofu_download_and_extract_other(
     if (system := platform.system().lower()) == "linux":
         if (arch := platform.machine().lower()) in ("x86_64", "amd64"):
             arch = "amd64"
+            dpath = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
         else:
             arch = "arm64"
             dpath = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"

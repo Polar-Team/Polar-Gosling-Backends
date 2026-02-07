@@ -34,6 +34,11 @@ mg-tox-base-3.12:
 mg-tox-base: mg-tox-base-3.10 mg-tox-base-3.11 mg-tox-base-3.12
 	cd mothergoose; uv run tox -e 3.13
 
+.PHONY: mg-tox-base-3.13
+mg-tox-base-3.13:
+		cd mothergoose; uv run tox -e 3.13
+
+
 .PHONY: mg-tox-all
 mg-tox-all:
 	cd mothergoose; uv run tox

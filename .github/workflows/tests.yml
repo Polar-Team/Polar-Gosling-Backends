@@ -30,5 +30,8 @@ jobs:
       - name: Install Python
         run: cd mothergoose && uv python install --python-preference only-managed ${{ matrix.env }}
 
-      - name: Run test suite
-        run: make mg-tox-all
+      - name: Sync MotherGoose
+        run: cd mothergoose && uv sync --all-groups
+
+      - name: Run pytest suite
+        run: make mg-tox-base-${{ matrix.env }}

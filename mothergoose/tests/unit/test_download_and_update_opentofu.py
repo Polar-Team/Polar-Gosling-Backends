@@ -315,10 +315,13 @@ def test_tofu_store_downloaded_bin_other(inst_other, mock_server_url):
             arch = "arm64"
         dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
         url_new = "https://mockserver.com/1.10.6/tofu.tar.gz"
+        binhash = "b6b46b4fd8dd0b96e624f2a2d5fbc4efae2fc0174529b37292775c847c2e7d2c"
+
     else:
         arch = "amd64"
         dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.zip"
         url_new = "https://mockserver.com/1.10.6/tofu.zip"
+        binhash = "e8c475a6b13ac7a01ff53f1d2f55b103f2086e8454133580404f338b5a1ebaed"
 
     response = requests.get(
         f"https://github.com/opentofu/opentofu/releases/download/{dpath}"
@@ -331,7 +334,7 @@ def test_tofu_store_downloaded_bin_other(inst_other, mock_server_url):
         OpenTofuBinFileInfo(
             bin_version="1.10.6",
             bin_url=url_new,
-            bin_sha256="e8c475a6b13ac7a01ff53f1d2f55b103f2086e8454133580404f338b5a1ebaed",  # noqa: E501
+            bin_sha256=binhash,
         )
     )
     with requests_mock.Mocker() as m:

@@ -4,7 +4,7 @@ on: [pull_request]
 
 jobs:
   test:
-    name: Run MotherGoose Tests with Python ${{ matrix.env }} on ${{ matrix.os }}
+    name: Run ${{ matrix.app }} Tests with Python ${{ matrix.env }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
 

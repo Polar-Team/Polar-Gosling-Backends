@@ -142,7 +142,7 @@ class OpenTofuDownloadGithub(OpenTofuBinary):  # type: ignore[attr-defined]
                 arch = "amd64"
             else:
                 arch = "arm64"
-            dpath = f"download/v{ver}tofu_{ver}_{system}_{arch}.tar.gz"
+            dpath = f"download/v{ver}/tofu_{ver}_{system}_{arch}.tar.gz"
             url = f"https://github.com/opentofu/opentofu/releases/{dpath}"
         else:
             arch = "amd64"
@@ -445,11 +445,7 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
             )
             OpenTofuDownloadFromOtherSource.add_opentofu_bin_info(info)
         code = "FAILED"
-        for (
-            tofu
-        ) in (
-            OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info()
-        ):  # noqa: E501
+        for tofu in OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info():  # noqa: E501
             if tofu.bin_version == self.version:
                 version = tofu.bin_version
                 code = "SUCCESS"

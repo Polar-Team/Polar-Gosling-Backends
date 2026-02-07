@@ -25,7 +25,7 @@ jobs:
           enable-cache: true
 
       - name: Install tox
-        run: cd mothergoose && uv tool install --pyton-preference only-managed --python ${{ matrix.env }} tox --with tox-uv --with tox-gh
+        run: cd mothergoose && uv tool install --python-preference only-managed --python ${{ matrix.env }} tox --with tox-uv --with tox-gh
 
       - name: Install Python
         run: cd mothergoose && uv python install --python-preference only-managed ${{ matrix.env }}

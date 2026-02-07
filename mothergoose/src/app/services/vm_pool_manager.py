@@ -8,7 +8,7 @@ Task 18: VM Runner Deployment with Apex/Nadir pool management
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Literal
+from typing import Dict, List, Literal, Optional
 
 from app.model.runners_models import (
     Runner,
@@ -20,7 +20,13 @@ from app.util.base_logging import logger
 
 
 class PoolConfig:
-    """Configuration for Apex or Nadir pool"""
+    """
+    Configuration for Apex or Nadir pool
+    Setters and Properties:
+            idle_timeout_minutes: Idle time before demotion in minutes (Apex only)
+            (default: 30)
+            type: "Apex" or "Nadir" (default: "Apex")
+    """
 
     __idle_timeout_minutes_default: int = 30
     __type: Literal["Apex", "Nadir"] = "Apex"
@@ -36,9 +42,6 @@ class PoolConfig:
         Args:
             max_count: Maximum number of runners in this pool
             min_count: Minimum number of runners to maintain
-            idle_timeout_minutes: Minutes of idle time before demotion (Apex only)
-            Default is 30 minutes setter
-            type: "Apex" or "Nadir" (default: "Apex") setter
         """
         if max_count < min_count:
             raise ValueError("max_count must be >= min_count")

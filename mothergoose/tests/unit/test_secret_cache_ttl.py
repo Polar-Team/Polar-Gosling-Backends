@@ -263,10 +263,10 @@ async def test_secret_cache_ttl_multiple_secrets_property(
         assert result1 == f"{secret_value}-1"
         first_cached_at = secret_manager.cache[ref1].cached_at
 
-        # Wait 3 seconds with buffer for timing imprecision
-        time.sleep(3.2)
+        # Wait 2.5 seconds with buffer for timing imprecision
+        time.sleep(2.5)
 
-        # Retrieve second secret (3 seconds after first)
+        # Retrieve second secret (2.5 seconds after first)
         result2 = await secret_manager.get_secret(
             uri2,
             endpoint_url=aws_credentials["endpoint_url"],
@@ -278,9 +278,9 @@ async def test_secret_cache_ttl_multiple_secrets_property(
         assert ref1 in secret_manager.cache
         assert ref2 in secret_manager.cache
 
-        # Wait another 3.5 seconds (total ~6.7 seconds from first retrieval)
-        # This ensures first secret is expired (6.7 > 6) but second is not (3.5 < 6)
-        time.sleep(3.5)
+        # Wait another 4 seconds (total ~6.5 seconds from first retrieval)
+        # This ensures first secret is expired (6.5 > 6) but second is not (4 < 6)
+        time.sleep(4.0)
 
         # First secret should be expired (age > 6 seconds)
         assert secret_manager.cache[ref1].is_expired, (

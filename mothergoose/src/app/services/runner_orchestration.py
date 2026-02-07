@@ -19,6 +19,7 @@ from app.model.runners_models import (
 from app.services.egg_service import EggService
 from app.services.runner_service import RunnerService
 from app.services.serverless_runner_deployment import ServerlessRunnerDeploymentService
+from app.services.vm_pool_manager import VMPoolManager
 from app.util.base_logging import logger
 from app.util.runner_helpers import build_deployment_kwargs
 
@@ -41,6 +42,7 @@ class RunnerOrchestrationService:
         serverless_deployment_service: Optional[
             ServerlessRunnerDeploymentService
         ] = None,
+        vm_pool_manager: Optional[VMPoolManager] = None,
     ) -> None:
         """
         Initialize runner orchestration service.
@@ -49,10 +51,12 @@ class RunnerOrchestrationService:
             runner_service: Service for runner state management
             egg_service: Service for Egg configuration retrieval
             serverless_deployment_service: Optional service for serverless deployment
+            vm_pool_manager: Optional VM pool manager for Apex/Nadir management
         """
         self.runner_service = runner_service
         self.egg_service = egg_service
         self.serverless_deployment_service = serverless_deployment_service
+        self.vm_pool_manager = vm_pool_manager
 
     def determine_runner_type(
         self,
@@ -180,6 +184,23 @@ class RunnerOrchestrationService:
             )
 
         # Task 18: VM runner deployment (Apex/Nadir)
+        # Check pool capacity before creating runner
+        if self.vm_pool_manager:
+            # Determine if this should be Apex or Nadir based on demand
+            can_add_apex = await self.vm_pool_manager.can_add_apex_runner(egg_name)
+            can_add_nadir = await self.vm_pool_manager.can_add_nadir_runner(egg_name)
+
+            if not can_add_apex and not can_add_nadir:
+                raise RuntimeError(
+                    f"Both Apex and Nadir pools at max capacity for {egg_name}"
+                )
+
+            # Prefer Apex for immediate job execution
+            if can_add_apex:
+                runner_type = RunnerType.APEX
+            else:
+                runner_type = RunnerType.NADIR
+
         # Create runner record in PROVISIONING state
         runner = await self.runner_service.create_runner(
             egg_name=egg_name,

@@ -131,13 +131,6 @@ commands = [
 max-line-length = 120
 extend-ignore = ["E203", "W503"]
 
-[tool.ruff]
-line-length = 120
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I"]
-ignore = ["E203", "W503"]
-
 [tool.ruff.format]
 line-ending = "auto"
 

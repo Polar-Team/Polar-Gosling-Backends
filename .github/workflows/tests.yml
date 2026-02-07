@@ -36,7 +36,7 @@ jobs:
 
       - name: Run pytest suite for ${{ matrix.app }}
         run: |
-          if [ "${{ matrxi.app }}" ==  "mothergoose" ]; then
+          if [ "${{ matrix.app }}" ==  "mothergoose" ]; then
             shortage="mg"
           else
             shortage="ug"

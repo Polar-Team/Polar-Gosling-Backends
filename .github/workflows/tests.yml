@@ -13,6 +13,7 @@ jobs:
       matrix:
         env: ["3.10", "3.11", "3.12", "3.13"]
         os: ["ubuntu-latest"]
+        app: ["mothergoose"]
 
     steps:
       - name: Checkout code
@@ -24,14 +25,20 @@ jobs:
           version: "0.9.26"
           enable-cache: true
 
-      - name: Install tox
-        run: cd mothergoose && uv tool install --python-preference only-managed --python ${{ matrix.env }} tox --with tox-uv --with tox-gh
+      - name: Install tox for ${{ matrix.app }}
+        run: cd ${{ matrix.app }} && uv tool install --python-preference only-managed --python ${{ matrix.env }} tox --with tox-uv --with tox-gh
 
-      - name: Install Python
-        run: cd mothergoose && uv python install --python-preference only-managed ${{ matrix.env }}
+      - name: Install Python for MotherGoose
+        run: cd ${{ matrix.app }} && uv python install --python-preference only-managed ${{ matrix.env }}
 
-      - name: Sync MotherGoose
-        run: cd mothergoose && uv sync --all-groups
+      - name: Sync ${{ matrix.app }}
+        run: cd ${{ matrix.app }} && uv sync --all-groups
 
-      - name: Run pytest suite
-        run: make mg-tox-base-${{ matrix.env }}
+      - name: Run pytest suite for ${{ matrix.app }}
+        run: |
+          if [ "${{ matrxi.app }}" ==  "mothergoose" ]; then
+            shortage="mg"
+          else
+            shortage="ug"
+          fi
+          make ${shortage}-tox-base-${{ matrix.env }}

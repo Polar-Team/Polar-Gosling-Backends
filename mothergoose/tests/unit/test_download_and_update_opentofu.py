@@ -262,11 +262,9 @@ def test_tofu_download_and_extract_other(
     if (system := platform.system().lower()) == "linux":
         if (arch := platform.machine().lower()) in ("x86_64", "amd64"):
             arch = "amd64"
-            dpath = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
         else:
             arch = "arm64"
-            dpath = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
-
+        dpath = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
     else:
         arch = "amd64"
         dpath = f"v1.10.4/tofu_1.10.4_{system}_{arch}.zip"
@@ -315,17 +313,18 @@ def test_tofu_store_downloaded_bin_other(inst_other, mock_server_url):
             arch = "amd64"
         else:
             arch = "arm64"
-            dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
-
+        dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
+        url_new = "https://mockserver.com/1.10.6/tofu.tar.gz"
     else:
         arch = "amd64"
         dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.zip"
+        url_new = "https://mockserver.com/1.10.6/tofu.zip"
 
     response = requests.get(
         f"https://github.com/opentofu/opentofu/releases/download/{dpath}"
     )
     _, token = mock_server_url
-    url_new = "https://mockserver.com/1.10.6/tofu.zip"
+
     inst_other.url = url_new
     inst_other.version = "1.10.6"
     inst_other._opentofu_bin_files_info.append(
@@ -455,6 +454,9 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
     if (system := platform.system().lower()) == "linux":
         if (arch := platform.machine().lower()) in ("x86_64", "amd64"):
             arch = "amd64"
+            dpath_1 = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
+            dpath_2 = f"v1.10.5/tofu_1.10.5_{system}_{arch}.tar.gz"
+            dpath_3 = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
         else:
             arch = "arm64"
             dpath_1 = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"

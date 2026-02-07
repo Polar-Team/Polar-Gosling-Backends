@@ -313,6 +313,7 @@ def test_tofu_store_downloaded_bin_other(inst_other, mock_server_url):
     if (system := platform.system().lower()) == "linux":
         if (arch := platform.machine().lower()) in ("x86_64", "amd64"):
             arch = "amd64"
+            dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
         else:
             arch = "arm64"
             dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
@@ -455,6 +456,9 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
     if (system := platform.system().lower()) == "linux":
         if (arch := platform.machine().lower()) in ("x86_64", "amd64"):
             arch = "amd64"
+            dpath_1 = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
+            dpath_2 = f"v1.10.5/tofu_1.10.5_{system}_{arch}.tar.gz"
+            dpath_3 = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
         else:
             arch = "arm64"
             dpath_1 = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"

@@ -278,9 +278,8 @@ async def test_secret_cache_ttl_multiple_secrets_property(
         assert ref1 in secret_manager.cache
         assert ref2 in secret_manager.cache
 
-        # Wait another 3.5 seconds (total ~6.7 seconds from first retrieval)
-        # This ensures first secret is expired (6.7 > 8 is false, but we'll wait more)
-        # but second is not (3.5 < 8)
+        # Wait another 5.5 seconds (total ~8.7 seconds from first retrieval)
+        # This ensures first secret is expired (8.7 > 8) but second is not (5.5 < 8)
         time.sleep(5.5)
 
         # First secret should be expired (age > 8 seconds)

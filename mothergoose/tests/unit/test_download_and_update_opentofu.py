@@ -569,6 +569,11 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
         f"updater_2 should have updated to 1.10.6, but got {updater_2.c_version[1]}"
     )
 
+    # Small delay to ensure database transaction completes
+    # In CI/CD, the database write might not be immediately visible
+    import time
+    time.sleep(0.1)
+
     checker = OpenTofuUpdateOtherSource(
         ydb_schema,
         install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
@@ -591,9 +596,12 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
         ],
     )
 
-    # Verify that the version was updated successfully
-    # The current version should match what updater_2 set
+    # Debug: Check checker state
+    print(f"DEBUG: checker.c_version: {checker.c_version}")
+
+    # Verify that both updater_2 and checker read the same version from the database
     assert checker.c_version[1] == updater_2.c_version[1], (
         f"Current version is not correct in OpenTofuUpdateOtherSource. "
-        f"Expected {updater_2.c_version[1]}, got {checker.c_version[1]}"
+        f"updater_2.c_version[1]={updater_2.c_version[1]}, "
+        f"checker.c_version[1]={checker.c_version[1]}"
     )

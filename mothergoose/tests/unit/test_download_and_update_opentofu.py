@@ -121,8 +121,10 @@ def ydb_schema(ydb_container) -> YDBSchema:
     """Fixture to provide YDB configuration."""
 
     config = YDBConfig(
-        endpoint=f"grpc://{ydb_container.get_container_host_ip()}:\
-        {ydb_container.get_exposed_port(2136)}",
+        endpoint=(
+            f"grpc://{ydb_container.get_container_host_ip()}:"
+            f"{ydb_container.get_exposed_port(2136)}"
+        ),
         database="/local",
         credentials=AnonymousCredentials(),
     )
@@ -537,19 +539,35 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
         ],
     )
 
+    # Debug: Check initial state
+    print(f"DEBUG: updater_2.c_version before update: {updater_2.c_version}")
+    print(f"DEBUG: updater_2.files: {[f.bin_version for f in updater_2.files]}")
+    print(f"DEBUG: check_required_actions: {updater_2.check_required_actions()}")
+
     with requests_mock.Mocker() as mocker:
         mocker.get(
             url_third,
             content=response_third.content,
         )
 
-        updater_2.start_update(
-            auth_url=URLAuthSchema(
-                auth_header="PRIVATE-TOKEN",
-                bearer=False,
-                token="glpat-" + "a" * 60,
+        try:
+            updater_2.start_update(
+                auth_url=URLAuthSchema(
+                    auth_header="PRIVATE-TOKEN",
+                    bearer=False,
+                    token="glpat-" + "a" * 60,
+                )
             )
-        )
+        except Exception as e:
+            pytest.fail(f"updater_2.start_update() failed: {e}")
+
+    # Debug: Check state after update
+    print(f"DEBUG: updater_2.c_version after update: {updater_2.c_version}")
+
+    # Verify updater_2 successfully updated to 1.10.6
+    assert updater_2.c_version[1] == "1.10.6", (
+        f"updater_2 should have updated to 1.10.6, but got {updater_2.c_version[1]}"
+    )
 
     checker = OpenTofuUpdateOtherSource(
         ydb_schema,
@@ -573,6 +591,9 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
         ],
     )
 
+    # Verify that the version was updated successfully
+    # The current version should match what updater_2 set
     assert checker.c_version[1] == updater_2.c_version[1], (
-        "Current version is not correct in OpenTofuUpdateOtherSource."
+        f"Current version is not correct in OpenTofuUpdateOtherSource. "
+        f"Expected {updater_2.c_version[1]}, got {checker.c_version[1]}"
     )

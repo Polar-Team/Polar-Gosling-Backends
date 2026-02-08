@@ -39,6 +39,6 @@ jobs:
           if [ "${{ matrix.app }}" ==  "mothergoose" ]; then
             shortage="mg"
           else
-            shortage="ug"
+            shortage="uf"
           fi
           make ${shortage}-tox-base-${{ matrix.env }}

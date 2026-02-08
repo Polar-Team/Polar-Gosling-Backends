@@ -188,14 +188,20 @@ async def setup_ydb_tables(test_ydb_schema):
 
 
 @pytest.fixture(scope="module", autouse=True)
-def setup_localstack_url(localstack_container):
-    """Set LOCALSTACK_URL environment variable for all tests in this module."""
+def setup_localstack_url(localstack_container, aws_credentials):
+    """Set LOCALSTACK_URL and AWS credentials environment variables for all tests in this module."""
     import os
 
     os.environ["LOCALSTACK_URL"] = localstack_container.get_url()
+    os.environ["AWS_ACCESS_KEY_ID"] = aws_credentials["aws_access_key_id"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = aws_credentials["aws_secret_access_key"]
+    os.environ["AWS_DEFAULT_REGION"] = aws_credentials["region_name"]
     yield
-    if "LOCALSTACK_URL" in os.environ:
-        del os.environ["LOCALSTACK_URL"]
+    # Clean up environment variables
+    os.environ.pop("LOCALSTACK_URL", None)
+    os.environ.pop("AWS_ACCESS_KEY_ID", None)
+    os.environ.pop("AWS_SECRET_ACCESS_KEY", None)
+    os.environ.pop("AWS_DEFAULT_REGION", None)
 
 
 @pytest.fixture(autouse=True)

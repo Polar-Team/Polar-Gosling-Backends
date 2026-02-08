@@ -551,6 +551,10 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
             )
         )
 
+    assert updater_2.c_version[1] == "1.10.6", (
+        f"updater_2 failed to update: {updater_2.c_version}"
+    )
+
     checker = OpenTofuUpdateOtherSource(
         ydb_schema,
         install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),

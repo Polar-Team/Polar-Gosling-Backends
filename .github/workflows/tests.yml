@@ -28,7 +28,7 @@ jobs:
       - name: Install tox for ${{ matrix.app }}
         run: cd ${{ matrix.app }} && uv tool install --python-preference only-managed --python ${{ matrix.env }} tox --with tox-uv --with tox-gh
 
-      - name: Install Python for MotherGoose
+      - name: Install Python for ${{ matrix.app }}
         run: cd ${{ matrix.app }} && uv python install --python-preference only-managed ${{ matrix.env }}
 
       - name: Sync ${{ matrix.app }}
@@ -42,3 +42,43 @@ jobs:
             shortage="uf"
           fi
           make ${shortage}-tox-base-${{ matrix.env }}
+
+  style:
+    name: Run ${{ matrix.app }} Lint,Type and Format Checks on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: test
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest"]
+        app: ["mothergoose"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.9.26"
+          enable-cache: true
+
+      - name: Install tox for ${{ matrix.app }}
+        run: cd ${{ matrix.app }} && uv tool install --python-preference only-managed --python 3.13 tox --with tox-uv --with tox-gh
+
+      - name: Install Python for ${{ matrix.app }}
+        run: cd ${{ matrix.app }} && uv python install --python-preference only-managed 3.13
+
+      - name: Sync ${{ matrix.app }}
+        run: cd ${{ matrix.app }} && uv sync --all-groups
+
+      - name: Run pytest suite for ${{ matrix.app }}
+        run: |
+          if [ "${{ matrix.app }}" ==  "mothergoose" ]; then
+            shortage="mg"
+          else
+            shortage="uf"
+          fi
+          make ${shortage}-lint && make ${shortage}-type && make ${shortage}-format-check

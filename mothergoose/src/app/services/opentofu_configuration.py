@@ -200,7 +200,7 @@ class OpenTofuConfiguration:
         self.__updater_rollback_factor = factor
 
     @private
-    def __update_opentofu_binaries(self) -> str:
+    async def __update_opentofu_binaries(self) -> str:
         """Create OpenTofu configuration from templates."""
 
         if self.updater.c_version[0] == "dummy_id":
@@ -208,10 +208,12 @@ class OpenTofuConfiguration:
             if isinstance(self.updater, OpenTofuUpdateOtherSource):
                 self.info("Using other source to update OpenTofu binary...")
                 self.updater.rollback = self.__updater_rollback
-                self.updater.start_update(auth_url=self.__updater_auth_url)
+                await self.updater.start_update(
+                    auth_url=self.__updater_auth_url,
+                )
             else:
                 self.info("Using GitHub to update OpenTofu binary...")
-                self.updater.start_update(
+                await self.updater.start_update(
                     rb=self.__updater_rollback_factor,
                 )
         return self.updater.c_version[1]
@@ -269,14 +271,14 @@ class OpenTofuConfiguration:
 
             self.info(f"Health checks configuration created at {checks_tf_path}")
 
-    def setup_topfu_configuration(self) -> None:
+    async def setup_tofu_configuration(self) -> None:
         """Set up OpenTofu configuration.
 
         Args:
             config_path (str): Path to the OpenTofu configuration file.
         """
 
-        self.__update_opentofu_binaries()
+        await self.__update_opentofu_binaries()
         self.__create_tofu_configuration_from_templates()
 
         self.tofu.binary_path = self.__binary_path

@@ -143,6 +143,8 @@ async def test_secret_cache_ttl_expiration_property(
         result1 = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert result1 == secret_value, (
             f"First retrieval should return '{secret_value}', got '{result1}'"
@@ -159,6 +161,8 @@ async def test_secret_cache_ttl_expiration_property(
         result2 = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert result2 == secret_value, (
             f"Second retrieval should return '{secret_value}', got '{result2}'"
@@ -178,6 +182,8 @@ async def test_secret_cache_ttl_expiration_property(
         result3 = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert result3 == secret_value, (
             f"Third retrieval should return '{secret_value}', got '{result3}'"
@@ -259,6 +265,8 @@ async def test_secret_cache_ttl_multiple_secrets_property(
         result1 = await secret_manager.get_secret(
             uri1,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert result1 == f"{secret_value}-1"
         first_cached_at = secret_manager.cache[ref1].cached_at
@@ -270,6 +278,8 @@ async def test_secret_cache_ttl_multiple_secrets_property(
         result2 = await secret_manager.get_secret(
             uri2,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert result2 == f"{secret_value}-2"
         second_cached_at = secret_manager.cache[ref2].cached_at
@@ -296,6 +306,8 @@ async def test_secret_cache_ttl_multiple_secrets_property(
         result1_refresh = await secret_manager.get_secret(
             uri1,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert result1_refresh == f"{secret_value}-1"
 
@@ -369,6 +381,8 @@ async def test_secret_cache_ttl_custom_ttl_property(
         result1 = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert result1 == secret_value
 
@@ -399,6 +413,8 @@ async def test_secret_cache_ttl_custom_ttl_property(
         result2 = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert result2 == secret_value
 

@@ -247,6 +247,9 @@ async def test_webhook_authentication_with_aws_secrets_manager(
 
     # Setup AWS LocalStack endpoint
     os.environ["LOCALSTACK_URL"] = aws_credentials["endpoint_url"]
+    os.environ["AWS_ACCESS_KEY_ID"] = aws_credentials["aws_access_key_id"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = aws_credentials["aws_secret_access_key"]
+    os.environ["AWS_DEFAULT_REGION"] = aws_credentials["region_name"]
 
     # Setup: Use environment variable fallback for testing
     # This is simpler than mocking async aioboto3 and still tests the flow
@@ -332,6 +335,10 @@ async def test_webhook_authentication_with_aws_secrets_manager(
 
     finally:
         secret_manager.cache.clear()
+        # Clean up environment variables
+        os.environ.pop("AWS_ACCESS_KEY_ID", None)
+        os.environ.pop("AWS_SECRET_ACCESS_KEY", None)
+        os.environ.pop("AWS_DEFAULT_REGION", None)
 
 
 @pytest.mark.asyncio
@@ -353,6 +360,9 @@ async def test_webhook_secret_rotation_with_aws(
 
     # Setup AWS LocalStack endpoint
     os.environ["LOCALSTACK_URL"] = aws_credentials["endpoint_url"]
+    os.environ["AWS_ACCESS_KEY_ID"] = aws_credentials["aws_access_key_id"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = aws_credentials["aws_secret_access_key"]
+    os.environ["AWS_DEFAULT_REGION"] = aws_credentials["region_name"]
 
     # Setup: Create initial secret
     secret_name = test_secret_gitlab_webhook["names"]["rotation-test"]
@@ -440,6 +450,10 @@ async def test_webhook_secret_rotation_with_aws(
 
     finally:
         secret_manager.cache.clear()
+        # Clean up environment variables
+        os.environ.pop("AWS_ACCESS_KEY_ID", None)
+        os.environ.pop("AWS_SECRET_ACCESS_KEY", None)
+        os.environ.pop("AWS_DEFAULT_REGION", None)
 
 
 @pytest.mark.asyncio
@@ -458,6 +472,9 @@ async def test_multiple_eggs_with_different_secrets(
     """
     # Setup AWS LocalStack endpoint
     os.environ["LOCALSTACK_URL"] = aws_credentials["endpoint_url"]
+    os.environ["AWS_ACCESS_KEY_ID"] = aws_credentials["aws_access_key_id"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = aws_credentials["aws_secret_access_key"]
+    os.environ["AWS_DEFAULT_REGION"] = aws_credentials["region_name"]
 
     # Setup: Create secrets for two different Eggs
     eggs_config = [
@@ -543,3 +560,7 @@ async def test_multiple_eggs_with_different_secrets(
     finally:
         # Cleanup
         secret_manager.cache.clear()
+        # Clean up environment variables
+        os.environ.pop("AWS_ACCESS_KEY_ID", None)
+        os.environ.pop("AWS_SECRET_ACCESS_KEY", None)
+        os.environ.pop("AWS_DEFAULT_REGION", None)

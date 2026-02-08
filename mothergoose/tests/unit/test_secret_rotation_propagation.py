@@ -269,6 +269,8 @@ async def test_secret_rotation_propagation_property(
         initial_value = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert initial_value == secret_value
 
@@ -286,6 +288,8 @@ async def test_secret_rotation_propagation_property(
         rotated_value = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert rotated_value == new_secret_value, (
             f"Rotated secret should be '{new_secret_value}', got '{rotated_value}'"
@@ -396,6 +400,8 @@ async def test_secret_rotation_propagation_multiple_runners_property(
         rotated_value = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert rotated_value == new_secret_value
 
@@ -510,6 +516,8 @@ async def test_secret_rotation_propagation_only_active_runners_property(
         rotated_value = await secret_manager.get_secret(
             uri,
             endpoint_url=aws_credentials["endpoint_url"],
+            aws_access_key_id=aws_credentials["aws_access_key_id"],
+            aws_secret_access_key=aws_credentials["aws_secret_access_key"],
         )
         assert rotated_value == new_secret_value
 

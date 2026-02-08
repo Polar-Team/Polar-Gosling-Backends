@@ -98,11 +98,11 @@ class OpenTofuVersionTableYDB:
             or self.r_type[3].type != "Utf8"
             or self.r_type[4].type != "Utf8"
         ):
-            raise ValueError(
-                """
+            # fmt: off
+            raise ValueError("""
                 All rows except 'active'='Bool' must be Utf8 type.
-                """
-            )
+                """)
+            # fmt: on
         if self.r_type[5].type != "Bool":
             raise ValueError("The 'active' column must be of type 'Bool'.")
         YDBTableSchema(  # type: ignore[call-arg]

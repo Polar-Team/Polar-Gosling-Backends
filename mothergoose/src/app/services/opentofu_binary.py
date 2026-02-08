@@ -444,15 +444,13 @@ class OpenTofuDownloadFromOtherSource(OpenTofuBinary):
             )
             OpenTofuDownloadFromOtherSource.add_opentofu_bin_info(info)
         code = "FAILED"
-        for (
-            tofu
-        ) in (
-            OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info()
-        ):  # noqa: E501
+        # fmt: off
+        for tofu in OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info():  # noqa: E501
             if tofu.bin_version == self.version:
                 version = tofu.bin_version
                 code = "SUCCESS"
                 break
+        # fmt: on
         return version, code
 
 
@@ -725,17 +723,16 @@ class OpenTofuUpdateGithub(OpenTofuUpdate):
             all_versions = OpenTofuDownloadGithub.get_opentofu_bin_files_info()
             result = all_versions[-rb_factor:]
         else:
-            self.error(
-                f"""Current version {self.__c_version} not found
+            # fmt: off
+            self.error(f"""
+                Current version {self.__c_version} not found
                 in available versions.
-                """
-            )
-            raise RuntimeError(
-                f"""
+                """)
+            raise RuntimeError(f"""
                 Current version {self.c_version} not found
                 in available versions.
-                """
-            )
+                """)
+            # fmt: on
         return result
 
     def download_available_versions(self) -> list[str]:
@@ -874,17 +871,16 @@ class OpenTofuUpdateOtherSource(OpenTofuUpdate):
                 all_versions = c.get_opentofu_bin_files_info()
                 result = all_versions[-rb:]
             else:
-                self.error(
-                    f"""Current version {self.__c_version} not found
-                    in available versions.
-                    """
-                )
-                raise RuntimeError(
-                    f"""
+                # fmt: off
+                self.error(f"""
                     Current version {self.__c_version} not found
                     in available versions.
-                    """
-                )
+                    """)
+                raise RuntimeError(f"""
+                    Current version {self.__c_version} not found
+                    in available versions.
+                    """)
+                # fmt: on
         return result
 
     def download_available_versions(self) -> list[str]:

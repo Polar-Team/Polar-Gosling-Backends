@@ -1,5 +1,6 @@
 import os
 import platform
+import time
 
 import tempfile
 
@@ -565,14 +566,14 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
     print(f"DEBUG: updater_2.c_version after update: {updater_2.c_version}")
 
     # Verify updater_2 successfully updated to 1.10.6
-    assert updater_2.c_version[1] == "1.10.6", (
-        f"updater_2 should have updated to 1.10.6, but got {updater_2.c_version[1]}"
-    )
+    assert (
+        updater_2.c_version[1] == "1.10.6"
+    ), f"updater_2 should have updated to 1.10.6, but got {updater_2.c_version[1]}"
 
     # Small delay to ensure database transaction completes
     # In CI/CD, the database write might not be immediately visible
-    import time
-    time.sleep(0.1)
+
+    time.sleep(2)
 
     checker = OpenTofuUpdateOtherSource(
         ydb_schema,

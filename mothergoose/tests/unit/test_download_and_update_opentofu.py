@@ -386,17 +386,21 @@ async def test_ydb_create_tofu_version_table(ydb_schema):
 
 
 @pytest.mark.dependency(depends=["test_ydb_create_tofu_version_table"])
-def test_opentofu_update_github(ydb_schema):
+@pytest.mark.asyncio
+async def test_opentofu_update_github(ydb_schema):
     """Function for testing OpenTofuUpdateGithub class."""
 
     updater = OpenTofuUpdateGithub(
         ydb_schema, install_dir=tempfile.mkdtemp(prefix="opentofu_test_")
     )
-    updater.start_update()
+
+    await updater.start_update()
+    await updater.sync_version()
 
     checker = OpenTofuUpdateGithub(
         ydb_schema, install_dir=tempfile.mkdtemp(prefix="opentofu_test_")
     )
+    await checker.sync_version()
 
     assert checker.c_version[1] == updater.c_version[1], (
         "Current version is not correct in OpenTofuUpdateGithub."
@@ -454,7 +458,8 @@ def test_auth_types_invalid(token, bearer, auth_header):
 
 
 @pytest.mark.dependency(depends=["test_opentofu_update_github"])
-def test_opentofu_update_other(ydb_schema, mock_server_url):
+@pytest.mark.asyncio
+async def test_opentofu_update_other(ydb_schema):
     """Function for testing OpenTofuUpdateOtherSource class."""
 
     if (system := platform.system().lower()) == "linux":
@@ -518,7 +523,8 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
         )
 
         updater_1.rollback = True
-        updater_1.start_update()
+        await updater_1.start_update()
+        await updater_1.sync_version()
 
     assert updater_1.c_version[1] == "1.10.5", (
         "Rollback to previous version did not work."
@@ -540,40 +546,25 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
         ],
     )
 
-    # Debug: Check initial state
-    print(f"DEBUG: updater_2.c_version before update: {updater_2.c_version}")
-    print(f"DEBUG: updater_2.files: {[f.bin_version for f in updater_2.files]}")
-    print(f"DEBUG: check_required_actions: {updater_2.check_required_actions()}")
-
     with requests_mock.Mocker() as mocker:
         mocker.get(
             url_third,
             content=response_third.content,
         )
 
-        try:
-            updater_2.start_update(
-                auth_url=URLAuthSchema(
-                    auth_header="PRIVATE-TOKEN",
-                    bearer=False,
-                    token="glpat-" + "a" * 60,
-                )
+        await updater_2.start_update(
+            auth_url=URLAuthSchema(
+                auth_header="PRIVATE-TOKEN",
+                bearer=False,
+                token="glpat-" + "a" * 60,
             )
-        except Exception as e:
-            pytest.fail(f"updater_2.start_update() failed: {e}")
-
-    # Debug: Check state after update
-    print(f"DEBUG: updater_2.c_version after update: {updater_2.c_version}")
+        )
+        await updater_2.sync_version()
 
     # Verify updater_2 successfully updated to 1.10.6
     assert (
         updater_2.c_version[1] == "1.10.6"
     ), f"updater_2 should have updated to 1.10.6, but got {updater_2.c_version[1]}"
-
-    # Small delay to ensure database transaction completes
-    # In CI/CD, the database write might not be immediately visible
-
-    time.sleep(2)
 
     checker = OpenTofuUpdateOtherSource(
         ydb_schema,
@@ -596,11 +587,8 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
             ),
         ],
     )
+    await checker.sync_version()
 
-    # Debug: Check checker state
-    print(f"DEBUG: checker.c_version: {checker.c_version}")
-
-    # Verify that both updater_2 and checker read the same version from the database
     assert checker.c_version[1] == updater_2.c_version[1], (
         f"Current version is not correct in OpenTofuUpdateOtherSource. "
         f"updater_2.c_version[1]={updater_2.c_version[1]}, "

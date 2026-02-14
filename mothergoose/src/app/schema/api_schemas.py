@@ -7,7 +7,7 @@ to interact with the MotherGoose backend.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import Field, field_validator
 
@@ -208,6 +208,9 @@ class EggConfigRequest(PydanticBaseModelAPI):
     environment: dict[str, str] = Field(
         default_factory=dict, description="Environment variables"
     )
+    git_commit: Optional[str] = Field(
+        None, description="Git commit hash (40-character SHA-1)"
+    )
 
     @field_validator("gitlab")
     @classmethod
@@ -222,6 +225,20 @@ class EggConfigRequest(PydanticBaseModelAPI):
                 "Cannot specify both project_id and group_id in GitLab configuration"
             )
         return value
+
+    @field_validator("git_commit")
+    @classmethod
+    def validate_git_commit(cls, value: Optional[str]) -> Optional[str]:
+        """Validate that git_commit is a valid SHA-1 hash (40 hex characters)."""
+        if value is None:
+            return value
+        if not isinstance(value, str):
+            raise ValueError("git_commit must be a string")
+        if len(value) != 40:
+            raise ValueError("git_commit must be a 40-character SHA-1 hash")
+        if not all(c in "0123456789abcdefABCDEF" for c in value):
+            raise ValueError("git_commit must contain only hexadecimal characters")
+        return value.lower()  # Normalize to lowercase
 
 
 class EggConfigResponse(PydanticBaseModelAPI):
@@ -240,3 +257,128 @@ class EggConfigResponse(PydanticBaseModelAPI):
     updated_at: datetime = Field(..., description="Last update timestamp")
     git_commit: Optional[str] = Field(None, description="Git commit hash")
     synced_at: Optional[datetime] = Field(None, description="Last sync timestamp")
+
+
+# Runner Management Schemas
+
+
+class RunnerDetailResponse(PydanticBaseModelAPI):
+    """Detailed response model for runner information."""
+
+    id: str = Field(..., description="Unique runner identifier")
+    egg_name: str = Field(..., description="Name of the Egg this runner belongs to")
+    type: str = Field(..., description="Runner type (serverless/apex/nadir)")
+    state: str = Field(..., description="Current runner state")
+    cloud_provider: str = Field(..., description="Cloud provider hosting this runner")
+    region: str = Field(..., description="Cloud region where runner is deployed")
+    gitlab_runner_id: Optional[int] = Field(
+        None, description="GitLab runner registration ID"
+    )
+    deployed_from_commit: str = Field(
+        ..., description="Git commit hash that deployed this runner"
+    )
+    created_at: str = Field(..., description="Runner creation timestamp")
+    updated_at: str = Field(..., description="Last update timestamp")
+    last_heartbeat: Optional[str] = Field(None, description="Last heartbeat timestamp")
+    failure_count: int = Field(..., description="Number of consecutive failures")
+    metadata: dict[str, Any] = Field(..., description="Additional runner metadata")
+
+
+class CreateRunnerRequest(PydanticBaseModelAPI):
+    """Request model for creating a new runner."""
+
+    egg_name: str = Field(..., description="Name of the Egg requesting the runner")
+    job_requirements: Optional[dict[str, Any]] = Field(
+        None, description="Job requirements from GitLab webhook"
+    )
+    cloud_provider: str = Field(
+        default="yandex", description="Cloud provider (yandex/aws)"
+    )
+    region: str = Field(
+        default="ru-central1-a", description="Cloud region for deployment"
+    )
+    deployed_from_commit: str = Field(
+        default="unknown", description="Git commit hash triggering deployment"
+    )
+
+
+class CreateRunnerResponse(PydanticBaseModelAPI):
+    """Response model for runner creation."""
+
+    task_id: str = Field(..., description="Celery task ID for tracking deployment")
+    message: str = Field(..., description="Status message")
+
+
+class TerminateRunnerRequest(PydanticBaseModelAPI):
+    """Request model for terminating a runner."""
+
+    reason: str = Field(default="manual", description="Reason for termination")
+    actor: str = Field(default="api", description="Who initiated the termination")
+
+
+class TerminateRunnerResponse(PydanticBaseModelAPI):
+    """Response model for runner termination."""
+
+    task_id: str = Field(..., description="Celery task ID for tracking termination")
+    message: str = Field(..., description="Status message")
+
+
+# Webhook Management Schemas
+
+
+class GitLabWebhookPayload(PydanticBaseModelAPI):
+    """GitLab webhook payload model."""
+
+    object_kind: str = Field(
+        ..., description="Event type (push, merge_request, pipeline, job)"
+    )
+    project_id: Optional[int] = Field(None, description="GitLab project ID")
+    group_id: Optional[int] = Field(None, description="GitLab group ID")
+    ref: Optional[str] = Field(None, description="Git ref (e.g., refs/heads/main)")
+
+    before: Optional[str] = Field(None, description="Commit hash before push")
+    after: Optional[str] = Field(None, description="Commit hash after push")
+    repository: Optional[Dict[str, Any]] = Field(
+        None, description="Repository information"
+    )
+    user_username: Optional[str] = Field(
+        None, description="User who triggered the event"
+    )
+
+
+class WebhookResponse(PydanticBaseModelAPI):
+    """Response model for webhook endpoints."""
+
+    status: str
+    message: str
+    task_id: Optional[str] = None
+
+
+# Internal Management Schemas
+
+
+class TriggerResponse(PydanticBaseModelAPI):
+    """Response model for trigger endpoints."""
+
+    status: str
+    message: str
+    task_id: str | None = None
+
+
+class YandexCloudTriggerPayload(PydanticBaseModelAPI):
+    """Payload model for Yandex Cloud Timer Triggers."""
+
+    action: str
+    source: str
+
+
+# Health Management Schemas
+
+
+class HealthResponse(PydanticBaseModelAPI):
+    """Health check response model."""
+
+    status: str
+    timestamp: str
+    version: str
+    service: str

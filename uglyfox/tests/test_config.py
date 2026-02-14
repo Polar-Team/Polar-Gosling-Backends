@@ -1,0 +1,105 @@
+"""Tests for UglyFox configuration."""
+
+import pytest
+
+from app.core.config import UglyFoxSettings
+
+
+def test_uglyfox_settings_defaults():
+    """Test UglyFox settings with default values."""
+    settings = UglyFoxSettings()
+
+    assert settings.app_name == "UglyFox"
+    assert settings.environment == "development"
+    assert settings.log_level == "INFO"
+    assert settings.database_type == "ydb"
+    assert settings.message_queue_type == "redis"
+    assert settings.cloud_provider == "yandex"
+    assert settings.secret_backend == "yc-lockbox"
+    assert settings.health_check_interval == 600
+    assert settings.pruning_check_interval == 300
+    assert settings.failed_threshold == 3
+    assert settings.max_runner_age == 86400
+    assert settings.uglyfox_queue_name == "uglyfox"
+
+
+def test_uglyfox_settings_custom_values():
+    """Test UglyFox settings with custom values."""
+    settings = UglyFoxSettings(
+        environment="production",
+        database_type="dynamodb",
+        message_queue_type="sqs",
+        cloud_provider="aws",
+        secret_backend="aws-sm",
+        health_check_interval=300,
+        pruning_check_interval=180,
+        failed_threshold=5,
+        max_runner_age=43200,
+    )
+
+    assert settings.environment == "production"
+    assert settings.database_type == "dynamodb"
+    assert settings.message_queue_type == "sqs"
+    assert settings.cloud_provider == "aws"
+    assert settings.secret_backend == "aws-sm"
+    assert settings.health_check_interval == 300
+    assert settings.pruning_check_interval == 180
+    assert settings.failed_threshold == 5
+    assert settings.max_runner_age == 43200
+
+
+def test_get_database_config_ydb():
+    """Test database configuration for YDB."""
+    settings = UglyFoxSettings(
+        database_type="ydb",
+        ydb_endpoint="grpc://localhost:2136",
+        ydb_database="/local",
+    )
+
+    config = settings.get_database_config()
+
+    assert config["type"] == "ydb"
+    assert config["endpoint"] == "grpc://localhost:2136"
+    assert config["database"] == "/local"
+
+
+def test_get_database_config_dynamodb():
+    """Test database configuration for DynamoDB."""
+    settings = UglyFoxSettings(
+        database_type="dynamodb",
+        dynamodb_region="us-east-1",
+        dynamodb_endpoint="http://localhost:8000",
+    )
+
+    config = settings.get_database_config()
+
+    assert config["type"] == "dynamodb"
+    assert config["region"] == "us-east-1"
+    assert config["endpoint"] == "http://localhost:8000"
+
+
+def test_get_celery_config():
+    """Test Celery configuration."""
+    settings = UglyFoxSettings(
+        celery_broker_url="redis://localhost:6379/0",
+        celery_result_backend="redis://localhost:6379/1",
+        uglyfox_queue_name="uglyfox-test",
+    )
+
+    config = settings.get_celery_config()
+
+    assert config["broker_url"] == "redis://localhost:6379/0"
+    assert config["result_backend"] == "redis://localhost:6379/1"
+    assert config["task_default_queue"] == "uglyfox-test"
+    assert config["task_serializer"] == "json"
+    assert config["accept_content"] == ["json"]
+    assert config["result_serializer"] == "json"
+    assert config["timezone"] == "UTC"
+    assert config["enable_utc"] is True
+    assert config["task_track_started"] is True
+    assert config["task_time_limit"] == 3600
+    assert config["task_soft_time_limit"] == 3300
+    assert config["worker_prefetch_multiplier"] == 1
+    assert config["worker_max_tasks_per_child"] == 1000
+    assert config["task_acks_late"] is True
+    assert config["task_reject_on_worker_lost"] is True

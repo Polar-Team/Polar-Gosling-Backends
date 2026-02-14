@@ -1,5 +1,6 @@
 import os
 import platform
+import time
 
 import tempfile
 
@@ -121,8 +122,10 @@ def ydb_schema(ydb_container) -> YDBSchema:
     """Fixture to provide YDB configuration."""
 
     config = YDBConfig(
-        endpoint=f"grpc://{ydb_container.get_container_host_ip()}:\
-        {ydb_container.get_exposed_port(2136)}",
+        endpoint=(
+            f"grpc://{ydb_container.get_container_host_ip()}:"
+            f"{ydb_container.get_exposed_port(2136)}"
+        ),
         database="/local",
         credentials=AnonymousCredentials(),
     )
@@ -264,8 +267,7 @@ def test_tofu_download_and_extract_other(
             arch = "amd64"
         else:
             arch = "arm64"
-            dpath = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
-
+        dpath = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
     else:
         arch = "amd64"
         dpath = f"v1.10.4/tofu_1.10.4_{system}_{arch}.zip"
@@ -314,24 +316,28 @@ def test_tofu_store_downloaded_bin_other(inst_other, mock_server_url):
             arch = "amd64"
         else:
             arch = "arm64"
-            dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
+        dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
+        url_new = "https://mockserver.com/1.10.6/tofu.tar.gz"
+        binhash = "b6b46b4fd8dd0b96e624f2a2d5fbc4efae2fc0174529b37292775c847c2e7d2c"
 
     else:
         arch = "amd64"
         dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.zip"
+        url_new = "https://mockserver.com/1.10.6/tofu.zip"
+        binhash = "e8c475a6b13ac7a01ff53f1d2f55b103f2086e8454133580404f338b5a1ebaed"
 
     response = requests.get(
         f"https://github.com/opentofu/opentofu/releases/download/{dpath}"
     )
     _, token = mock_server_url
-    url_new = "https://mockserver.com/1.10.6/tofu.zip"
+
     inst_other.url = url_new
     inst_other.version = "1.10.6"
     inst_other._opentofu_bin_files_info.append(
         OpenTofuBinFileInfo(
             bin_version="1.10.6",
             bin_url=url_new,
-            bin_sha256="e8c475a6b13ac7a01ff53f1d2f55b103f2086e8454133580404f338b5a1ebaed",  # noqa: E501
+            bin_sha256=binhash,
         )
     )
     with requests_mock.Mocker() as m:
@@ -380,17 +386,21 @@ async def test_ydb_create_tofu_version_table(ydb_schema):
 
 
 @pytest.mark.dependency(depends=["test_ydb_create_tofu_version_table"])
-def test_opentofu_update_github(ydb_schema):
+@pytest.mark.asyncio
+async def test_opentofu_update_github(ydb_schema):
     """Function for testing OpenTofuUpdateGithub class."""
 
     updater = OpenTofuUpdateGithub(
         ydb_schema, install_dir=tempfile.mkdtemp(prefix="opentofu_test_")
     )
-    updater.start_update()
+
+    await updater.start_update()
+    await updater.sync_version()
 
     checker = OpenTofuUpdateGithub(
         ydb_schema, install_dir=tempfile.mkdtemp(prefix="opentofu_test_")
     )
+    await checker.sync_version()
 
     assert checker.c_version[1] == updater.c_version[1], (
         "Current version is not correct in OpenTofuUpdateGithub."
@@ -448,7 +458,8 @@ def test_auth_types_invalid(token, bearer, auth_header):
 
 
 @pytest.mark.dependency(depends=["test_opentofu_update_github"])
-def test_opentofu_update_other(ydb_schema, mock_server_url):
+@pytest.mark.asyncio
+async def test_opentofu_update_other(ydb_schema):
     """Function for testing OpenTofuUpdateOtherSource class."""
 
     if (system := platform.system().lower()) == "linux":
@@ -456,14 +467,26 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
             arch = "amd64"
         else:
             arch = "arm64"
-            dpath_1 = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
-            dpath_2 = f"v1.10.5/tofu_1.10.5_{system}_{arch}.tar.gz"
-            dpath_3 = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
+        dpath_1 = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
+        dpath_2 = f"v1.10.5/tofu_1.10.5_{system}_{arch}.tar.gz"
+        dpath_3 = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
+        url_first = "https://mockserver.com/1.10.4/tofu.tar.gz"
+        hashsum1 = "d9c4e4486d16b7d584494c2f9e926b00be9be60796705f40b6262effa5a83db3"
+        url_second = "https://mockserver.com/1.10.5/tofu.tar.gz"
+        hashsum2 = "b06f7eda97d297cce03bef3697ebb0dc5786a10dd2188bde1cad6f8fe7e1e2f6"
+        url_third = "https://mockserver.com/1.10.6/tofu.tar.gz"
+        hashsum3 = "b6b46b4fd8dd0b96e624f2a2d5fbc4efae2fc0174529b37292775c847c2e7d2c"
     else:
         arch = "amd64"
         dpath_1 = f"v1.10.6/tofu_1.10.6_{system}_{arch}.zip"
         dpath_2 = f"v1.10.5/tofu_1.10.5_{system}_{arch}.zip"
         dpath_3 = f"v1.10.4/tofu_1.10.4_{system}_{arch}.zip"
+        url_first = "https://mockserver.com/1.10.4/tofu.zip"
+        hashsum1 = "88d0ab0a240039816d487625bde4152e64b8dcc3ba53b985fbdf9458cbee7fe2"
+        url_second = "https://mockserver.com/1.10.5/tofu.zip"
+        hashsum2 = "54dfe6b4b2d4d4d4c2f56870b6e02a433b2f059b3408177092610aa8fd0dcdf0"
+        url_third = "https://mockserver.com/1.10.6/tofu.zip"
+        hashsum3 = "e8c475a6b13ac7a01ff53f1d2f55b103f2086e8454133580404f338b5a1ebaed"
 
     response_first = requests.get(
         f"https://github.com/opentofu/opentofu/releases/download/{dpath_3}"
@@ -471,8 +494,7 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
     response_second = requests.get(
         f"https://github.com/opentofu/opentofu/releases/download/{dpath_2}"
     )
-    url_first = "https://mockserver.com/1.10.4/tofu.zip"
-    url_second = "https://mockserver.com/1.10.5/tofu.zip"
+
     updater_1 = OpenTofuUpdateOtherSource(
         ydb_schema,
         install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
@@ -480,15 +502,16 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
             OpenTofuBinFileInfo(
                 bin_version="1.10.4",
                 bin_url=url_first,
-                bin_sha256="88d0ab0a240039816d487625bde4152e64b8dcc3ba53b985fbdf9458cbee7fe2",  # noqa: E501
+                bin_sha256=hashsum1,
             ),
             OpenTofuBinFileInfo(
                 bin_version="1.10.5",
                 bin_url=url_second,
-                bin_sha256="54dfe6b4b2d4d4d4c2f56870b6e02a433b2f059b3408177092610aa8fd0dcdf0",  # noqa: E501
+                bin_sha256=hashsum2,
             ),
         ],
     )
+
     with requests_mock.Mocker() as m:
         m.get(
             url_first,
@@ -500,7 +523,8 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
         )
 
         updater_1.rollback = True
-        updater_1.start_update()
+        await updater_1.start_update()
+        await updater_1.sync_version()
 
     assert updater_1.c_version[1] == "1.10.5", (
         "Rollback to previous version did not work."
@@ -509,7 +533,7 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
     response_third = requests.get(
         f"https://github.com/opentofu/opentofu/releases/download/{dpath_1}"
     )
-    url_third = "https://mockserver.com/1.10.6/tofu.zip"
+
     updater_2 = OpenTofuUpdateOtherSource(
         ydb_schema,
         install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
@@ -517,7 +541,7 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
             OpenTofuBinFileInfo(
                 bin_version="1.10.6",
                 bin_url=url_third,
-                bin_sha256="e8c475a6b13ac7a01ff53f1d2f55b103f2086e8454133580404f338b5a1ebaed",  # noqa: E501
+                bin_sha256=hashsum3,
             ),
         ],
     )
@@ -528,13 +552,19 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
             content=response_third.content,
         )
 
-        updater_2.start_update(
+        await updater_2.start_update(
             auth_url=URLAuthSchema(
                 auth_header="PRIVATE-TOKEN",
                 bearer=False,
                 token="glpat-" + "a" * 60,
             )
         )
+        await updater_2.sync_version()
+
+    # Verify updater_2 successfully updated to 1.10.6
+    assert (
+        updater_2.c_version[1] == "1.10.6"
+    ), f"updater_2 should have updated to 1.10.6, but got {updater_2.c_version[1]}"
 
     checker = OpenTofuUpdateOtherSource(
         ydb_schema,
@@ -542,22 +572,25 @@ def test_opentofu_update_other(ydb_schema, mock_server_url):
         files=[
             OpenTofuBinFileInfo(
                 bin_version="1.10.6",
-                bin_url=url_first,
-                bin_sha256="e8c475a6b13ac7a01ff53f1d2f55b103f2086e8454133580404f338b5a1ebaed",  # noqa: E501
+                bin_url=url_third,
+                bin_sha256=hashsum3,
             ),
             OpenTofuBinFileInfo(
                 bin_version="1.10.5",
                 bin_url=url_second,
-                bin_sha256="54dfe6b4b2d4d4d4c2f56870b6e02a433b2f059b3408177092610aa8fd0dcdf0",  # noqa: E501
+                bin_sha256=hashsum2,
             ),
             OpenTofuBinFileInfo(
                 bin_version="1.10.4",
                 bin_url=url_first,
-                bin_sha256="88d0ab0a240039816d487625bde4152e64b8dcc3ba53b985fbdf9458cbee7fe2",  # noqa: E501
+                bin_sha256=hashsum1,
             ),
         ],
     )
+    await checker.sync_version()
 
     assert checker.c_version[1] == updater_2.c_version[1], (
-        "Current version is not correct in OpenTofuUpdateGithub."
+        f"Current version is not correct in OpenTofuUpdateOtherSource. "
+        f"updater_2.c_version[1]={updater_2.c_version[1]}, "
+        f"checker.c_version[1]={checker.c_version[1]}"
     )

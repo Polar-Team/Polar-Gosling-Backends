@@ -7,13 +7,15 @@ Handles Git operations for syncing Nest repository to database cache.
 import shutil
 import tempfile
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import git
 
-from app.model.runners_models import SyncStatus
+from app.core.config import get_ydb_schema
+from app.model.runners_models import SyncStatus, generate_new_eggconfig
+from app.services.egg_service import EggService
 from app.services.fly_parser import fly_parser
 from app.services.secret_manager import secret_manager
 from app.util.base_logging import logger
@@ -48,7 +50,7 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
         Raises:
             Exception: If sync fails
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         sync_id = str(uuid.uuid4())
 
         try:
@@ -76,7 +78,9 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
             )
 
             # Step 5: Create sync history audit trail (placeholder - actual DB operations needed)
-            duration_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+            duration_ms = int(
+                (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            )
             await self._create_sync_history(
                 sync_id=sync_id,
                 git_commit=git_commit,
@@ -108,7 +112,9 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
             logger.error("Nest config sync failed: %s", exc)
 
             # Create failed sync history
-            duration_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+            duration_ms = int(
+                (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            )
             await self._create_sync_history(
                 sync_id=sync_id,
                 git_commit="unknown",
@@ -208,20 +214,18 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
 
         return eggs, jobs, uf_config
 
-    async def _update_database_cache(
+    async def _update_database_cache(  # pylint: disable=too-many-locals
         self,
         eggs: List[Dict[str, Any]],
         jobs: List[Dict[str, Any]],
         uf_config: Optional[Dict[str, Any]],
-        git_commit: str,  # pylint: disable=unused-argument
+        git_commit: str,
     ) -> int:
         """
         Update database cache with parsed configurations.
 
-        This is a placeholder implementation. In production, this should:
-        1. Connect to YDB/DynamoDB
-        2. Upsert egg_configs table with new configurations
-        3. Track changes and return count
+        This method upserts egg configurations to the database with the actual
+        Git commit hash from the sync operation.
 
         Args:
             eggs: List of parsed Egg configurations
@@ -232,19 +236,61 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
         Returns:
             Number of changes detected
         """
-        # Placeholder: Log configurations
-        logger.info("Would update database with %d eggs, %d jobs", len(eggs), len(jobs))
+        logger.info(
+            "Updating database with %d eggs, %d jobs from commit %s",
+            len(eggs),
+            len(jobs),
+            git_commit,
+        )
 
-        # In production, this should:
-        # for egg in eggs:
-        #     await db.upsert_egg_config(
-        #         name=egg["name"],
-        #         config=egg,
-        #         git_commit=git_commit,
-        #         synced_at=datetime.utcnow()
-        #     )
+        # Get YDB schema
+        schema = get_ydb_schema()
+        egg_service = EggService(schema)
+
+        # Upsert each egg configuration
+        now = datetime.now(timezone.utc)
+        for egg_dict in eggs:
+            # Extract egg name and configuration
+            egg_name = egg_dict.get("name")
+            if not egg_name:
+                logger.warning("Egg configuration missing name, skipping")
+                continue
+
+            # Extract GitLab configuration
+            gitlab_config = egg_dict.get("gitlab", {})
+            project_id = gitlab_config.get("project_id")
+            group_id = gitlab_config.get("group_id")
+
+            # Build secret URIs (following the pattern from design doc)
+            gitlab_server = gitlab_config.get("server", "gitlab.com")
+            token_secret = (
+                f"yc-lockbox://gitlab/{gitlab_server}/{egg_name}/runner-token"
+            )
+            webhook_secret = (
+                f"yc-lockbox://gitlab/{gitlab_server}/{egg_name}/webhook-secret"
+            )
+
+            # Create EggConfig model
+            egg = generate_new_eggconfig(
+                name=egg_name,
+                project_id=project_id,
+                group_id=group_id,
+                config=egg_dict,
+                git_commit=git_commit,
+                git_repo_url_secret="yc-lockbox://nest/repo-url",
+                gitlab_token_secret_uri=token_secret,
+                gitlab_webhook_secret_uri=webhook_secret,
+                synced_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+
+            # Upsert to database
+            await egg_service.upsert_egg(egg)
+            logger.info("Upserted egg %s with commit %s", egg_name, git_commit)
 
         # For now, return total count as changes
+        # In future, we could track actual changes by comparing with existing configs
         changes = len(eggs) + len(jobs) + (1 if uf_config else 0)
         return changes
 

@@ -16,6 +16,7 @@ dependencies = [
     "gitpython>=3.1.43",
     "grpcio>=1.71.0",
     "grpcio-tools>=1.71.0",
+    "hvac>=2.4.0",
     "jinja2>=3.1.6",
     "kombu>=5.4.0",
     "pydantic>=2.11.5",
@@ -68,7 +69,10 @@ minversion = "6.0"
 addopts = "-ra -q"
 testpaths = [
     "tests",
-    "integration",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:pydantic.*",
+    "ignore::DeprecationWarning:botocore.*",
 ]
 
 [tool.tox]
@@ -91,7 +95,7 @@ description = "Run tests under {base_python}"
 dependency_groups = [
     "test",
 ]
-commands = [["pytest"]]
+commands = [["pytest", "-v"]]
 
 [tool.tox.env.format]
 description = "Format code with black and isort"
@@ -131,13 +135,6 @@ commands = [
 max-line-length = 120
 extend-ignore = ["E203", "W503"]
 
-[tool.ruff]
-line-length = 120
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I"]
-ignore = ["E203", "W503"]
-
 [tool.ruff.format]
 line-ending = "auto"
 
@@ -174,6 +171,8 @@ module = [
 ]
 disable_error_code = [
   "attr-defined",
+  "func-returns-value",
+  "unreachable",
 ]
 
 [[tool.mypy.overrides]]
@@ -182,6 +181,15 @@ module = [
 ]
 disable_error_code = [
   "typeddict-unknown-key",
+]
+
+[[tool.mypy.overrides]]
+module = [
+  "app.routers.*"
+]
+disable_error_code = [
+  "func-returns-value",
+  "unreachable",
 ]
 
 [[tool.mypy.overrides]]

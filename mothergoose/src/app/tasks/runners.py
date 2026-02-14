@@ -5,11 +5,139 @@ Celery tasks for deploying, managing, and terminating runners.
 These tasks handle the lifecycle of both serverless and VM-based runners.
 """
 
+# pylint: disable=duplicate-code
+
 from typing import Any
 
 from app.core.celery_app import celery_app
 from app.core.celery_base import BaseTask
+from app.services.runner_orchestration import RunnerOrchestrationService
+from app.services.serverless_runner_deployment import ServerlessRunnerDeploymentService
 from app.util.base_logging import logger
+from app.util.runner_helpers import (
+    build_deployment_kwargs,
+    build_runner_result,
+    extract_runner_config,
+)
+
+
+def _get_orchestration_service() -> RunnerOrchestrationService:
+    """
+    Get runner orchestration service instance.
+
+    Creates a new service instance with required dependencies.
+    Uses environment variables for database configuration.
+
+    Returns:
+        RunnerOrchestrationService: Configured orchestration service
+
+    Note:
+        Database configuration is read from environment variables:
+        - MOTHERGOOSE_YDB_ENDPOINT
+        - MOTHERGOOSE_YDB_DATABASE
+        - MOTHERGOOSE_YDB_POOL_SIZE
+        - MOTHERGOOSE_YDB_USE_ANONYMOUS_CREDENTIALS
+    """
+    from app.core.config import (  # pylint: disable=import-outside-toplevel
+        get_ydb_schema,
+    )
+    from app.services.egg_service import (  # pylint: disable=import-outside-toplevel
+        EggService,
+    )
+    from app.services.runner_service import (  # pylint: disable=import-outside-toplevel
+        RunnerService,
+    )
+
+    schema = get_ydb_schema()
+    runner_service = RunnerService(schema=schema)
+    egg_service = EggService(schema=schema)
+
+    return RunnerOrchestrationService(
+        runner_service=runner_service,
+        egg_service=egg_service,
+    )
+
+
+def _get_serverless_deployment_service() -> ServerlessRunnerDeploymentService:
+    """
+    Get serverless runner deployment service instance.
+
+    Creates a new service instance with required dependencies.
+    Uses environment variables for database and OpenTofu configuration.
+
+    Returns:
+        ServerlessRunnerDeploymentService: Configured deployment service
+
+    Note:
+        Configuration is read from environment variables:
+        - Database: MOTHERGOOSE_YDB_* variables
+        - OpenTofu: MOTHERGOOSE_TOFU_* variables
+    """
+    import os  # pylint: disable=import-outside-toplevel
+
+    from app.core.config import (  # pylint: disable=import-outside-toplevel
+        get_ydb_schema,
+    )
+    from app.schema.tofu_schemas import (  # pylint: disable=import-outside-toplevel
+        TofuBackendS3Options,
+        TofuProvidersVer,
+    )
+    from app.services.egg_service import (  # pylint: disable=import-outside-toplevel
+        EggService,
+    )
+    from app.services.opentofu_binary import (  # pylint: disable=import-outside-toplevel
+        OpenTofuUpdateGithub,
+    )
+    from app.services.opentofu_configuration import (  # pylint: disable=import-outside-toplevel
+        OpenTofuConfiguration,
+        TofuSetting,
+    )
+    from app.services.runner_service import (  # pylint: disable=import-outside-toplevel
+        RunnerService,
+    )
+
+    schema = get_ydb_schema()
+
+    # Configure OpenTofu settings
+    tofu_settings = TofuSetting(
+        providers=[
+            TofuProvidersVer(
+                name="yandex",
+                version=os.getenv("MOTHERGOOSE_TOFU_YANDEX_VERSION", ">= 0.100.0"),
+                source="yandex-cloud/yandex",
+            ),
+            TofuProvidersVer(
+                name="aws",
+                version=os.getenv("MOTHERGOOSE_TOFU_AWS_VERSION", ">= 5.0.0"),
+                source="hashicorp/aws",
+            ),
+        ],
+        backend_s3_options=TofuBackendS3Options(
+            bucket=os.getenv("MOTHERGOOSE_TOFU_STATE_BUCKET", "tofu-states"),
+            key=os.getenv("MOTHERGOOSE_TOFU_STATE_KEY", "runners/state.tfstate"),
+            region=os.getenv("MOTHERGOOSE_TOFU_STATE_REGION", "us-east-1"),
+            endpoint=os.getenv("MOTHERGOOSE_TOFU_STATE_ENDPOINT"),
+            profile=os.getenv("MOTHERGOOSE_TOFU_STATE_PROFILE"),
+            role_arn=os.getenv("MOTHERGOOSE_TOFU_STATE_ROLE_ARN"),
+            dynamodb_table=os.getenv("MOTHERGOOSE_TOFU_STATE_DYNAMODB_TABLE"),
+        ),
+        artifact_cache_bucket=os.getenv("MOTHERGOOSE_TOFU_ARTIFACT_CACHE_BUCKET"),
+        health_checks=None,
+    )
+
+    opentofu_config = OpenTofuConfiguration(
+        updater=OpenTofuUpdateGithub(
+            schema=schema,
+            install_dir=os.getenv("MOTHERGOOSE_TOFU_INSTALL_DIR"),
+        ),
+        tofu_settings=tofu_settings,
+    )
+
+    return ServerlessRunnerDeploymentService(
+        runner_service=RunnerService(schema=schema),
+        egg_service=EggService(schema=schema),
+        opentofu_config=opentofu_config,
+    )
 
 
 @celery_app.task(
@@ -18,8 +146,10 @@ from app.util.base_logging import logger
     bind=True,
     priority=10,
 )
-def deploy_runner(
-    self: BaseTask, egg_name: str, runner_config: dict[str, Any]
+def deploy_runner(  # pylint: disable=too-many-locals
+    self: BaseTask,
+    egg_name: str,
+    runner_config: dict[str, Any],
 ) -> dict[str, Any]:
     """
     Deploy a new runner (serverless or VM) for an Egg.
@@ -30,7 +160,11 @@ def deploy_runner(
     Args:
         self: Task instance (bound)
         egg_name: Name of the Egg requesting the runner
-        runner_config: Runner configuration parameters
+        runner_config: Runner configuration parameters including:
+            - job_requirements: Job requirements from GitLab webhook
+            - cloud_provider: Cloud provider (yandex/aws)
+            - region: Cloud region
+            - deployed_from_commit: Git commit hash
 
     Returns:
         dict: Deployment result with runner ID and status
@@ -43,28 +177,56 @@ def deploy_runner(
     logger.debug("Runner config: %s", runner_config)
 
     try:
-        # TODO: Implement runner deployment logic
-        # 1. Determine runner type (serverless vs VM)
-        # 2. Retrieve Egg configuration from database
-        # 3. Render OpenTofu configuration from Jinja2 templates
-        # 4. Execute OpenTofu plan and apply to deploy runner
-        # 5. Update runner state in database
-        # 6. Register runner with GitLab
+        # Get orchestration service
+        orchestration = _get_orchestration_service()
 
-        result = {
-            "status": "success",
-            "task_id": task_id,
-            "egg_name": egg_name,
-            "runner_id": f"runner-{task_id[:8]}",
-            "runner_type": runner_config.get("type", "unknown"),
-            "message": "Runner deployed successfully (placeholder)",
-        }
+        # Extract configuration
+        (
+            job_requirements,
+            cloud_provider,
+            region,
+            deployed_from_commit,
+        ) = extract_runner_config(runner_config)
 
+        # Determine runner type based on job requirements
+        # Note: This is a synchronous wrapper around async code
+        # In production, use celery with async support or run_in_executor
+        import asyncio  # pylint: disable=import-outside-toplevel
+
+        loop = asyncio.get_event_loop()
+
+        # Get Egg config to help determine runner type
+        egg_config = loop.run_until_complete(
+            orchestration.egg_service.get_egg_by_name(egg_name)
+        )
+
+        # Determine runner type
+        runner_type = orchestration.determine_runner_type(
+            job_requirements=job_requirements,
+            egg_config=egg_config,
+        )
+
+        # Provision runner
+        runner = loop.run_until_complete(
+            orchestration.provision_runner(
+                egg_name=egg_name,
+                runner_type=runner_type,
+                cloud_provider=cloud_provider,
+                region=region,
+                deployed_from_commit=deployed_from_commit,
+                job_requirements=job_requirements,
+            )
+        )
+
+        if not runner:
+            raise RuntimeError("Runner provisioning returned None")
+
+        result = build_runner_result(task_id, egg_name, runner)
         logger.info("Runner deployment completed: %s", result)
         return result
 
     except Exception as exc:
-        logger.error("Runner deployment failed: %s", exc)
+        logger.error("Runner deployment failed: %s", exc, exc_info=True)
         raise
 
 
@@ -75,7 +237,10 @@ def deploy_runner(
     priority=9,
 )
 def terminate_runner(
-    self: BaseTask, runner_id: str, reason: str = "manual"
+    self: BaseTask,
+    runner_id: str,
+    reason: str = "manual",
+    actor: str = "system",
 ) -> dict[str, Any]:
     """
     Terminate an existing runner.
@@ -87,6 +252,7 @@ def terminate_runner(
         self: Task instance (bound)
         runner_id: ID of the runner to terminate
         reason: Reason for termination (manual, failed, expired, etc.)
+        actor: Who initiated the termination
 
     Returns:
         dict: Termination result with status
@@ -96,28 +262,258 @@ def terminate_runner(
     """
     task_id = self.request.id or "unknown"
     logger.info(
-        "Terminating runner '%s' in task %s, reason: %s", runner_id, task_id, reason
+        "Terminating runner '%s' in task %s, reason: %s, actor: %s",
+        runner_id,
+        task_id,
+        reason,
+        actor,
     )
 
     try:
-        # TODO: Implement runner termination logic
-        # 1. Retrieve runner state from database
-        # 2. Unregister runner from GitLab
-        # 3. Terminate cloud resources (VM or serverless container)
-        # 4. Update runner state in database
-        # 5. Create audit log entry
+        # Get orchestration service
+        orchestration = _get_orchestration_service()
+
+        # Terminate runner
+        # Note: This is a synchronous wrapper around async code
+        import asyncio  # pylint: disable=import-outside-toplevel
+
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(
+            orchestration.terminate_runner(
+                runner_id=runner_id,
+                reason=reason,
+                actor=actor,
+            )
+        )
 
         result = {
             "status": "success",
             "task_id": task_id,
             "runner_id": runner_id,
             "reason": reason,
-            "message": "Runner terminated successfully (placeholder)",
+            "actor": actor,
+            "message": "Runner terminated successfully",
         }
 
         logger.info("Runner termination completed: %s", result)
         return result
 
     except Exception as exc:
-        logger.error("Runner termination failed: %s", exc)
+        logger.error("Runner termination failed: %s", exc, exc_info=True)
+        raise
+
+
+@celery_app.task(
+    base=BaseTask,
+    name="app.tasks.runners.deploy_serverless_runner",
+    bind=True,
+    priority=10,
+)
+def deploy_serverless_runner(  # pylint: disable=too-many-locals
+    self: BaseTask,
+    egg_name: str,
+    runner_config: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Deploy a serverless container runner for an Egg.
+
+    This task handles the deployment of serverless runners with:
+    - 60-minute timeout enforcement
+    - Automatic resource cleanup
+    - Pre-built container images with Gosling CLI
+
+    Args:
+        self: Task instance (bound)
+        egg_name: Name of the Egg requesting the runner
+        runner_config: Runner configuration parameters including:
+            - cloud_provider: Cloud provider (yandex/aws)
+            - region: Cloud region
+            - deployed_from_commit: Git commit hash
+            - job_requirements: Optional job requirements
+
+    Returns:
+        dict: Deployment result with runner ID and status
+
+    Raises:
+        Exception: If serverless runner deployment fails after retries
+    """
+    task_id = self.request.id or "unknown"
+    logger.info(
+        "Deploying serverless runner for Egg '%s' in task %s", egg_name, task_id
+    )
+    logger.debug("Runner config: %s", runner_config)
+
+    try:
+        # Get serverless deployment service
+        serverless_service = _get_serverless_deployment_service()
+
+        # Extract configuration
+        (
+            job_requirements,
+            cloud_provider,
+            region,
+            deployed_from_commit,
+        ) = extract_runner_config(runner_config)
+
+        # Deploy serverless runner using helper
+        import asyncio  # pylint: disable=import-outside-toplevel
+
+        loop = asyncio.get_event_loop()
+        deployment_kwargs = build_deployment_kwargs(
+            egg_name=egg_name,
+            cloud_provider=cloud_provider,
+            region=region,
+            deployed_from_commit=deployed_from_commit,
+            job_requirements=job_requirements,
+        )
+        runner = loop.run_until_complete(
+            serverless_service.deploy_serverless_runner(**deployment_kwargs)
+        )
+
+        if not runner:
+            raise RuntimeError("Serverless runner deployment returned None")
+
+        result = build_runner_result(task_id, egg_name, runner)
+        result["timeout_minutes"] = serverless_service.serverless_limit_timeout
+
+        logger.info("Serverless runner deployment completed: %s", result)
+        return result
+
+    except Exception as exc:
+        logger.error("Serverless runner deployment failed: %s", exc, exc_info=True)
+        raise
+
+
+@celery_app.task(
+    base=BaseTask,
+    name="app.tasks.runners.cleanup_serverless_runner",
+    bind=True,
+    priority=8,
+)
+def cleanup_serverless_runner(
+    self: BaseTask,
+    runner_id: str,
+    reason: str = "timeout",
+) -> dict[str, Any]:
+    """
+    Clean up a serverless runner and its resources.
+
+    This task handles:
+    - Updating runner state to TERMINATED
+    - Executing OpenTofu destroy
+    - Creating audit log entry
+
+    Args:
+        self: Task instance (bound)
+        runner_id: ID of the runner to clean up
+        reason: Reason for cleanup (timeout, manual, error)
+
+    Returns:
+        dict: Cleanup result with status
+
+    Raises:
+        Exception: If cleanup fails after retries
+    """
+    task_id = self.request.id or "unknown"
+    logger.info(
+        "Cleaning up serverless runner '%s' in task %s, reason: %s",
+        runner_id,
+        task_id,
+        reason,
+    )
+
+    try:
+        # Get serverless deployment service
+        serverless_service = _get_serverless_deployment_service()
+
+        # Clean up serverless runner
+        # Note: This is a synchronous wrapper around async code
+        import asyncio  # pylint: disable=import-outside-toplevel
+
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(
+            serverless_service.cleanup_serverless_runner(
+                runner_id=runner_id,
+                reason=reason,
+            )
+        )
+
+        result = {
+            "status": "success",
+            "task_id": task_id,
+            "runner_id": runner_id,
+            "reason": reason,
+            "message": "Serverless runner cleaned up successfully",
+        }
+
+        logger.info("Serverless runner cleanup completed: %s", result)
+        return result
+
+    except Exception as exc:
+        logger.error("Serverless runner cleanup failed: %s", exc, exc_info=True)
+        raise
+
+
+@celery_app.task(
+    base=BaseTask,
+    name="app.tasks.runners.enforce_serverless_timeout",
+    bind=True,
+    priority=9,
+)
+def enforce_serverless_timeout(
+    self: BaseTask,
+    runner_id: str,
+) -> dict[str, Any]:
+    """
+    Enforce timeout for a serverless runner.
+
+    This task is called when a serverless runner exceeds the 60-minute limit.
+    It forcefully terminates the runner and cleans up resources.
+
+    Args:
+        self: Task instance (bound)
+        runner_id: ID of the runner to terminate
+
+    Returns:
+        dict: Enforcement result with status
+
+    Raises:
+        Exception: If timeout enforcement fails after retries
+    """
+    task_id = self.request.id or "unknown"
+    logger.warning(
+        "Enforcing timeout for serverless runner '%s' in task %s",
+        runner_id,
+        task_id,
+    )
+
+    try:
+        # Get serverless deployment service
+        serverless_service = _get_serverless_deployment_service()
+
+        # Enforce timeout
+        # Note: This is a synchronous wrapper around async code
+        import asyncio  # pylint: disable=import-outside-toplevel
+
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(
+            serverless_service.enforce_timeout(
+                runner_id=runner_id,
+            )
+        )
+
+        result = {
+            "status": "success",
+            "task_id": task_id,
+            "runner_id": runner_id,
+            "message": "Serverless runner timeout enforced",
+        }
+
+        logger.info("Serverless runner timeout enforcement completed: %s", result)
+        return result
+
+    except Exception as exc:
+        logger.error(
+            "Serverless runner timeout enforcement failed: %s", exc, exc_info=True
+        )
         raise

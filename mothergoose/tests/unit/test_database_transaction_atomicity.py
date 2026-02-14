@@ -15,15 +15,17 @@ import pytest
 from datetime import datetime, timezone
 from hypothesis import given, settings, strategies as st, HealthCheck
 from typing import Dict, Any, List
+from ydb import AnonymousCredentials
 
 from app.model.runners_models import (
     Runner,
     RunnerState,
     RunnerType,
     CloudProvider,
-    EggConfig,
+    generate_new_eggconfig,
 )
-from app.model.audit_models import AuditLog
+from app.model.audit_models import AuditLog, AuditModelYDB, AuditLogsTableYDB
+from app.schema.ydb_schemas import YDBSchema, YDBConfig
 
 
 class TransactionalRunnerService:
@@ -250,7 +252,7 @@ class TransactionalRunnerService:
             )
 
             # Operation 2: Update egg config with new runner count
-            egg_config_obj = EggConfig(
+            egg_config_obj = generate_new_eggconfig(
                 name=egg_name,
                 config=egg_config,
                 git_commit=deployed_from_commit,
@@ -278,8 +280,26 @@ class TransactionalRunnerService:
             raise e
 
 
+@pytest.fixture(scope="module", name="db_ydb_schema")
+def ydb_schema(ydb_container) -> YDBSchema:
+    """Fixture to provide YDB configuration."""
+
+    config = YDBConfig(
+        endpoint=f"grpc://{ydb_container.get_container_host_ip()}:\
+        {ydb_container.get_exposed_port(2136)}",
+        database="/local",
+        credentials=AnonymousCredentials(),
+    )
+    model = AuditModelYDB(tables=[AuditLogsTableYDB()])
+    schema = YDBSchema(
+        config=config,
+        model=model,
+    )
+    return schema
+
+
 @pytest.fixture
-def runner_service(mock_ydb_schema, mock_db_client):
+def runner_service(db_ydb_schema, mock_db_client):
     """Fixture providing a runner service with mock database."""
     return TransactionalRunnerService(db_client=mock_db_client)
 
@@ -420,10 +440,10 @@ async def test_atomic_runner_state_update_with_audit(
     # Verify both operations succeeded
     updated_runner = await runner_service.get_runner(runner.id)
     assert updated_runner is not None
-    assert updated_runner.state == new_state, (
-        f"Runner state should be updated to {new_state}, "
-        f"got {updated_runner.state}"
-    )
+    assert updated_runner.state == new_state, f"""
+        Runner state should be updated to {new_state},
+        got {updated_runner.state}
+    """
 
     # Note: We can't verify exact audit log ID due to timestamp precision,
     # but we can verify the runner was updated, which proves atomicity

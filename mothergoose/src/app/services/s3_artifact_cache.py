@@ -216,7 +216,9 @@ class S3ArtifactCache:
                                     "Metadata": {
                                         "module-name": module_name,
                                         "module-version": module_version,
-                                        "cached-at": datetime.now(timezone.utc).isoformat(),
+                                        "cached-at": datetime.now(
+                                            timezone.utc
+                                        ).isoformat(),
                                     }
                                 },
                             )
@@ -320,7 +322,9 @@ class S3ArtifactCache:
                                 ExtraArgs={
                                     "Metadata": {
                                         "egg-name": egg_name,
-                                        "cached-at": datetime.now(timezone.utc).isoformat(),
+                                        "cached-at": datetime.now(
+                                            timezone.utc
+                                        ).isoformat(),
                                     }
                                 },
                             )

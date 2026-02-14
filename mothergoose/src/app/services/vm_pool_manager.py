@@ -7,7 +7,7 @@ Implements pool size limits and idle timeout enforcement.
 Task 18: VM Runner Deployment with Apex/Nadir pool management
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Literal, Optional
 
 from app.model.runners_models import (

@@ -12,7 +12,7 @@ Validates: Requirements 6.5
 
 # pylint: disable=redefined-outer-name,unused-argument
 
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from typing import List
 from unittest.mock import AsyncMock, MagicMock
 

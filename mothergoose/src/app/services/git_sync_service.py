@@ -7,7 +7,7 @@ Handles Git operations for syncing Nest repository to database cache.
 import shutil
 import tempfile
 import uuid
-from datetime import UTC, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 

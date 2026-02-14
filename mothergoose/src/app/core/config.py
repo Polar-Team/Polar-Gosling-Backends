@@ -112,7 +112,7 @@ DEFAULT_DATABASE_SCHEMA = YDBSchema(
 _ydb_schema_instance: YDBSchema | None = None
 
 
-def _create_production_credentials():
+def _create_production_credentials() -> object:
     """
     Create production YDB credentials based on environment configuration.
 

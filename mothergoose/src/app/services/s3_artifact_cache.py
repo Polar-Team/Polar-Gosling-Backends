@@ -119,7 +119,7 @@ class S3ArtifactCache:
                                 "provider-name": provider_name,
                                 "provider-version": provider_version,
                                 "provider-source": provider_source,
-                                "cached-at": datetime.now(UTC).isoformat(),
+                                "cached-at": datetime.now(timezone.utc).isoformat(),
                             }
                         },
                     )
@@ -216,7 +216,7 @@ class S3ArtifactCache:
                                     "Metadata": {
                                         "module-name": module_name,
                                         "module-version": module_version,
-                                        "cached-at": datetime.now(UTC).isoformat(),
+                                        "cached-at": datetime.now(timezone.utc).isoformat(),
                                     }
                                 },
                             )
@@ -320,7 +320,7 @@ class S3ArtifactCache:
                                 ExtraArgs={
                                     "Metadata": {
                                         "egg-name": egg_name,
-                                        "cached-at": datetime.now(UTC).isoformat(),
+                                        "cached-at": datetime.now(timezone.utc).isoformat(),
                                     }
                                 },
                             )
@@ -422,7 +422,7 @@ class S3ArtifactCache:
                     ContentType="application/json",
                     Metadata={
                         "lock-type": lock_type,
-                        "cached-at": datetime.now(UTC).isoformat(),
+                        "cached-at": datetime.now(timezone.utc).isoformat(),
                     },
                 )
 

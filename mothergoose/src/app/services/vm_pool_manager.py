@@ -7,7 +7,7 @@ Implements pool size limits and idle timeout enforcement.
 Task 18: VM Runner Deployment with Apex/Nadir pool management
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Literal, Optional
 
 from app.model.runners_models import (
@@ -214,7 +214,7 @@ class VMPoolManager:
                 "state": RunnerState.ACTIVE.value,
                 "metadata": {
                     **runner.metadata,
-                    "promoted_at": datetime.utcnow().isoformat(),
+                    "promoted_at": datetime.now(timezone.utc).isoformat(),
                     "promotion_reason": reason,
                 },
             },
@@ -275,7 +275,7 @@ class VMPoolManager:
                 "state": RunnerState.IDLE.value,
                 "metadata": {
                     **runner.metadata,
-                    "demoted_at": datetime.utcnow().isoformat(),
+                    "demoted_at": datetime.now(timezone.utc).isoformat(),
                     "demotion_reason": reason,
                 },
             },
@@ -299,7 +299,7 @@ class VMPoolManager:
         """
         runners = await self.runner_service.list_runners_by_egg(egg_name)
 
-        idle_threshold = datetime.utcnow() - timedelta(
+        idle_threshold = datetime.now(timezone.utc) - timedelta(
             minutes=self.apex_config.idle_timeout_minutes
         )
 
@@ -349,7 +349,7 @@ class VMPoolManager:
             and r.state != RunnerState.TERMINATED
             and r.last_heartbeat
             and r.last_heartbeat
-            > datetime.utcnow() - timedelta(minutes=5)  # Active within 5 min
+            > datetime.now(timezone.utc) - timedelta(minutes=5)  # Active within 5 min
         ]
 
         # Sort by creation time (oldest first)
@@ -425,7 +425,7 @@ class VMPoolManager:
                             "state": RunnerState.TERMINATED.value,
                             "metadata": {
                                 **runner.metadata,
-                                "terminated_at": datetime.utcnow().isoformat(),
+                                "terminated_at": datetime.now(timezone.utc).isoformat(),
                                 "termination_reason": "apex_limit_enforcement_nadir_full",
                             },
                         },

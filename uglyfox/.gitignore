@@ -1,0 +1,9 @@
+dist/**
+build/**
+**/__pycache__/**
+**/uglyfox.egg-info/**
+**/.tox/**
+**/.mypy_cache/**
+**/.pytest_cache/**
+**/.venv/**
+**/.hypothesis/**

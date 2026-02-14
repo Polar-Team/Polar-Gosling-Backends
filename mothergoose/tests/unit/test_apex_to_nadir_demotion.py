@@ -12,7 +12,7 @@ Validates: Requirements 6.6
 
 # pylint: disable=redefined-outer-name,unused-argument
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 from unittest.mock import AsyncMock, MagicMock
 
@@ -47,7 +47,7 @@ def idle_apex_runner_strategy(draw, egg_name: str = "test-egg", idle_minutes: in
     )
 
     # Create runner with old heartbeat (idle beyond timeout)
-    last_heartbeat = datetime.utcnow() - timedelta(minutes=idle_minutes)
+    last_heartbeat = datetime.now(timezone.utc) - timedelta(minutes=idle_minutes)
 
     return Runner(
         id=runner_id,
@@ -57,8 +57,8 @@ def idle_apex_runner_strategy(draw, egg_name: str = "test-egg", idle_minutes: in
         cloud_provider=CloudProvider.YANDEX,
         region="ru-central1-a",
         deployed_from_commit="abc123",
-        created_at=datetime.utcnow() - timedelta(hours=1),
-        updated_at=datetime.utcnow() - timedelta(minutes=idle_minutes),
+        created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        updated_at=datetime.now(timezone.utc) - timedelta(minutes=idle_minutes),
         last_heartbeat=last_heartbeat,
         failure_count=0,
         metadata={},
@@ -99,9 +99,9 @@ async def test_apex_demoted_when_idle_beyond_timeout(
         cloud_provider=CloudProvider.YANDEX,
         region="ru-central1-a",
         deployed_from_commit="abc123",
-        created_at=datetime.utcnow() - timedelta(hours=1),
-        updated_at=datetime.utcnow() - timedelta(minutes=idle_minutes),
-        last_heartbeat=datetime.utcnow() - timedelta(minutes=idle_minutes),
+        created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        updated_at=datetime.now(timezone.utc) - timedelta(minutes=idle_minutes),
+        last_heartbeat=datetime.now(timezone.utc) - timedelta(minutes=idle_minutes),
         failure_count=0,
         metadata={},
     )
@@ -116,9 +116,9 @@ async def test_apex_demoted_when_idle_beyond_timeout(
             cloud_provider=CloudProvider.YANDEX,
             region="ru-central1-a",
             deployed_from_commit="abc123",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            last_heartbeat=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            last_heartbeat=datetime.now(timezone.utc),
             failure_count=0,
             metadata={},
         )
@@ -210,9 +210,9 @@ async def test_auto_demote_idle_runners():
             cloud_provider=CloudProvider.YANDEX,
             region="ru-central1-a",
             deployed_from_commit="abc123",
-            created_at=datetime.utcnow() - timedelta(hours=1),
-            updated_at=datetime.utcnow() - timedelta(minutes=35),
-            last_heartbeat=datetime.utcnow() - timedelta(minutes=35),
+            created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+            updated_at=datetime.now(timezone.utc) - timedelta(minutes=35),
+            last_heartbeat=datetime.now(timezone.utc) - timedelta(minutes=35),
             failure_count=0,
             metadata={},
         )
@@ -228,9 +228,9 @@ async def test_auto_demote_idle_runners():
         cloud_provider=CloudProvider.YANDEX,
         region="ru-central1-a",
         deployed_from_commit="abc123",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        last_heartbeat=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        last_heartbeat=datetime.now(timezone.utc),
         failure_count=0,
         metadata={},
     )

@@ -50,7 +50,7 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
         Raises:
             Exception: If sync fails
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         sync_id = str(uuid.uuid4())
 
         try:
@@ -78,7 +78,9 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
             )
 
             # Step 5: Create sync history audit trail (placeholder - actual DB operations needed)
-            duration_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+            duration_ms = int(
+                (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            )
             await self._create_sync_history(
                 sync_id=sync_id,
                 git_commit=git_commit,
@@ -110,7 +112,9 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
             logger.error("Nest config sync failed: %s", exc)
 
             # Create failed sync history
-            duration_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+            duration_ms = int(
+                (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            )
             await self._create_sync_history(
                 sync_id=sync_id,
                 git_commit="unknown",

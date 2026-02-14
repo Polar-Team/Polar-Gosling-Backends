@@ -280,9 +280,18 @@ class RunnerOrchestrationService:
         Returns:
             List of runners for the Egg
         """
-        # Task 9: DB query
         logger.debug("Listing runners for Egg: %s", egg_name)
-        return []
+        return await self.runner_service.list_runners_by_egg(egg_name)
+
+    async def list_all_runners(self) -> list[Runner]:
+        """
+        List all runners across all Eggs.
+
+        Returns:
+            List of all runners
+        """
+        logger.debug("Listing all runners")
+        return await self.runner_service.list_all_runners()
 
     async def get_runner_status(self, runner_id: str) -> Optional[Runner]:
         """

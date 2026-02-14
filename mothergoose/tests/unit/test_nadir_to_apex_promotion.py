@@ -12,7 +12,7 @@ Validates: Requirements 6.5
 
 # pylint: disable=redefined-outer-name,unused-argument
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 from unittest.mock import AsyncMock, MagicMock
 
@@ -54,9 +54,9 @@ def nadir_runner_strategy(draw, egg_name: str = "test-egg"):
         cloud_provider=CloudProvider.YANDEX,
         region="ru-central1-a",
         deployed_from_commit="abc123",
-        created_at=datetime.now(),
-        updated_at=datetime.now(),
-        last_heartbeat=datetime.now(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        last_heartbeat=datetime.now(timezone.utc),
         failure_count=0,
         metadata={},
     )
@@ -183,9 +183,9 @@ async def test_auto_promote_on_demand():
             cloud_provider=CloudProvider.YANDEX,
             region="ru-central1-a",
             deployed_from_commit="abc123",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-            last_heartbeat=datetime.now(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            last_heartbeat=datetime.now(timezone.utc),
             failure_count=0,
             metadata={},
         )

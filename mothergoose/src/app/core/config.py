@@ -112,6 +112,94 @@ DEFAULT_DATABASE_SCHEMA = YDBSchema(
 _ydb_schema_instance: YDBSchema | None = None
 
 
+def _create_production_credentials():
+    """
+    Create production YDB credentials based on environment configuration.
+
+    Supports multiple credential types:
+    - metadata: IAM metadata service (recommended for Yandex Cloud VMs)
+    - service_account: Service account key file
+    - access_token: OAuth access token
+    - static: Static username/password (testing only)
+
+    Returns:
+        YDB credentials object
+
+    Raises:
+        ValueError: If credential type is invalid or required env vars are missing
+
+    Environment Variables:
+        MOTHERGOOSE_YDB_CREDENTIAL_TYPE: Type of credentials (default: metadata)
+        MOTHERGOOSE_YDB_SA_KEY_FILE: Service account key file path
+        MOTHERGOOSE_YDB_ACCESS_TOKEN: OAuth access token
+        MOTHERGOOSE_YDB_USERNAME: Static username
+        MOTHERGOOSE_YDB_PASSWORD: Static password
+    """
+    credential_type = os.getenv("MOTHERGOOSE_YDB_CREDENTIAL_TYPE", "metadata")
+
+    if credential_type == "metadata":
+        # Use IAM metadata service (recommended for Yandex Cloud VMs)
+        from ydb.iam.auth import (  # pylint: disable=import-outside-toplevel
+            MetadataUrlCredentials,
+        )
+
+        logger.info("Using IAM metadata credentials for YDB connection")
+        return MetadataUrlCredentials()
+
+    if credential_type == "service_account":
+        # Use service account key file
+        sa_key_file = os.getenv("MOTHERGOOSE_YDB_SA_KEY_FILE")
+        if not sa_key_file:
+            raise ValueError(
+                "MOTHERGOOSE_YDB_SA_KEY_FILE must be set when using "
+                "service_account credential type"
+            )
+
+        from ydb.iam.auth import (  # pylint: disable=import-outside-toplevel
+            ServiceAccountCredentials,
+        )
+
+        logger.info("Using service account credentials from file: %s", sa_key_file)
+        return ServiceAccountCredentials.from_file(sa_key_file)
+
+    if credential_type == "access_token":
+        # Use OAuth access token
+        access_token = os.getenv("MOTHERGOOSE_YDB_ACCESS_TOKEN")
+        if not access_token:
+            raise ValueError(
+                "MOTHERGOOSE_YDB_ACCESS_TOKEN must be set when using "
+                "access_token credential type"
+            )
+
+        from ydb import (  # pylint: disable=import-outside-toplevel
+            AccessTokenCredentials,
+        )
+
+        logger.info("Using access token credentials for YDB connection")
+        return AccessTokenCredentials(access_token)
+
+    if credential_type == "static":
+        # Use static username/password (for testing only)
+        username = os.getenv("MOTHERGOOSE_YDB_USERNAME")
+        password = os.getenv("MOTHERGOOSE_YDB_PASSWORD")
+        if not username or not password:
+            raise ValueError(
+                "MOTHERGOOSE_YDB_USERNAME and MOTHERGOOSE_YDB_PASSWORD "
+                "must be set when using static credential type"
+            )
+
+        from ydb import StaticCredentials  # pylint: disable=import-outside-toplevel
+
+        logger.info("Using static credentials for YDB connection (user: %s)", username)
+        # pylint: disable=no-value-for-parameter
+        return StaticCredentials(user=username, password=password)
+
+    raise ValueError(
+        f"Invalid MOTHERGOOSE_YDB_CREDENTIAL_TYPE: {credential_type}. "
+        "Valid options: metadata, service_account, access_token, static"
+    )
+
+
 def initialize_ydb_schema() -> YDBSchema:
     """
     Initialize YDB schema from environment variables.
@@ -175,13 +263,9 @@ def initialize_ydb_schema() -> YDBSchema:
         credentials = AnonymousCredentials()
         logger.info("Using anonymous credentials for YDB connection")
     else:
-        # Task 17: Implement production credentials (IAM, service account, etc.)
-        logger.warning(
-            "Production credentials not implemented. "
-            "Falling back to anonymous credentials. "
-            "Set MOTHERGOOSE_YDB_USE_ANONYMOUS_CREDENTIALS=false for production."
-        )
-        credentials = AnonymousCredentials()
+        # Task 17: Production credentials implementation
+        credentials = _create_production_credentials()
+        logger.info("Production credentials configured successfully")
 
     # Create YDB configuration
     ydb_config = YDBConfig(

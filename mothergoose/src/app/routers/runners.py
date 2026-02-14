@@ -105,8 +105,10 @@ async def list_runners() -> List[RunnerDetailResponse]:
     """
     logger.info("Listing all runners")
 
-    # Task 9: DB query
-    return []
+    orchestration = _get_orchestration_service()
+    runners = await orchestration.list_all_runners()
+
+    return [_runner_to_response(runner) for runner in runners]
 
 
 @router.get(

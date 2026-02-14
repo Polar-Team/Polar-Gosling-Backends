@@ -12,7 +12,7 @@ Validates: Requirements 6.7
 
 # pylint: disable=redefined-outer-name,unused-argument
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import List
 from unittest.mock import AsyncMock, MagicMock
 
@@ -78,9 +78,9 @@ def runner_list_strategy(draw, egg_name: str, max_runners: int = 30):
             cloud_provider=CloudProvider.YANDEX,
             region="ru-central1-a",
             deployed_from_commit="abc123",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            last_heartbeat=datetime.utcnow(),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            last_heartbeat=datetime.now(UTC),
             failure_count=0,
             metadata={},
         )
@@ -200,9 +200,9 @@ async def test_can_add_apex_runner_respects_max_count(
             cloud_provider=CloudProvider.YANDEX,
             region="ru-central1-a",
             deployed_from_commit="abc123",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            last_heartbeat=datetime.utcnow(),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            last_heartbeat=datetime.now(UTC),
             failure_count=0,
             metadata={},
         )
@@ -252,9 +252,9 @@ async def test_apex_pool_enforcement_with_idle_runners():
             cloud_provider=CloudProvider.YANDEX,
             region="ru-central1-a",
             deployed_from_commit="abc123",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            last_heartbeat=datetime.utcnow(),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            last_heartbeat=datetime.now(UTC),
             failure_count=0,
             metadata={},
         )
@@ -268,9 +268,9 @@ async def test_apex_pool_enforcement_with_idle_runners():
             cloud_provider=CloudProvider.YANDEX,
             region="ru-central1-a",
             deployed_from_commit="abc123",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            last_heartbeat=datetime.utcnow(),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            last_heartbeat=datetime.now(UTC),
             failure_count=0,
             metadata={},
         )

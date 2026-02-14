@@ -26,22 +26,35 @@ def _get_orchestration_service() -> RunnerOrchestrationService:
     Get runner orchestration service instance.
 
     Creates a new service instance with required dependencies.
-    In production, this would use dependency injection.
+    Uses environment variables for database configuration.
 
     Returns:
         RunnerOrchestrationService: Configured orchestration service
 
     Note:
-        In production, this should be replaced with proper dependency
-        injection using environment variables for database configuration.
-        See conftest.py for test fixtures: test_ydb_config,
-        test_ydb_schema, test_orchestration_service
+        Database configuration is read from environment variables:
+        - MOTHERGOOSE_YDB_ENDPOINT
+        - MOTHERGOOSE_YDB_DATABASE
+        - MOTHERGOOSE_YDB_POOL_SIZE
+        - MOTHERGOOSE_YDB_USE_ANONYMOUS_CREDENTIALS
     """
-    # Task 16: Implement proper DI with env config
-    raise NotImplementedError(
-        "Production database configuration not implemented. "
-        "Use environment variables to configure YDB connection. "
-        "For testing, use the fixture from conftest.py"
+    from app.core.config import (  # pylint: disable=import-outside-toplevel
+        get_ydb_schema,
+    )
+    from app.services.egg_service import (  # pylint: disable=import-outside-toplevel
+        EggService,
+    )
+    from app.services.runner_service import (  # pylint: disable=import-outside-toplevel
+        RunnerService,
+    )
+
+    schema = get_ydb_schema()
+    runner_service = RunnerService(schema=schema)
+    egg_service = EggService(schema=schema)
+
+    return RunnerOrchestrationService(
+        runner_service=runner_service,
+        egg_service=egg_service,
     )
 
 
@@ -50,20 +63,80 @@ def _get_serverless_deployment_service() -> ServerlessRunnerDeploymentService:
     Get serverless runner deployment service instance.
 
     Creates a new service instance with required dependencies.
-    In production, this would use dependency injection.
+    Uses environment variables for database and OpenTofu configuration.
 
     Returns:
         ServerlessRunnerDeploymentService: Configured deployment service
 
     Note:
-        In production, this should be replaced with proper dependency
-        injection using environment variables for database configuration.
+        Configuration is read from environment variables:
+        - Database: MOTHERGOOSE_YDB_* variables
+        - OpenTofu: MOTHERGOOSE_TOFU_* variables
     """
-    # Task 17: Implement proper DI with env config
-    raise NotImplementedError(
-        "Production database configuration not implemented. "
-        "Use environment variables to configure YDB connection. "
-        "For testing, use the fixture from conftest.py"
+    import os  # pylint: disable=import-outside-toplevel
+
+    from app.core.config import (  # pylint: disable=import-outside-toplevel
+        get_ydb_schema,
+    )
+    from app.schema.tofu_schemas import (  # pylint: disable=import-outside-toplevel
+        TofuBackendS3Options,
+        TofuProvidersVer,
+    )
+    from app.services.egg_service import (  # pylint: disable=import-outside-toplevel
+        EggService,
+    )
+    from app.services.opentofu_binary import (  # pylint: disable=import-outside-toplevel
+        OpenTofuUpdateGithub,
+    )
+    from app.services.opentofu_configuration import (  # pylint: disable=import-outside-toplevel
+        OpenTofuConfiguration,
+        TofuSetting,
+    )
+    from app.services.runner_service import (  # pylint: disable=import-outside-toplevel
+        RunnerService,
+    )
+
+    schema = get_ydb_schema()
+
+    # Configure OpenTofu settings
+    tofu_settings = TofuSetting(
+        providers=[
+            TofuProvidersVer(
+                name="yandex",
+                version=os.getenv("MOTHERGOOSE_TOFU_YANDEX_VERSION", ">= 0.100.0"),
+                source="yandex-cloud/yandex",
+            ),
+            TofuProvidersVer(
+                name="aws",
+                version=os.getenv("MOTHERGOOSE_TOFU_AWS_VERSION", ">= 5.0.0"),
+                source="hashicorp/aws",
+            ),
+        ],
+        backend_s3_options=TofuBackendS3Options(
+            bucket=os.getenv("MOTHERGOOSE_TOFU_STATE_BUCKET", "tofu-states"),
+            key=os.getenv("MOTHERGOOSE_TOFU_STATE_KEY", "runners/state.tfstate"),
+            region=os.getenv("MOTHERGOOSE_TOFU_STATE_REGION", "us-east-1"),
+            endpoint=os.getenv("MOTHERGOOSE_TOFU_STATE_ENDPOINT"),
+            profile=os.getenv("MOTHERGOOSE_TOFU_STATE_PROFILE"),
+            role_arn=os.getenv("MOTHERGOOSE_TOFU_STATE_ROLE_ARN"),
+            dynamodb_table=os.getenv("MOTHERGOOSE_TOFU_STATE_DYNAMODB_TABLE"),
+        ),
+        artifact_cache_bucket=os.getenv("MOTHERGOOSE_TOFU_ARTIFACT_CACHE_BUCKET"),
+        health_checks=None,
+    )
+
+    opentofu_config = OpenTofuConfiguration(
+        updater=OpenTofuUpdateGithub(
+            schema=schema,
+            install_dir=os.getenv("MOTHERGOOSE_TOFU_INSTALL_DIR"),
+        ),
+        tofu_settings=tofu_settings,
+    )
+
+    return ServerlessRunnerDeploymentService(
+        runner_service=RunnerService(schema=schema),
+        egg_service=EggService(schema=schema),
+        opentofu_config=opentofu_config,
     )
 
 

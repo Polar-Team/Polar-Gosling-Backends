@@ -8,8 +8,10 @@ from typing import Any, TypeVar, Union
 import ydb.aio as YDBAsync
 
 from app.model.audit_models import AuditLogsTableYDB
+from app.model.gosling_models import GoslingVersionTableYDB
 from app.model.opentofu_models import OpenTofuVersionTableYDB
 from app.model.runners_models import (
+    BinaryVersionsTableYDB,
     DeploymentPlansTableYDB,
     EggConfigsTableYDB,
     RunnersTableYDB,
@@ -23,6 +25,8 @@ YDBTables = Union[
     AuditLogsTableYDB,
     SyncHistoryTableYDB,
     DeploymentPlansTableYDB,
+    BinaryVersionsTableYDB,
+    GoslingVersionTableYDB,
 ]
 
 

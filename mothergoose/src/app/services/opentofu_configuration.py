@@ -20,20 +20,53 @@ from .s3_artifact_cache import S3ArtifactCache
 
 
 @dataclass
-class TofuSetting:
+class TofuModuleSource:
+    """Source configuration for an OpenTofu module."""
+
+    url: str
+    version: str
+    type: str = "git"  # "git" or "registry"
+
+
+@dataclass
+class TofuSetting:  # pylint: disable=too-many-instance-attributes
     """
     Tofu settings dataclass for OpenTofu configuration.
     Attributes:
-        providers (List[OpenTofuProvidersConstraints]): List of provider constraints. # noqa
-        backend_s3_options (OpenTofuBackendS3Options): S3 backend options.
+        providers (List[TofuProvidersVer]): List of provider constraints.
+        backend_s3_options (TofuBackendS3Options): S3 backend options.
         artifact_cache_bucket (Optional[str]): S3 bucket for artifact caching.
         health_checks (Optional[List[Dict]]): Health check configurations.
+        worker_module_source (Optional[TofuModuleSource]): Worker module source.
+        rift_module_source (Optional[TofuModuleSource]): Rift module source.
+        worker_instances (Optional[Dict]): Map of worker instance configurations.
+        rift_instances (Optional[Dict]): Map of Rift instance configurations.
+        vm_key_algorithm (str): SSH key algorithm for VM runners.
+        vm_key_rsa_bits (int): RSA key bits for VM runners.
+        cloud_init_template (Optional[str]): Path to cloud-init template.
+        worker_module_extra_variables (Optional[List]): Extra variables for worker module.
+        tofu_rift_required (bool): Whether Rift module is required.
+        provider_settings (Optional[Dict[str, Dict]]): Per-provider settings dict.
+        mirror_urls (Optional[List[Dict]]): Provider mirror URLs for .tofurc.
+        direct_exclude (bool): Whether to exclude direct provider installs.
     """
 
     providers: List[TofuProvidersVer]
     backend_s3_options: TofuBackendS3Options
     artifact_cache_bucket: Optional[str] = None
     health_checks: Optional[List[Dict]] = None
+    worker_module_source: Optional[TofuModuleSource] = None
+    rift_module_source: Optional[TofuModuleSource] = None
+    worker_instances: Optional[Dict] = None
+    rift_instances: Optional[Dict] = None
+    vm_key_algorithm: str = "RSA"
+    vm_key_rsa_bits: int = 4096
+    cloud_init_template: Optional[str] = None
+    worker_module_extra_variables: Optional[List] = None
+    tofu_rift_required: bool = False
+    provider_settings: Optional[Dict[str, Dict]] = None
+    mirror_urls: Optional[List[Dict]] = None
+    direct_exclude: bool = False
 
 
 @logged
@@ -41,6 +74,7 @@ class OpenTofuConfiguration:
     """Class for OpenTofu configuration management."""
 
     # pylint: disable=no-member,too-many-instance-attributes
+    # pylint: disable=too-many-locals,too-many-statements
 
     __updater_rollback: bool = False
     __updater_auth_url: Optional[URLAuthSchema] = None
@@ -223,14 +257,12 @@ class OpenTofuConfiguration:
         """Create OpenTofu configuration from templates."""
 
         self.info("Creating OpenTofu configuration from templates...")
-        template_loader = FileSystemLoader(
-            searchpath="./templates",
-        )
+        template_dir = os.path.join(os.path.dirname(__file__), "..", "templates")
+        template_loader = FileSystemLoader(searchpath=template_dir)
         template_env = Environment(loader=template_loader)
 
         # Render versions.tf
-        template = template_env.get_template("tofu_version.j2")
-
+        template = template_env.get_template("tofu_versions_tf.j2")
         version_tf_output = template.render(
             tofu_version=self.updater.c_version[1],
             tofu_s3_bucket=self.tofu_settings.backend_s3_options.bucket,
@@ -239,22 +271,85 @@ class OpenTofuConfiguration:
             tofu_s3_profile=self.tofu_settings.backend_s3_options.profile,
             tofu_s3_endpoint=self.tofu_settings.backend_s3_options.endpoint,
             tofu_s3_role_arn=self.tofu_settings.backend_s3_options.role_arn,
-            tofu_s3_dynamodb_table=self.tofu_settings.backend_s3_options.dynamodb_table,  # noqa
+            tofu_s3_dynamodb_table=self.tofu_settings.backend_s3_options.dynamodb_table,
             tofu_providers=self.tofu_settings.providers,
         )
-
         version_tf_path = f"{self.__tofu_workspace}/versions.tf"
-
         with open(version_tf_path, "w", encoding="utf-8") as version_tf_file:
             version_tf_file.write(version_tf_output)
-
         self.info(f"OpenTofu configuration created at {version_tf_path}")
+
+        # Render providers.tf
+        providers_template = template_env.get_template("tofu_providers_tf.j2")
+        provider_settings = self.tofu_settings.provider_settings or {}
+        providers_with_settings = []
+        for provider in self.tofu_settings.providers:
+            providers_with_settings.append(
+                {
+                    "name": provider.name,
+                    "settings": provider_settings.get(provider.name, {}),
+                }
+            )
+        providers_tf_output = providers_template.render(
+            tofu_providers=providers_with_settings,
+        )
+        providers_tf_path = f"{self.__tofu_workspace}/providers.tf"
+        with open(providers_tf_path, "w", encoding="utf-8") as providers_tf_file:
+            providers_tf_file.write(providers_tf_output)
+        self.info(f"providers.tf created at {providers_tf_path}")
+
+        # Render resources.tf (only when worker module source is configured)
+        if self.tofu_settings.worker_module_source:
+            resources_template = template_env.get_template("tofu_resources_tf.j2")
+            resources_tf_output = resources_template.render(
+                touf_vm_key_algorithm=self.tofu_settings.vm_key_algorithm,
+                tofu_vm_key_rsa_bits=self.tofu_settings.vm_key_rsa_bits,
+                tofu_worker_module_source=self.tofu_settings.worker_module_source,
+                tofu_rift_module_source=self.tofu_settings.rift_module_source,
+                tofu_rift_required=self.tofu_settings.tofu_rift_required,
+                tofu_worker_module_extra_variables=(
+                    self.tofu_settings.worker_module_extra_variables or []
+                ),
+                tofu_worker_module={"chassis": "vm"},
+            )
+            resources_tf_path = f"{self.__tofu_workspace}/resources.tf"
+            with open(resources_tf_path, "w", encoding="utf-8") as resources_tf_file:
+                resources_tf_file.write(resources_tf_output)
+            self.info(f"resources.tf created at {resources_tf_path}")
+
+        # Render variables.tf
+        variables_template = template_env.get_template("tofu_variables_tf.j2")
+        variables_tf_output = variables_template.render(
+            tofu_rift_required=self.tofu_settings.tofu_rift_required,
+        )
+        variables_tf_path = f"{self.__tofu_workspace}/variables.tf"
+        with open(variables_tf_path, "w", encoding="utf-8") as variables_tf_file:
+            variables_tf_file.write(variables_tf_output)
+        self.info(f"variables.tf created at {variables_tf_path}")
+
+        # Render data.tf
+        data_template = template_env.get_template("tofu_data_tf.j2")
+        data_tf_output = data_template.render()
+        data_tf_path = f"{self.__tofu_workspace}/data.tf"
+        with open(data_tf_path, "w", encoding="utf-8") as data_tf_file:
+            data_tf_file.write(data_tf_output)
+        self.info(f"data.tf created at {data_tf_path}")
+
+        # Render .tofurc
+        rc_template = template_env.get_template("tofu_rc.j2")
+        rc_output = rc_template.render(
+            morrors=self.tofu_settings.mirror_urls or [],
+            direct_exclude=self.tofu_settings.direct_exclude,
+        )
+        rc_path = f"{self.__tofu_workspace}/.tofurc"
+        with open(rc_path, "w", encoding="utf-8") as rc_file:
+            rc_file.write(rc_output)
+        self.info(f".tofurc created at {rc_path}")
 
         # Render health checks if configured
         if self.tofu_settings.health_checks:
             self.info("Creating health checks configuration...")
             checks_template = template_env.get_template("tofu_checks_tf.j2")
-
             checks_tf_output = checks_template.render(
                 health_checks=self.tofu_settings.health_checks,
                 health_check_url=(
@@ -263,12 +358,9 @@ class OpenTofuConfiguration:
                     else ""
                 ),
             )
-
             checks_tf_path = f"{self.__tofu_workspace}/checks.tf"
-
             with open(checks_tf_path, "w", encoding="utf-8") as checks_tf_file:
                 checks_tf_file.write(checks_tf_output)
-
             self.info(f"Health checks configuration created at {checks_tf_path}")
 
     async def setup_tofu_configuration(self) -> None:
@@ -319,7 +411,8 @@ class OpenTofuConfiguration:
         """
         self.info(f"Generating cloud-init script for runner {runner_id}")
 
-        template_loader = FileSystemLoader(searchpath="./templates")
+        template_dir = os.path.join(os.path.dirname(__file__), "..", "templates")
+        template_loader = FileSystemLoader(searchpath=template_dir)
         template_env = Environment(loader=template_loader)
 
         template = template_env.get_template("cloud-init-runner.tpl.j2")

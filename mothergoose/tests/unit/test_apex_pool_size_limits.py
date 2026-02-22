@@ -17,7 +17,7 @@ from typing import List
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from app.model.runners_models import (
@@ -100,7 +100,7 @@ def runner_list_strategy(draw, egg_name: str, max_runners: int = 30):
     nadir_config=pool_config_strategy(),
     initial_runners=runner_list_strategy(egg_name="test-egg"),
 )
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 async def test_apex_pool_never_exceeds_max_count(
     apex_config: PoolConfig,
     nadir_config: PoolConfig,

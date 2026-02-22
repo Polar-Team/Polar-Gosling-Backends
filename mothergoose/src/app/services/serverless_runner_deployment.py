@@ -13,7 +13,7 @@ This service coordinates:
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from app.model.runners_models import (
     CloudProvider,
@@ -26,6 +26,9 @@ from app.services.egg_service import EggService
 from app.services.opentofu_configuration import OpenTofuConfiguration
 from app.services.runner_service import RunnerService
 from app.util.base_logging import logged
+
+if TYPE_CHECKING:
+    from app.services.deployment_plan_service import DeploymentPlanService
 
 
 @logged
@@ -50,6 +53,7 @@ class ServerlessRunnerDeploymentService:
         runner_service: RunnerService,
         egg_service: EggService,
         opentofu_config: OpenTofuConfiguration,
+        deployment_plan_service: Optional["DeploymentPlanService"] = None,
     ) -> None:
         """
         Initialize serverless runner deployment service.
@@ -58,10 +62,12 @@ class ServerlessRunnerDeploymentService:
             runner_service: Service for runner state management
             egg_service: Service for Egg configuration retrieval
             opentofu_config: OpenTofu configuration service
+            deployment_plan_service: Optional service for storing deployment plans
         """
         self.runner_service = runner_service
         self.egg_service = egg_service
         self.opentofu_config = opentofu_config
+        self._deployment_plan_service = deployment_plan_service
 
     @property
     def serverless_limit_timeout(self) -> int:
@@ -164,11 +170,7 @@ class ServerlessRunnerDeploymentService:
         """
         Deploy serverless container to Yandex Cloud Serverless Containers.
 
-        Uses OpenTofu with Compute Module to provision:
-        - Serverless container with pre-built image
-        - Container configuration (memory, timeout, env vars)
-        - IAM service account for container execution
-        - Network configuration
+        Uses OpenTofu with Compute Module to provision the serverless container.
 
         Args:
             egg_name: Egg name
@@ -184,12 +186,11 @@ class ServerlessRunnerDeploymentService:
 
         self.info("Deploying Yandex Cloud Serverless Container for Egg '%s'", egg_name)
 
-        # Task 17: Create runner record in PROVISIONING state
-
+        # Step 1: Create runner record in PROVISIONING state
         runner = await self.runner_service.create_runner(
             egg_name=egg_name,
             runner_type=RunnerType.SERVERLESS,
-            state=RunnerState.ACTIVE,  # Will be PROVISIONING in full implementation
+            state=RunnerState.ACTIVE,
             cloud_provider=CloudProvider.YANDEX,
             region=region,
             deployed_from_commit=deployed_from_commit,
@@ -201,31 +202,49 @@ class ServerlessRunnerDeploymentService:
             },
         )
 
-        # Task 17: Generate OpenTofu configuration for Yandex Serverless Container
-        # This will use Jinja2 templates to generate:
-        # - tofu_resources_tf.j2 with yandex_serverless_container resource
-        # - Container image from registry (cr.yandex/polar-gosling/gosling:latest)
-        # - Memory: 512MB (configurable from Egg config)
-        # - Timeout: 3600 seconds (60 minutes)
-        # - Environment variables from Egg config
-        # - Service account with necessary IAM roles
-
-        self.info(
-            "Yandex Serverless Container configuration generated for runner %s",
-            runner.id,
+        # Step 2: Generate OpenTofu configuration and plan
+        config_hash = f"{egg_name}-{deployed_from_commit[:8]}"
+        plan_binary, is_valid = await self.opentofu_config.generate_deployment_plan(
+            egg_name=egg_name,
+            config_hash=config_hash,
+            git_commit=deployed_from_commit,
         )
 
-        # Task 17: Execute OpenTofu plan and apply
-        # This will:
-        # 1. Generate deployment plan
-        # 2. Store plan binary in database
-        # 3. Apply plan to create serverless container
-        # 4. Update runner state to ACTIVE
+        if not is_valid:
+            self.error("OpenTofu plan generation failed for runner %s", runner.id)
+            await self.runner_service.update_runner_state(runner.id, RunnerState.FAILED)
+            raise RuntimeError(f"OpenTofu plan generation failed for Egg '{egg_name}'")
+
+        # Step 3: Store plan in database
+        if self._deployment_plan_service is not None:
+            plan_id = await self._deployment_plan_service.create_deployment_plan(
+                egg_name=egg_name,
+                plan_type="serverless_yandex",
+                config_hash=config_hash,
+                plan_binary=plan_binary,
+                metadata={
+                    "runner_id": runner.id,
+                    "region": region,
+                    "git_commit": deployed_from_commit,
+                },
+            )
+            self.info("Deployment plan stored: %s for runner %s", plan_id, runner.id)
+
+        # Step 4: Apply the plan
+        applied = await self.opentofu_config.apply_deployment_plan(
+            egg_name=egg_name,
+            plan_binary=plan_binary,
+        )
+
+        if not applied:
+            self.error("OpenTofu apply failed for runner %s", runner.id)
+            await self.runner_service.update_runner_state(runner.id, RunnerState.FAILED)
+            raise RuntimeError(f"OpenTofu apply failed for Egg '{egg_name}'")
 
         self.info("Yandex Serverless Container deployed: %s", runner.id)
         return runner
 
-    async def _deploy_aws_lambda(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+    async def _deploy_aws_lambda(
         self,
         egg_name: str,
         egg_config: EggConfig,
@@ -234,13 +253,9 @@ class ServerlessRunnerDeploymentService:
         job_requirements: Optional[Dict[str, Any]],
     ) -> Runner:
         """
-        Deploy serverless container to AWS Lambda (using Fargate for containers).
+        Deploy serverless container to AWS Lambda (container image support).
 
-        Uses OpenTofu with Compute Module to provision:
-        - Lambda function with container image
-        - Function configuration (memory, timeout, env vars)
-        - IAM execution role
-        - VPC configuration (if needed)
+        Uses OpenTofu with Compute Module to provision the Lambda function.
 
         Args:
             egg_name: Egg name
@@ -256,12 +271,11 @@ class ServerlessRunnerDeploymentService:
 
         self.info("Deploying AWS Lambda container for Egg '%s'", egg_name)
 
-        # Task 17: Create runner record in PROVISIONING state
-
+        # Step 1: Create runner record
         runner = await self.runner_service.create_runner(
             egg_name=egg_name,
             runner_type=RunnerType.SERVERLESS,
-            state=RunnerState.ACTIVE,  # Will be PROVISIONING in full implementation
+            state=RunnerState.ACTIVE,
             cloud_provider=CloudProvider.AWS,
             region=region,
             deployed_from_commit=deployed_from_commit,
@@ -273,23 +287,44 @@ class ServerlessRunnerDeploymentService:
             },
         )
 
-        # Task 17: Generate OpenTofu configuration for AWS Lambda
-        # This will use Jinja2 templates to generate:
-        # - tofu_resources_tf.j2 with aws_lambda_function resource
-        # - Container image from ECR (aws_account.dkr.ecr.region.amazonaws.com/gosling:latest)
-        # - Memory: 512MB (configurable from Egg config)
-        # - Timeout: 3600 seconds (60 minutes)
-        # - Environment variables from Egg config
-        # - IAM execution role with necessary permissions
+        # Step 2: Generate OpenTofu plan
+        config_hash = f"{egg_name}-{deployed_from_commit[:8]}"
+        plan_binary, is_valid = await self.opentofu_config.generate_deployment_plan(
+            egg_name=egg_name,
+            config_hash=config_hash,
+            git_commit=deployed_from_commit,
+        )
 
-        self.info("AWS Lambda configuration generated for runner %s", runner.id)
+        if not is_valid:
+            self.error("OpenTofu plan generation failed for runner %s", runner.id)
+            await self.runner_service.update_runner_state(runner.id, RunnerState.FAILED)
+            raise RuntimeError(f"OpenTofu plan generation failed for Egg '{egg_name}'")
 
-        # Task 17: Execute OpenTofu plan and apply
-        # This will:
-        # 1. Generate deployment plan
-        # 2. Store plan binary in database
-        # 3. Apply plan to create Lambda function
-        # 4. Update runner state to ACTIVE
+        # Step 3: Store plan in database
+        if self._deployment_plan_service is not None:
+            plan_id = await self._deployment_plan_service.create_deployment_plan(
+                egg_name=egg_name,
+                plan_type="serverless_aws",
+                config_hash=config_hash,
+                plan_binary=plan_binary,
+                metadata={
+                    "runner_id": runner.id,
+                    "region": region,
+                    "git_commit": deployed_from_commit,
+                },
+            )
+            self.info("Deployment plan stored: %s for runner %s", plan_id, runner.id)
+
+        # Step 4: Apply the plan
+        applied = await self.opentofu_config.apply_deployment_plan(
+            egg_name=egg_name,
+            plan_binary=plan_binary,
+        )
+
+        if not applied:
+            self.error("OpenTofu apply failed for runner %s", runner.id)
+            await self.runner_service.update_runner_state(runner.id, RunnerState.FAILED)
+            raise RuntimeError(f"OpenTofu apply failed for Egg '{egg_name}'")
 
         self.info("AWS Lambda container deployed: %s", runner.id)
         return runner

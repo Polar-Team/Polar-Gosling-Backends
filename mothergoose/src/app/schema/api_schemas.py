@@ -382,3 +382,38 @@ class HealthResponse(PydanticBaseModelAPI):
     timestamp: str
     version: str
     service: str
+
+
+# Binary Version Management Schemas
+
+
+class BinaryVersionResponse(PydanticBaseModelAPI):
+    """Response model for binary version information."""
+
+    id: str = Field(..., description="Unique version identifier")
+    binary_name: str = Field(..., description="Binary name (gosling or opentofu)")
+    version: str = Field(..., description="Semantic version (e.g., 1.2.3)")
+    s3_path: str = Field(..., description="S3 path to binary")
+    sha256_checksum: str = Field(..., description="SHA256 checksum of binary")
+    is_active: bool = Field(..., description="Whether this version is active")
+    uploaded_at: datetime = Field(..., description="Upload timestamp")
+    activated_at: Optional[datetime] = Field(None, description="Activation timestamp")
+
+
+class BinaryVersionListResponse(PydanticBaseModelAPI):
+    """Response model for listing binary versions."""
+
+    versions: list[BinaryVersionResponse] = Field(
+        default_factory=list, description="List of binary versions"
+    )
+    total: int = Field(..., description="Total number of versions")
+
+
+class BinaryVersionUploadResponse(PydanticBaseModelAPI):
+    """Response model for binary version upload."""
+
+    binary_name: str = Field(..., description="Binary name")
+    version: str = Field(..., description="Version uploaded")
+    s3_path: str = Field(..., description="S3 path where binary was stored")
+    checksum: str = Field(..., description="SHA256 checksum")
+    message: str = Field(..., description="Success message")

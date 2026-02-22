@@ -66,7 +66,8 @@ def create_egg_config(
 
     Args:
         name: Egg name
-        runner_type: Explicit runner type ("vm" or "serverless"), None for no explicit type
+        runner_type: Explicit runner type
+        ("vm" or "serverless"), None for no explicit type
         gitlab_server: GitLab server FQDN
         project_id: GitLab project ID
         commit: Git commit hash
@@ -104,7 +105,9 @@ def create_egg_config(
 
 @pytest.fixture
 def runner_orchestration_service():
-    """Fixture providing a RunnerOrchestrationService instance for each test."""
+    """
+    Fixture providing a RunnerOrchestrationService instance for each test.
+    """
     # For testing determine_runner_type, we don't need real database access
     # The method only uses the services for type hints, not actual operations
     # We can pass None since determine_runner_type doesn't call database methods
@@ -112,10 +115,14 @@ def runner_orchestration_service():
 
     runner_service = Mock()
     egg_service = Mock()
+    schema = Mock()
+    s3fs_manager = Mock()
 
     return RunnerOrchestrationService(
         runner_service=runner_service,
         egg_service=egg_service,
+        schema=schema,
+        s3fs_manager=s3fs_manager,
     )
 
 
@@ -270,7 +277,8 @@ def test_runner_type_determination_explicit_serverless_config(
     # Verify serverless is selected (explicit config overrides duration)
     assert runner_type == RunnerType.SERVERLESS, (
         f"Egg config with type='serverless' should use serverless runners "
-        f"regardless of duration ({estimated_duration} minutes), got {runner_type.value}"
+        f"regardless of duration ({estimated_duration} minutes), got "
+        f"{runner_type.value}"
     )
 
 

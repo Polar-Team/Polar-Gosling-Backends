@@ -10,7 +10,7 @@ using the specified secret_id and key.
 """
 
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import HealthCheck, given, settings, strategies as st
 from unittest.mock import Mock, patch
 from typing import Dict, Any, Generator
 
@@ -117,6 +117,7 @@ class GenerateExamples:
             "version_id": version_id,
         }
 
+    @settings(suppress_health_check=[HealthCheck.too_slow])
     @given(
         secret_id=secret_ids,
         target_key=keys,

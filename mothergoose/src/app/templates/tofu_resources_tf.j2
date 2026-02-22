@@ -8,40 +8,40 @@ resource "local_file" "private_key" {
   filename = "${path.module}/SSH_KEY"
 }
 
-module "worker" {
+resource "local_file" "public_key" {
+  content  = tls_private_key.key.public_key_openssh
+  filename = "${path.module}/SSH_KEY.pub"
+}
 
+module "worker" {
 {% if tofu_worker_module_source.type == "git" %}
   source = "git::{{ tofu_worker_module_source.url }}.git?ref={{ tofu_worker_module_source.version }}"
 {% else %}
-  source = "{{ tofu_worker_module_source.url }}"
+  source  = "{{ tofu_worker_module_source.url }}"
   version = "{{ tofu_worker_module_source.version }}"
 {% endif %}
   for_each = var.tofu_worker_instances
-  prefix = each.key
-{% for key, value in  tofu_worker_module_extra_variables %}
+  prefix   = each.key
+{% for key, value in tofu_worker_module_extra_variables %}
   {{ key }} = each.value.{{ value }}
 {% endfor %}
-
 {% if tofu_worker_module.chassis == "vm" %}
-  cloud-init = local.cloud-init-docker
+  cloud_init_data = local.cloud_init_data
 {% endif %}
+}
 
 {% if tofu_rift_required | default(false) %}
 module "rift" {
 {% if tofu_rift_module_source.type == "git" %}
   source = "git::{{ tofu_rift_module_source.url }}.git?ref={{ tofu_rift_module_source.version }}"
 {% else %}
-  source = "{{ tofu_module_source.url }}"
-  version = "{{ tofu_module_source.version }}"
+  source  = "{{ tofu_rift_module_source.url }}"
+  version = "{{ tofu_rift_module_source.version }}"
 {% endif %}
   for_each = var.tofu_rift_instances
-  prefix = each.key
-{% for key, value in  tofu_worker_module_extra_variables %}
+  prefix   = each.key
+{% for key, value in tofu_worker_module_extra_variables %}
   {{ key }} = each.value.{{ value }}
 {% endfor %}
-
-{% if tofu_gitlab_worker_type  == "vm" %}
-  cloud-init = local.deb-cloud-init-gitlab-docker
-{% endif %}
-
+}
 {% endif %}

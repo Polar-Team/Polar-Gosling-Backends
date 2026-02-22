@@ -263,6 +263,57 @@ class DeploymentPlanService:
             self.error("DynamoDB is not supported yet.")
             raise NotImplementedError("DynamoDB is not supported yet.")
 
+    async def update_plan_status(
+        self,
+        plan_id: str,
+        status: DeploymentPlanStatus,
+        applied_at: Optional[datetime] = None,
+    ) -> None:
+        """
+        Update the status of an existing deployment plan.
+
+        Args:
+            plan_id: Deployment plan ID
+            status: New status to set
+            applied_at: Optional timestamp when plan was applied
+        """
+        await self.get_plan_by_id(plan_id)
+        existing = self.__plan_query_result
+        if existing is None:
+            raise ValueError(f"Deployment plan not found: {plan_id}")
+
+        deployment_status = DeploymentStatus(status.value)
+
+        updated_plan = DeploymentPlan(
+            id=existing.id,
+            egg_name=existing.egg_name,
+            plan_type=existing.plan_type,
+            config_hash=existing.config_hash,
+            status=deployment_status,
+            plan_binary=existing.plan_binary,
+            rollback_plan_id=existing.rollback_plan_id,
+            created_at=existing.created_at,
+            applied_at=applied_at or existing.applied_at,
+            metadata=existing.metadata,
+        )
+
+        if isinstance(self.schema, YDBSchema):
+            for table in self.schema.model.tables:
+                if table.table_name == "deployment_plans":
+                    plan_dict = updated_plan.to_storage_dict()
+                    table.values_for_operate = tuple(
+                        plan_dict[col] for col in table.columns
+                    )
+
+            operation = AsyncYDBOperations(
+                self.schema,
+                AsyncYDBFunctionsCollections.upsert_query,
+            )
+            await operation.process(table_name="deployment_plans")
+            self.info("Updated plan %s status to %s", plan_id, status.value)
+        else:
+            raise NotImplementedError("DynamoDB is not supported yet.")
+
 
 # Global deployment plan service instance
 # pylint: disable=invalid-name

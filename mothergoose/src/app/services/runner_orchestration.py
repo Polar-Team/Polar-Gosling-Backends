@@ -16,9 +16,13 @@ from app.model.runners_models import (
     RunnerState,
     RunnerType,
 )
+from app.schema.dynamodb_schemas import DynamoDBSchema
+from app.schema.ydb_schemas import YDBSchema
 from app.services.egg_service import EggService
 from app.services.runner_service import RunnerService
+from app.services.s3fs_mount_manager import S3FSMountManager
 from app.services.serverless_runner_deployment import ServerlessRunnerDeploymentService
+from app.services.version_resolver import VersionResolver  # Task 12.7
 from app.services.vm_pool_manager import VMPoolManager
 from app.util.base_logging import logger
 from app.util.runner_helpers import build_deployment_kwargs
@@ -35,10 +39,12 @@ class RunnerOrchestrationService:
     - Integration with OpenTofu for infrastructure deployment
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         runner_service: RunnerService,
         egg_service: EggService,
+        schema: YDBSchema | DynamoDBSchema,  # Task 12.7
+        s3fs_manager: S3FSMountManager,  # Task 12.7
         serverless_deployment_service: Optional[
             ServerlessRunnerDeploymentService
         ] = None,
@@ -50,6 +56,8 @@ class RunnerOrchestrationService:
         Args:
             runner_service: Service for runner state management
             egg_service: Service for Egg configuration retrieval
+            schema: Database schema for version resolver (Task 12.7)
+            s3fs_manager: S3FS mount manager for filesystem access to S3 (Task 12.7)
             serverless_deployment_service: Optional service for serverless deployment
             vm_pool_manager: Optional VM pool manager for Apex/Nadir management
         """
@@ -57,6 +65,7 @@ class RunnerOrchestrationService:
         self.egg_service = egg_service
         self.serverless_deployment_service = serverless_deployment_service
         self.vm_pool_manager = vm_pool_manager
+        self.version_resolver = VersionResolver(schema, s3fs_manager)  # Task 12.7
 
     def determine_runner_type(
         self,
@@ -162,6 +171,41 @@ class RunnerOrchestrationService:
             err_msg = f"Egg configuration not found: {egg_name}"
             logger.error(err_msg)
             raise ValueError(err_msg)
+
+        # Task 12.7: Resolve binary versions for this Egg
+        # This validates that required versions exist before deployment
+        egg_config_obj = self.egg_service.egg_query_result
+        gosling_version_req = egg_config_obj.gosling_version if egg_config_obj else None
+        opentofu_version_req = (
+            egg_config_obj.opentofu_version if egg_config_obj else None
+        )
+
+        logger.info(
+            "Resolving binary versions for Egg '%s': gosling=%s, opentofu=%s",
+            egg_name,
+            gosling_version_req or "active",
+            opentofu_version_req or "active",
+        )
+
+        # Resolve Gosling CLI version (validates availability)
+        gosling_version = await self.version_resolver.resolve_gosling_version(
+            gosling_version_req
+        )
+        logger.info(
+            "Using Gosling CLI version %s for Egg '%s'",
+            gosling_version.version,
+            egg_name,
+        )
+
+        # Resolve OpenTofu version (validates availability)
+        opentofu_version = await self.version_resolver.resolve_opentofu_version(
+            opentofu_version_req
+        )
+        logger.info(
+            "Using OpenTofu version %s for Egg '%s'",
+            opentofu_version.version,
+            egg_name,
+        )
 
         # Task 17: Route to serverless deployment if runner type is serverless
         if runner_type == RunnerType.SERVERLESS:  # type: ignore[unreachable]

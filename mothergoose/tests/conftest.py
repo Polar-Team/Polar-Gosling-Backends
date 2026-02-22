@@ -12,9 +12,11 @@ Provides reusable fixtures for testing the FastAPI application including:
 # Pytest fixtures intentionally redefine names from outer scope
 
 import os
+import shutil
 import sys
 import datetime
 import time
+import uuid
 from typing import Dict, Any, Optional, List, Generator
 from unittest.mock import Mock, patch
 
@@ -168,7 +170,6 @@ def test_secret(
     Creates a secret for testing and cleans it up after the test.
     Uses function scope to ensure each test gets a fresh secret.
     """
-    import uuid
 
     # Use unique secret name per test to avoid conflicts
     secret_name = f"test/webhook/secret-{uuid.uuid4().hex[:8]}"
@@ -196,6 +197,38 @@ def test_secret(
         pass  # Ignore cleanup errors
 
 
+@pytest.fixture(scope="session", name="s3_bucket")
+def s3_bucket(aws_credentials: Dict[str, str]) -> Generator[Dict[str, Any], None, None]:
+    """
+    Fixture providing a test S3 bucket in LocalStack.
+
+    Creates a bucket for testing and cleans it up after the test.
+    Uses function scope to ensure each test gets a fresh bucket.
+    """
+
+    s3_client = boto3.client("s3", **aws_credentials)
+    bucket_name = f"test-bucket-{uuid.uuid4().hex[:8]}"
+    s3_client.create_bucket(Bucket=bucket_name)
+
+    yield {
+        "bucket_name": bucket_name,
+        "client": s3_client,
+    }
+
+    # Cleanup: Delete the bucket after test
+    try:
+        s3_client.delete_bucket(Bucket=bucket_name)
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass  # Ignore cleanup errors
+
+
+@pytest.fixture(scope="session", name="gosling_cli_binary")
+def gosling_cli_binary() -> Optional[str]:
+    """Fixture providing path to Gosling CLI binary if available."""
+    gosling_path = os.getenv("GOSLING_CLI_PATH", "gosling")
+    return shutil.which(gosling_path)
+
+
 @pytest.fixture(scope="session", name="fast_api_client")
 def fastapi_test_client() -> TestClient:
     """
@@ -203,7 +236,7 @@ def fastapi_test_client() -> TestClient:
 
     Creates a fresh TestClient with the default application configuration.
     Uses module scope for efficiency since app configuration doesn't change.
-    
+
     Note: For unit tests that expect schema not to be configured,
     use dependency_overrides to override get_ydb_schema to return None.
     """
@@ -410,6 +443,7 @@ def test_ydb_schema(test_ydb_config: Any) -> Any:
     """
     # pylint: disable=import-outside-toplevel
     from app.model.runners_models import (
+        BinaryVersionsTableYDB,
         DeploymentPlansTableYDB,
         EggConfigsTableYDB,
         RunnerModelYDB,
@@ -426,6 +460,7 @@ def test_ydb_schema(test_ydb_config: Any) -> Any:
                 EggConfigsTableYDB(),
                 SyncHistoryTableYDB(),
                 DeploymentPlansTableYDB(),
+                BinaryVersionsTableYDB(),
             ]
         ),
         version="1.0.0",

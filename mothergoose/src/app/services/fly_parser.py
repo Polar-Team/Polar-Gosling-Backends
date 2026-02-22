@@ -1,15 +1,13 @@
 """
 Fly Configuration Parser
 
-Parses .fly configuration files from the Nest repository.
-This is a placeholder implementation that returns mock data.
-
-In production, this should either:
-1. Call the Gosling CLI to parse .fly files
-2. Implement a Python HCL parser for .fly syntax
-3. Use a shared parser library
+Parses .fly configuration files from the Nest repository by calling
+the Gosling CLI binary to parse .fly files and convert to JSON.
 """
 
+import json
+import os
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -17,27 +15,252 @@ from app.util.base_logging import logger
 
 
 class FlyParser:
-    """Parser for .fly configuration files."""
+    """Parser for .fly configuration files using Gosling CLI."""
 
-    def parse_egg(self, file_path: Path) -> Dict[str, Any]:
+    def __init__(self, gosling_cli_path: str | None = None):
         """
-        Parse an Egg configuration file.
+        Initialize FlyParser with Gosling CLI path.
 
         Args:
-            file_path: Path to the config.fly file
+            gosling_cli_path: Path to Gosling CLI binary.
+                             If None, uses GOSLING_CLI_PATH env var or "gosling" default.
+        """
+        self._gosling_cli_path_override = gosling_cli_path
+        logger.info("FlyParser initialized")
+
+    @property
+    def gosling_cli_path(self) -> str:
+        """
+        Get the current Gosling CLI binary path.
+
+        Task 12.5: Uses GoslingBinaryManager for path resolution if available,
+        otherwise falls back to environment variable or default.
 
         Returns:
-            Parsed Egg configuration as dictionary
+            str: Path to Gosling CLI binary
+        """
+        # If path was explicitly provided in constructor, use it
+        if self._gosling_cli_path_override:
+            return self._gosling_cli_path_override
+
+        # Try to get path from GoslingBinaryManager
+        try:
+            from app.core.config import (  # pylint: disable=import-outside-toplevel
+                get_gosling_binary_manager,
+            )
+
+            manager = get_gosling_binary_manager()
+            if manager.active_binary_path:
+                return manager.active_binary_path
+
+        except (RuntimeError, ImportError):
+            # Manager not initialized or not available, fall back to env var
+            pass
+
+        # Fall back to environment variable or default
+        return os.getenv("GOSLING_CLI_PATH", "gosling")
+
+    def _call_gosling_parse(self, file_path: Path, config_type: str) -> Dict[str, Any]:
+        """
+        Call Gosling CLI to parse a .fly file and return JSON output.
+
+        Args:
+            file_path: Path to the .fly file
+            config_type: Configuration type (egg, job, uglyfox, eggsbucket)
+
+        Returns:
+            Parsed configuration as dictionary
 
         Raises:
-            ValueError: If parsing fails
+            subprocess.CalledProcessError: If Gosling CLI execution fails
+            json.JSONDecodeError: If JSON parsing fails
+            FileNotFoundError: If Gosling CLI binary not found
         """
-        logger.info("Parsing Egg config: %s", file_path)
+        # Build command
+        cmd = [
+            self.gosling_cli_path,
+            "parse",
+            str(file_path),
+            "--type",
+            config_type,
+        ]
 
-        # Placeholder: Return mock configuration
-        # In production, this should parse the actual .fly file
-        egg_name = file_path.parent.name
+        logger.debug("Executing Gosling CLI: %s", " ".join(cmd))
 
+        try:
+            # Execute Gosling CLI
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,  # 30 second timeout
+            )
+
+            # Parse JSON output
+            parsed_data = json.loads(result.stdout)
+            logger.debug(
+                "Successfully parsed %s configuration from %s", config_type, file_path
+            )
+
+            return parsed_data
+
+        except FileNotFoundError as exc:
+            logger.error(
+                "Gosling CLI binary not found at path: %s. "
+                "Set GOSLING_CLI_PATH environment variable or ensure binary is in PATH.",
+                self.gosling_cli_path,
+            )
+            raise FileNotFoundError(
+                f"Gosling CLI binary not found: {self.gosling_cli_path}"
+            ) from exc
+
+        except subprocess.TimeoutExpired as exc:
+            logger.error(
+                "Gosling CLI execution timed out after 30 seconds for file: %s",
+                file_path,
+            )
+            raise subprocess.CalledProcessError(
+                returncode=-1,
+                cmd=cmd,
+                output="",
+                stderr="Execution timed out after 30 seconds",
+            ) from exc
+
+        except subprocess.CalledProcessError as exc:
+            logger.error(
+                "Gosling CLI execution failed for file %s: %s",
+                file_path,
+                exc.stderr,
+            )
+            raise
+
+        except json.JSONDecodeError as exc:
+            logger.error(
+                "Failed to parse JSON output from Gosling CLI for file %s: %s",
+                file_path,
+                exc,
+            )
+            raise
+
+    def _extract_egg_config(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract Egg configuration from parsed Gosling CLI output.
+
+        Args:
+            parsed_data: Parsed JSON data from Gosling CLI
+
+        Returns:
+            Egg configuration dictionary with flattened structure
+        """
+        # Extract first block (should be the egg block)
+        blocks = parsed_data.get("blocks", [])
+        if not blocks:
+            raise ValueError("No blocks found in parsed configuration")
+
+        egg_block = blocks[0]
+        attributes = egg_block.get("attributes", {})
+
+        # Extract egg name from labels
+        labels = egg_block.get("labels", [])
+        egg_name = labels[0] if labels else "unknown"
+
+        # Build flattened configuration
+        config = {"name": egg_name}
+
+        # Extract nested blocks and attributes
+        for nested_block in egg_block.get("blocks", []):
+            block_type = nested_block.get("type")
+            block_attrs = nested_block.get("attributes", {})
+            config[block_type] = block_attrs
+
+        # Add top-level attributes
+        config.update(attributes)
+
+        # Task 12.7: Extract binary version requirements
+        config["gosling_version"] = attributes.get("gosling_version")
+        config["opentofu_version"] = attributes.get("opentofu_version")
+
+        return config
+
+    def _extract_job_config(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract Job configuration from parsed Gosling CLI output.
+
+        Args:
+            parsed_data: Parsed JSON data from Gosling CLI
+
+        Returns:
+            Job configuration dictionary with flattened structure
+        """
+        # Extract first block (should be the job block)
+        blocks = parsed_data.get("blocks", [])
+        if not blocks:
+            raise ValueError("No blocks found in parsed configuration")
+
+        job_block = blocks[0]
+        attributes = job_block.get("attributes", {})
+
+        # Extract job name from labels
+        labels = job_block.get("labels", [])
+        job_name = labels[0] if labels else "unknown"
+
+        # Build flattened configuration
+        config = {"name": job_name}
+
+        # Extract nested blocks
+        for nested_block in job_block.get("blocks", []):
+            block_type = nested_block.get("type")
+            block_attrs = nested_block.get("attributes", {})
+            config[block_type] = block_attrs
+
+        # Add top-level attributes
+        config.update(attributes)
+
+        return config
+
+    def _extract_uf_config(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract UglyFox configuration from parsed Gosling CLI output.
+
+        Args:
+            parsed_data: Parsed JSON data from Gosling CLI
+
+        Returns:
+            UglyFox configuration dictionary with flattened structure
+        """
+        # Extract first block (should be the uglyfox block)
+        blocks = parsed_data.get("blocks", [])
+        if not blocks:
+            raise ValueError("No blocks found in parsed configuration")
+
+        uf_block = blocks[0]
+        attributes = uf_block.get("attributes", {})
+
+        # Build flattened configuration
+        config = {}
+
+        # Extract nested blocks
+        for nested_block in uf_block.get("blocks", []):
+            block_type = nested_block.get("type")
+            block_attrs = nested_block.get("attributes", {})
+            config[block_type] = block_attrs
+
+        # Add top-level attributes
+        config.update(attributes)
+
+        return config
+
+    def _get_placeholder_egg(self, egg_name: str) -> Dict[str, Any]:
+        """
+        Get placeholder Egg configuration for fallback.
+
+        Args:
+            egg_name: Name of the egg
+
+        Returns:
+            Placeholder Egg configuration
+        """
         return {
             "name": egg_name,
             "type": "vm",
@@ -57,24 +280,16 @@ class FlyParser:
             },
         }
 
-    def parse_job(self, file_path: Path) -> Dict[str, Any]:
+    def _get_placeholder_job(self, job_name: str) -> Dict[str, Any]:
         """
-        Parse a Job configuration file.
+        Get placeholder Job configuration for fallback.
 
         Args:
-            file_path: Path to the {job_name}.fly file
+            job_name: Name of the job
 
         Returns:
-            Parsed Job configuration as dictionary
-
-        Raises:
-            ValueError: If parsing fails
+            Placeholder Job configuration
         """
-        logger.info("Parsing Job config: %s", file_path)
-
-        # Placeholder: Return mock configuration
-        job_name = file_path.stem
-
         return {
             "name": job_name,
             "schedule": "0 2 * * *",
@@ -82,22 +297,13 @@ class FlyParser:
             "script": "#!/bin/bash\necho 'Job executed'",
         }
 
-    def parse_uf_config(self, file_path: Path) -> Dict[str, Any]:
+    def _get_placeholder_uf_config(self) -> Dict[str, Any]:
         """
-        Parse UglyFox configuration file.
-
-        Args:
-            file_path: Path to the UF/config.fly file
+        Get placeholder UglyFox configuration for fallback.
 
         Returns:
-            Parsed UglyFox configuration as dictionary
-
-        Raises:
-            ValueError: If parsing fails
+            Placeholder UglyFox configuration
         """
-        logger.info("Parsing UF config: %s", file_path)
-
-        # Placeholder: Return mock configuration
         return {
             "pruning": {
                 "failed_threshold": 3,
@@ -121,6 +327,128 @@ class FlyParser:
                 },
             },
         }
+
+    def parse_egg(self, file_path: Path) -> Dict[str, Any]:
+        """
+        Parse an Egg configuration file using Gosling CLI.
+
+        Args:
+            file_path: Path to the config.fly file
+
+        Returns:
+            Parsed Egg configuration as dictionary
+
+        Raises:
+            ValueError: If parsing fails
+        """
+        logger.info("Parsing Egg config: %s", file_path)
+
+        try:
+            # Call Gosling CLI to parse the file
+            parsed_data = self._call_gosling_parse(file_path, "egg")
+
+            # Extract and flatten Egg configuration
+            egg_config = self._extract_egg_config(parsed_data)
+
+            logger.info("Successfully parsed Egg config: %s", egg_config.get("name"))
+            return egg_config
+
+        except (
+            subprocess.CalledProcessError,
+            json.JSONDecodeError,
+            FileNotFoundError,
+            ValueError,
+        ) as exc:
+            # Log error and fall back to placeholder data
+            egg_name = file_path.parent.name
+            logger.warning(
+                "Failed to parse Egg config %s using Gosling CLI: %s. "
+                "Falling back to placeholder data.",
+                file_path,
+                exc,
+            )
+            return self._get_placeholder_egg(egg_name)
+
+    def parse_job(self, file_path: Path) -> Dict[str, Any]:
+        """
+        Parse a Job configuration file using Gosling CLI.
+
+        Args:
+            file_path: Path to the {job_name}.fly file
+
+        Returns:
+            Parsed Job configuration as dictionary
+
+        Raises:
+            ValueError: If parsing fails
+        """
+        logger.info("Parsing Job config: %s", file_path)
+
+        try:
+            # Call Gosling CLI to parse the file
+            parsed_data = self._call_gosling_parse(file_path, "job")
+
+            # Extract and flatten Job configuration
+            job_config = self._extract_job_config(parsed_data)
+
+            logger.info("Successfully parsed Job config: %s", job_config.get("name"))
+            return job_config
+
+        except (
+            subprocess.CalledProcessError,
+            json.JSONDecodeError,
+            FileNotFoundError,
+            ValueError,
+        ) as exc:
+            # Log error and fall back to placeholder data
+            job_name = file_path.stem
+            logger.warning(
+                "Failed to parse Job config %s using Gosling CLI: %s. "
+                "Falling back to placeholder data.",
+                file_path,
+                exc,
+            )
+            return self._get_placeholder_job(job_name)
+
+    def parse_uf_config(self, file_path: Path) -> Dict[str, Any]:
+        """
+        Parse UglyFox configuration file using Gosling CLI.
+
+        Args:
+            file_path: Path to the UF/config.fly file
+
+        Returns:
+            Parsed UglyFox configuration as dictionary
+
+        Raises:
+            ValueError: If parsing fails
+        """
+        logger.info("Parsing UF config: %s", file_path)
+
+        try:
+            # Call Gosling CLI to parse the file
+            parsed_data = self._call_gosling_parse(file_path, "uglyfox")
+
+            # Extract and flatten UglyFox configuration
+            uf_config = self._extract_uf_config(parsed_data)
+
+            logger.info("Successfully parsed UglyFox config")
+            return uf_config
+
+        except (
+            subprocess.CalledProcessError,
+            json.JSONDecodeError,
+            FileNotFoundError,
+            ValueError,
+        ) as exc:
+            # Log error and fall back to placeholder data
+            logger.warning(
+                "Failed to parse UglyFox config %s using Gosling CLI: %s. "
+                "Falling back to placeholder data.",
+                file_path,
+                exc,
+            )
+            return self._get_placeholder_uf_config()
 
     def parse_eggs_directory(self, eggs_dir: Path) -> List[Dict[str, Any]]:
         """

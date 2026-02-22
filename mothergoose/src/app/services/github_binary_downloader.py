@@ -8,11 +8,11 @@ from GitHub releases (Gosling CLI and OpenTofu).
 import hashlib
 import os
 import tempfile
+from typing import Any
 
 import requests
 from accessify import private
 
-from app.model.runners_models import BinaryVersion
 from app.services.binary_version_service import BinaryVersionService
 from app.services.opentofu_binary import OpenTofuUpdateGithub
 from app.util.base_logging import logged
@@ -27,7 +27,7 @@ class GitHubBinaryDownloader:
     GOSLING_REPO = "opentofu/opentofu"
     OPENTOFU_REPO = "opentofu/opentofu"
 
-    def __init__(self, binary_version_service: BinaryVersionService, schema):
+    def __init__(self, binary_version_service: BinaryVersionService, schema: Any) -> None:
         """Initialize GitHubBinaryDownloader with service dependencies."""
         self.binary_version_service = binary_version_service
         self.schema = schema
@@ -49,7 +49,7 @@ class GitHubBinaryDownloader:
                 f"Failed to check latest Gosling version: {exc}"
             ) from exc
 
-    async def download_gosling_from_github(self, version: str) -> BinaryVersion:
+    async def download_gosling_from_github(self, version: str) -> str:
         """Download a specific Gosling CLI version from GitHub and upload to S3."""
         self.info("Downloading Gosling CLI version %s from GitHub", version)
         download_url = (
@@ -66,16 +66,15 @@ class GitHubBinaryDownloader:
                 tmp_path = tmp_file.name
             checksum = self._calculate_checksum(tmp_path)
             self.info("Downloaded Gosling CLI %s, checksum: %s", version, checksum)
-            with open(tmp_path, "rb") as binary_file:
-                binary_version = await self.binary_version_service.upload_version(
-                    binary_name="gosling",
-                    version=version,
-                    file=binary_file,
-                    checksum=checksum,
-                )
+            s3_path = await self.binary_version_service.upload_version(
+                binary_name="gosling",
+                version=version,
+                file_path=tmp_path,
+                checksum=checksum,
+            )
             os.unlink(tmp_path)
             self.info("Successfully uploaded Gosling CLI %s to S3", version)
-            return binary_version
+            return s3_path
         except Exception as exc:  # pylint: disable=broad-exception-caught
             self.error("Failed to download Gosling CLI %s: %s", version, exc)
             raise RuntimeError(

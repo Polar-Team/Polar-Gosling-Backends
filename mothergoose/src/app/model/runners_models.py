@@ -394,6 +394,8 @@ def generate_new_eggconfig(
         git_repo_url_secret=git_repo_url_secret,
         gitlab_token_secret_uri=gitlab_token_secret_uri,
         gitlab_webhook_secret_uri=gitlab_webhook_secret_uri,
+        gosling_version=None,
+        opentofu_version=None,
     )
 
 

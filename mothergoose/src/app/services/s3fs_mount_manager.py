@@ -8,7 +8,7 @@ Task 12.3: Binary Version Management System
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import s3fs
 
@@ -44,10 +44,10 @@ class S3FSMountManager:
         self.s3_endpoint_url = s3_endpoint_url
         self.aws_access_key_id = aws_access_key_id
         self.aws_secret_access_key = aws_secret_access_key
-        self._fs: Optional[s3fs.S3FileSystem] = None
+        self._fs: Optional[Any] = None
 
     @property
-    def fs(self) -> s3fs.S3FileSystem:
+    def fs(self) -> Any:
         """Get or create S3 filesystem instance."""
         if self._fs is None:
             self._mount()
@@ -62,7 +62,7 @@ class S3FSMountManager:
         self.info("Mounting S3 bucket %s at %s", self.s3_bucket, self.mount_point)
 
         # Prepare s3fs configuration
-        fs_kwargs = {
+        fs_kwargs: Dict[str, Any] = {
             "anon": False,  # Require authentication
         }
 

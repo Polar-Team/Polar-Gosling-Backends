@@ -201,8 +201,9 @@ class BinaryVersionService:
                             sha256_checksum=row.sha256_checksum,
                             is_active=bool(row.is_active),
                             uploaded_at=(
-                                row.uploaded_at
-                                or datetime.now(timezone.utc).isoformat()
+                                datetime.fromisoformat(row.uploaded_at)
+                                if isinstance(row.uploaded_at, str)
+                                else (row.uploaded_at or datetime.now(timezone.utc))
                             ),
                             activated_at=row.activated_at if row.activated_at else None,
                         )
@@ -266,7 +267,9 @@ class BinaryVersionService:
                         sha256_checksum=row.sha256_checksum,
                         is_active=bool(row.is_active),
                         uploaded_at=(
-                            row.uploaded_at or datetime.now(timezone.utc).isoformat()
+                            datetime.fromisoformat(row.uploaded_at)
+                            if isinstance(row.uploaded_at, str)
+                            else (row.uploaded_at or datetime.now(timezone.utc))
                         ),
                         activated_at=row.activated_at if row.activated_at else None,
                     )

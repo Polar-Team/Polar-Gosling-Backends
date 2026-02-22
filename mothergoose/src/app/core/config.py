@@ -5,6 +5,7 @@ Central configuration for the MotherGoose application.
 """
 
 import os
+from typing import Any
 
 from ydb import AnonymousCredentials
 
@@ -447,7 +448,7 @@ async def initialize_gosling_binary_manager() -> None:
         )
 
 
-def get_gosling_binary_manager():
+def get_gosling_binary_manager() -> Any:
     """
     Get the initialized Gosling Binary Manager instance.
 

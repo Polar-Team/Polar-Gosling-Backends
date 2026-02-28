@@ -5,12 +5,10 @@ Central configuration for the MotherGoose application.
 """
 
 import os
-from typing import Any
+
 
 from ydb import AnonymousCredentials
 
-from app.model.gosling_models import GoslingVersionTableYDB
-from app.model.opentofu_models import OpenTofuVersionTableYDB
 from app.model.runners_models import (
     BinaryVersionsTableYDB,
     DeploymentPlansTableYDB,

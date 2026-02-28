@@ -53,6 +53,7 @@ class EggService:
         Args:
             name: Egg name
         """
+        self.__egg_query_result = None
         await self.list_eggs()
         all_eggs = self.eggs_list or []
 
@@ -60,6 +61,7 @@ class EggService:
             if egg.name == name:
                 self.debug("Egg found by name %s", name)
                 self.__egg_query_result = egg
+                return
 
         self.debug("No Egg found for name: %s", name)
 
@@ -76,6 +78,7 @@ class EggService:
         Args:
             project_id: GitLab project ID
         """
+        self.__egg_query_result = None
         # Get all eggs and store in instance variable
         await self.list_eggs()
         all_eggs = self.eggs_list or []
@@ -87,6 +90,7 @@ class EggService:
                 if gitlab_config.get("project_id") == project_id:
                     self.debug("Egg found by project_id %s: %s", project_id, egg.name)
                     self.__egg_query_result = egg
+                    return
 
         self.debug("No Egg found for project_id: %s", project_id)
 
@@ -103,6 +107,7 @@ class EggService:
         Args:
             group_id: GitLab group ID
         """
+        self.__egg_query_result = None
         # Get all eggs and store in instance variable
         await self.list_eggs()
         all_eggs = self.eggs_list or []
@@ -114,6 +119,7 @@ class EggService:
                 if gitlab_config.get("group_id") == group_id:
                     self.debug("Egg found by group_id %s: %s", group_id, egg.name)
                     self.__egg_query_result = egg
+                    return
 
         self.debug("No Egg found for group_id: %s", group_id)
 

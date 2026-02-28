@@ -20,8 +20,10 @@ dependencies = [
     "jinja2>=3.1.6",
     "kombu>=5.4.0",
     "pydantic>=2.11.5",
+    "python-multipart>=0.0.20",
     "redis>=5.2.0",
     "requests>=2.32.4",
+    "s3fs>=2026.2.0",
     "tofupy>=1.1.1",
     "uvicorn>=0.34.0",
     "yandexcloud>=0.300.0",
@@ -129,6 +131,11 @@ dependency_groups = [
 commands = [
     ["pip", "install", "-e", "."],
     ["mypy", "src/app"],
+]
+
+[tool.pylint.messages_control]
+disable = [
+    "duplicate-code",
 ]
 
 [tool.flake8]

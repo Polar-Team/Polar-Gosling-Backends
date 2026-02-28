@@ -9,6 +9,7 @@ import os
 from ydb import AnonymousCredentials
 
 from app.model.runners_models import (
+    BinaryVersionsTableYDB,
     DeploymentPlansTableYDB,
     EggConfigsTableYDB,
     RunnerModelYDB,
@@ -87,6 +88,13 @@ NEST_WEBHOOK_SECRET_URI = os.getenv(
     "MOTHERGOOSE_NEST_WEBHOOK_SECRET_URI", "aws-sm://webhooks/nest-secret"
 )
 
+# Gosling CLI Configuration
+# Path to Gosling CLI binary for parsing .fly files
+# Default: "gosling" (assumes binary is in PATH)
+# Production: Should point to version-managed binary (e.g., /tmp/gosling/1.0.0/gosling)
+GOSLING_CLI_PATH = os.getenv("GOSLING_CLI_PATH", "gosling")
+logger.info("Gosling CLI path configured: %s", GOSLING_CLI_PATH)
+
 DEFAULT_DATABASE_SCHEMA = YDBSchema(
     config=YDBConfig(
         endpoint="grpc://localhost:2136",
@@ -102,6 +110,8 @@ DEFAULT_DATABASE_SCHEMA = YDBSchema(
             EggConfigsTableYDB(),
             RunnersTableYDB(),
             SyncHistoryTableYDB(),
+            DeploymentPlansTableYDB(),
+            BinaryVersionsTableYDB(),
         ]
     ),
 )
@@ -289,6 +299,7 @@ def initialize_ydb_schema() -> YDBSchema:
                 RunnersTableYDB(),
                 SyncHistoryTableYDB(),
                 DeploymentPlansTableYDB(),
+                BinaryVersionsTableYDB(),
             ]
         ),
     )
@@ -323,3 +334,53 @@ def get_ydb_schema() -> YDBSchema:
         )
 
     return _ydb_schema_instance
+
+
+# Task 12.5: Gosling Binary Manager Singleton
+_gosling_binary_manager_instance = None
+
+
+async def initialize_gosling_binary_manager() -> None:
+    """
+    Initialize Gosling Binary Manager on application startup.
+
+    This function creates a GoslingBinaryManager instance and downloads
+    the active Gosling CLI version from S3 to local cache.
+
+    Environment Variables:
+        MOTHERGOOSE_S3_BUCKET: S3 bucket name for binary storage
+        MOTHERGOOSE_S3_REGION: AWS/YC region
+        MOTHERGOOSE_S3_ENDPOINT_URL: Custom S3 endpoint (for Yandex Cloud)
+        MOTHERGOOSE_AWS_ACCESS_KEY_ID: AWS access key ID (optional)
+        MOTHERGOOSE_AWS_SECRET_ACCESS_KEY: AWS secret access key (optional)
+        MOTHERGOOSE_GOSLING_CACHE_DIR: Cache directory (default: /tmp/gosling)
+        MOTHERGOOSE_GOSLING_MAX_CACHED_VERSIONS: Max cached versions (default: 3)
+
+    Raises:
+        RuntimeError: If initialization fails
+    """
+
+    # Get S3 configuration from environment
+    s3_bucket = os.getenv("MOTHERGOOSE_S3_BUCKET")
+
+    if not s3_bucket:
+        raise RuntimeError(
+            "MOTHERGOOSE_S3_BUCKET environment variable is required for "
+            "Gosling CLI binary management"
+        )
+
+    # Get cache configuration
+
+    max_cached_versions_str = os.getenv("MOTHERGOOSE_GOSLING_MAX_CACHED_VERSIONS", "3")
+
+    try:
+        max_cached_versions = int(max_cached_versions_str)
+        if max_cached_versions <= 0:
+            raise ValueError("Must be positive")
+    except ValueError as e:
+        raise RuntimeError(
+            f"Invalid MOTHERGOOSE_GOSLING_MAX_CACHED_VERSIONS: "
+            f"{max_cached_versions_str}. Must be a positive integer."
+        ) from e
+
+    # Get YDB schema

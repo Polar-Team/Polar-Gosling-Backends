@@ -6,7 +6,7 @@ following the pattern from opentofu_models.py where all data passes through
 schema.model.tables[x].values_for_operate.
 """
 
-# pylint: disable=duplicate-code
+# pylint: disable=duplicate-code,too-many-lines
 
 import json
 from dataclasses import dataclass, field
@@ -175,7 +175,9 @@ class Runner(PydanticBaseModelORM):
         cls,
         value: datetime | str | None,
     ) -> datetime | None:
-        """Convert datetime from storage format (ISO string) to datetime object."""
+        """
+        Convert datetime from storage format (ISO string) to datetime object.
+        """
         if value is None:
             return None
         if isinstance(value, datetime):
@@ -189,7 +191,9 @@ class Runner(PydanticBaseModelORM):
     def validate_gitlab_runner_id_from_storage(
         cls, value: Optional[int]
     ) -> Optional[int]:
-        """Convert gitlab_runner_id from storage (0 → None for optional field)."""
+        """
+        Convert gitlab_runner_id from storage (0 → None for optional field).
+        """
         if value == 0:
             return None
         if value is not None and value < 0:
@@ -203,7 +207,8 @@ class Runner(PydanticBaseModelORM):
         Converts:
         - datetime → ISO string
         - dict → JSON bytes
-        - None → 0 for optional int fields (YDB doesn't support NULL in some contexts)
+        - None → 0 for optional int fields
+          (YDB doesn't support NULL in some contexts)
 
         Returns:
             Dictionary with values in YDB storage format
@@ -234,8 +239,14 @@ class EggConfig(PydanticBaseModelORM):
     project_id: int = Field(0, description="GitLab project ID")
     group_id: int = Field(0, description="GitLab group ID")
 
-    config: Dict[str, Any] = Field(..., description="Parsed .fly configuration")
-    git_commit: str = Field(..., description="Git commit hash this config came from")
+    config: Dict[str, Any] = Field(
+        ...,
+        description="Parsed .fly configuration",
+    )
+    git_commit: str = Field(
+        ...,
+        description="Git commit hash this config came from",
+    )
     git_repo_url_secret: str = Field(
         ..., description="Secret URI for Git repository URL"
     )
@@ -245,11 +256,19 @@ class EggConfig(PydanticBaseModelORM):
     gitlab_webhook_secret_uri: str = Field(
         ..., description="Secret URI for webhook validation"
     )
+    # Task 12.7: Per-Egg binary version support
+    gosling_version: Optional[str] = Field(
+        None, description="Required Gosling CLI version for this Egg"
+    )
+    opentofu_version: Optional[str] = Field(
+        None, description="Required OpenTofu version for this Egg"
+    )
     synced_at: datetime = Field(
         default_factory=datetime.utcnow, description="Last sync from Git"
     )
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Config creation timestamp"
+        default_factory=datetime.utcnow,
+        description="Config creation timestamp",
     )
     updated_at: datetime = Field(
         default_factory=datetime.utcnow, description="Last update timestamp"
@@ -266,7 +285,9 @@ class EggConfig(PydanticBaseModelORM):
         cls,
         value: datetime | str | None,
     ) -> datetime | None:
-        """Convert datetime from storage format (ISO string) to datetime object."""
+        """
+        Convert datetime from storage format (ISO string) to datetime object.
+        """
         if value is None:
             return None
         if isinstance(value, datetime):
@@ -275,14 +296,27 @@ class EggConfig(PydanticBaseModelORM):
             return datetime.fromisoformat(value)
         raise ValueError("Invalid datetime format")
 
+    @field_validator("gosling_version", "opentofu_version", mode="before")
+    @classmethod
+    def validate_version_from_storage(
+        cls,
+        value: Optional[str],
+    ) -> Optional[str]:
+        """
+        Convert version from storage (empty string → None for optional field).
+        """
+        if value == "" or value is None:
+            return None
+        return value
+
     def to_storage_dict(self) -> Dict[str, Any]:
         """
-        Convert Runner model to storage format for YDB.
+        Convert EggConfig model to storage format for YDB.
 
         Converts:
         - datetime → ISO string
         - dict → JSON bytes
-        - None → 0 for optional int fields (YDB doesn't support NULL in some contexts)
+        - None → empty string for optional Utf8 fields
 
         Returns:
             Dictionary with values in YDB storage format
@@ -297,6 +331,11 @@ class EggConfig(PydanticBaseModelORM):
         # Convert config dict to JSON bytes
         if isinstance(data["config"], dict):
             data["config"] = json.dumps(data["config"]).encode("utf-8")
+
+        # Task 12.7: Convert None to empty string for optional version fields
+        for key in ("gosling_version", "opentofu_version"):
+            if data.get(key) is None:
+                data[key] = ""
 
         return data
 
@@ -355,6 +394,8 @@ def generate_new_eggconfig(
         git_repo_url_secret=git_repo_url_secret,
         gitlab_token_secret_uri=gitlab_token_secret_uri,
         gitlab_webhook_secret_uri=gitlab_webhook_secret_uri,
+        gosling_version=None,
+        opentofu_version=None,
     )
 
 
@@ -363,7 +404,10 @@ class SyncHistory(PydanticBaseModelORM):
 
     id: str = Field(..., description="Unique sync history entry ID (PK)")
     git_commit: str = Field(..., description="Git commit hash that was synced")
-    sync_type: str = Field(..., description="Type of sync (periodic/webhook/manual)")
+    sync_type: str = Field(
+        ...,
+        description="Type of sync (periodic/webhook/manual)",
+    )
     status: SyncStatus = Field(..., description="Sync operation status")
     changes_detected: int = Field(
         default=0, description="Number of configuration changes detected"
@@ -416,7 +460,9 @@ class DeploymentPlan(PydanticBaseModelORM):
         cls,
         value: datetime | str | None,
     ) -> datetime | None:
-        """Convert datetime from storage format (ISO string) to datetime object."""
+        """
+        Convert datetime from storage format (ISO string) to datetime object.
+        """
         if value is None:
             return None
         if isinstance(value, datetime):
@@ -477,6 +523,88 @@ class DeploymentPlan(PydanticBaseModelORM):
         # Convert None to empty string for rollback_plan_id
         if data["rollback_plan_id"] is None:
             data["rollback_plan_id"] = ""
+
+        return data
+
+
+class BinaryVersion(PydanticBaseModelORM):
+    """Binary version tracking for Gosling CLI and OpenTofu."""
+
+    id: str = Field(
+        ...,
+        description="Unique identifier (PK): {binary_name}-{version}",
+    )
+    binary_name: str = Field(
+        ...,
+        description="Binary name (gosling or opentofu)",
+    )
+    version: str = Field(
+        ...,
+        description="Semantic version (e.g., 1.2.3)",
+    )
+    s3_path: str = Field(
+        ...,
+        description="S3 path to binary",
+    )
+    sha256_checksum: str = Field(
+        ...,
+        description="SHA256 checksum of binary",
+    )
+    is_active: bool = Field(
+        default=False,
+        description="Whether this version is active",
+    )
+    uploaded_at: datetime = Field(
+        default_factory=datetime.utcnow, description="Upload timestamp"
+    )
+    activated_at: Optional[datetime] = Field(
+        None,
+        description="Activation timestamp",
+    )
+
+    @field_validator(
+        "uploaded_at",
+        "activated_at",
+        mode="before",
+    )
+    @classmethod
+    def validate_datetime(
+        cls,
+        value: datetime | str | None,
+    ) -> datetime | None:
+        """
+        Convert datetime from storage format (ISO string) to datetime object.
+        """
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            return datetime.fromisoformat(value)
+        raise ValueError("Invalid datetime format")
+
+    def to_storage_dict(self) -> Dict[str, Any]:
+        """
+        Convert BinaryVersion model to storage format for YDB.
+
+        Converts:
+        - datetime → ISO string
+        - bool → int (1 for True, 0 for False)
+
+        Returns:
+            Dictionary with values in YDB storage format
+        """
+        data = self.model_dump()
+
+        # Convert datetime to ISO string
+        for key in ("uploaded_at", "activated_at"):
+            if isinstance(data[key], datetime):
+                data[key] = data[key].isoformat()
+            elif data[key] is None:
+                data[key] = ""  # Empty string for NULL datetime
+
+        # Convert bool to int for YDB
+        data["is_active"] = 1 if data["is_active"] else 0
 
         return data
 
@@ -544,7 +672,9 @@ class RunnersTableYDB:
         if len(self.values_for_operate) != 0 and len(self.values_for_operate) != len(
             self.columns
         ):
-            raise ValueError("The number of values for operate must match columns.")
+            raise ValueError(
+                "The number of values for operate must match columns.",
+            )
         if self.primary_key != "id":
             raise ValueError("Primary key must be 'id'.")
 
@@ -578,6 +708,8 @@ class EggConfigsTableYDB:
             "git_repo_url_secret",
             "gitlab_token_secret_uri",
             "gitlab_webhook_secret_uri",
+            "gosling_version",  # Task 12.7
+            "opentofu_version",  # Task 12.7
             "synced_at",
             "created_at",
             "updated_at",
@@ -594,6 +726,8 @@ class EggConfigsTableYDB:
             make_ydb_type("Utf8"),  # git_repo_url_secret
             make_ydb_type("Utf8"),  # gitlab_token_secret_uri
             make_ydb_type("Utf8"),  # gitlab_webhook_secret_uri
+            make_ydb_type("Utf8"),  # gosling_version (Task 12.7, nullable)
+            make_ydb_type("Utf8"),  # opentofu_version (Task 12.7, nullable)
             make_ydb_type("Utf8"),  # synced_at (stored as ISO string)
             make_ydb_type("Utf8"),  # created_at (stored as ISO string)
             make_ydb_type("Utf8"),  # updated_at (stored as ISO string)
@@ -760,6 +894,67 @@ class DeploymentPlansTableYDB:
         )
 
 
+@dataclass
+class BinaryVersionsTableYDB:
+    """
+    YDB table schema for binary versions.
+
+    Tracks available versions of Gosling CLI and OpenTofu binaries.
+    """
+
+    table_name: str = "binary_versions"
+    columns: Tuple[str, ...] = field(
+        default_factory=lambda: (
+            "id",
+            "binary_name",
+            "version",
+            "s3_path",
+            "sha256_checksum",
+            "is_active",
+            "uploaded_at",
+            "activated_at",
+        ),
+    )
+    r_type: Tuple[Union[YDBUtf8, YDBInt64], ...] = field(
+        default_factory=lambda: (
+            make_ydb_type("Utf8"),  # id
+            make_ydb_type("Utf8"),  # binary_name
+            make_ydb_type("Utf8"),  # version
+            make_ydb_type("Utf8"),  # s3_path
+            make_ydb_type("Utf8"),  # sha256_checksum
+            make_ydb_type("Int64"),  # is_active (1 or 0)
+            make_ydb_type("Utf8"),  # uploaded_at (stored as ISO string)
+            make_ydb_type("Utf8"),  # activated_at (stored as ISO string)
+        ),
+    )
+    primary_key: str = "id"
+    values_for_operate: Tuple[Any, ...] = field(
+        default_factory=lambda: (),
+    )
+
+    def __post_init__(self) -> None:
+        """Validate table schema."""
+        if len(self.columns) != len(self.r_type):
+            raise ValueError(
+                "The number of columns must match the number of row types."
+            )
+        if len(self.values_for_operate) != 0 and len(self.values_for_operate) != len(
+            self.columns
+        ):
+            raise ValueError("The number of values for operate must match columns.")
+        if self.primary_key != "id":
+            raise ValueError("Primary key must be 'id'.")
+
+        # Validate with YDBTableSchema
+        YDBTableSchema(  # type: ignore[call-arg]
+            table_name=self.table_name,
+            columns=self.columns,
+            r_type=self.r_type,  # type: ignore[arg-type]
+            primary_key=self.primary_key,
+            values_for_operate=self.values_for_operate,
+        )
+
+
 # ============================================================================
 # Pydantic Model for YDB Schema
 # ============================================================================
@@ -783,6 +978,7 @@ class RunnerModelYDB:  # pylint: disable=too-few-public-methods
             EggConfigsTableYDB,
             SyncHistoryTableYDB,
             DeploymentPlansTableYDB,
+            BinaryVersionsTableYDB,
         ]
     ] = Field(..., description="List of table schemas to be created in YDB")
 
@@ -803,7 +999,9 @@ class RunnerModelYDB:  # pylint: disable=too-few-public-methods
     def __post_init__(self) -> None:
         """Post-initialization validation."""
         if self.tables is None or not isinstance(self.tables, list):
-            raise ValueError("tables must be a non-empty list of runner tables.")
+            raise ValueError(
+                "tables must be a non-empty list of runner tables.",
+            )
         if self.model_name is None or not isinstance(self.model_name, str):
             raise ValueError("model_name must be a non-empty string.")
         if self.version is None or not isinstance(self.version, str):

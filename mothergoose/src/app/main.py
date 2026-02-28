@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.core import config
 from app.core.celery_app import celery_app
-from app.routers import eggs, health, internal, runners, webhooks
+from app.routers import binaries, eggs, health, internal, runners, webhooks
 from app.util.base_logging import logger
 
 
@@ -35,6 +35,17 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Failed to initialize database schema: %s", e)
         logger.warning("Application will start but database operations will fail")
+
+    # Task 12.5: Download active Gosling CLI binary on startup
+    try:
+        await config.initialize_gosling_binary_manager()
+        logger.info("Gosling CLI binary manager initialized successfully")
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("Failed to initialize Gosling CLI binary manager: %s", e)
+        logger.warning(
+            "Application will start but Gosling CLI operations may fail. "
+            "Ensure a Gosling CLI version is uploaded and activated."
+        )
 
     logger.info("Celery broker: %s", celery_app.conf.broker_url)
     logger.info("Celery result backend: %s", celery_app.conf.result_backend)
@@ -103,6 +114,7 @@ def create_app() -> FastAPI:
     application.include_router(runners.router)
     application.include_router(internal.router)
     application.include_router(webhooks.router)
+    application.include_router(binaries.router)
 
     return application
 

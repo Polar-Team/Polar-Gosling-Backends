@@ -1,3 +1,5 @@
+# Mothergoose
+
 .PHONY: mg-format-check
 mg-format-check:
 	cd mothergoose; uv run tox -e format
@@ -53,6 +55,8 @@ mg-bump-version-minor:
 .PHONY: mg-bump-version-major
 mg-bump-version-major:
 	cd mothergoose; uv version --bump major;
+
+# UglyFox
 
 .PHONY: uf-format-check
 uf-format-check:

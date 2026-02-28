@@ -10,6 +10,7 @@ from ydb.iam.auth import MetadataUrlCredentials, ServiceAccountCredentials
 from ydb.oauth2_token_exchange import Oauth2TokenExchangeCredentials
 
 from app.model.audit_models import AuditModelYDB
+from app.model.gosling_models import GoslingModelYDB
 from app.model.opentofu_models import OpenTofuModelYDB
 from app.model.pydantic_base_models import PydanticBaseModelORM
 from app.model.runners_models import RunnerModelYDB
@@ -55,9 +56,11 @@ class YDBSchema(PydanticBaseModelORM):
         None, description="Default table name for operations (optional)"
     )
     version: str = Field("1.0.0", description="Schema version")
-    model: Union[OpenTofuModelYDB, RunnerModelYDB, AuditModelYDB] = Field(
-        ...,
-        description="Model type for integration (OpenTofu, Runner, or Audit)",
+    model: Union[OpenTofuModelYDB, RunnerModelYDB, AuditModelYDB, GoslingModelYDB] = (
+        Field(
+            ...,
+            description="Model type for integration (OpenTofu, Runner, Audit, or Gosling)",
+        )
     )
 
     @field_validator("version", mode="before")

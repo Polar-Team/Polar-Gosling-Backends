@@ -9,7 +9,7 @@ and the integration with the GET /eggs/{name}/status endpoint.
 """
 
 import pytest
-import asyncio
+import pytest_asyncio
 
 from app.db.manage_db import AsyncYDBFunctionsCollections
 from app.db.ydb_connection import AsyncYDBOperations
@@ -26,8 +26,8 @@ from app.services.runner_service import RunnerService
 from ydb import AnonymousCredentials
 
 
-@pytest.fixture(scope="module", name="ydb_schema")
-def ydb_schema(ydb_container):
+@pytest_asyncio.fixture(scope="module", name="ydb_schema")
+async def ydb_schema(ydb_container):
     """Fixture to provide YDB configuration with runner tables."""
     config = YDBConfig(
         endpoint=f"grpc://{ydb_container.get_container_host_ip()}:"
@@ -49,11 +49,7 @@ def ydb_schema(ydb_container):
     delete_operation = AsyncYDBOperations(
         schema, AsyncYDBFunctionsCollections.drop_tables
     )
-
-    async def process():
-        await delete_operation.process()
-
-    asyncio.run(process())
+    await delete_operation.process()
 
 
 @pytest.fixture(scope="module", name="runner_service")

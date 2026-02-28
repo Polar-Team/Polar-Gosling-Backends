@@ -78,7 +78,7 @@ def ydb_schema(ydb_container):
 def binary_version_service_fixture(ydb_schema, s3_bucket):
     """Fixture providing a binary version service with real YDB schema and S3FS manager."""
     from app.services.s3fs_mount_manager import S3FSMountManager
-    
+
     # Create S3FS mount manager with LocalStack S3
     s3fs_manager = S3FSMountManager(
         s3_bucket=s3_bucket["bucket_name"],
@@ -87,7 +87,7 @@ def binary_version_service_fixture(ydb_schema, s3_bucket):
         aws_access_key_id="test",
         aws_secret_access_key="test",
     )
-    
+
     return BinaryVersionService(
         schema=ydb_schema,
         s3fs_manager=s3fs_manager,
@@ -115,9 +115,7 @@ async def test_verify_checksum(binary_version_service):
         assert binary_version_service.verify_checksum(temp_path, expected_checksum)
 
         # Test invalid checksum
-        assert not binary_version_service.verify_checksum(
-            temp_path, "invalid_checksum"
-        )
+        assert not binary_version_service.verify_checksum(temp_path, "invalid_checksum")
 
     finally:
         Path(temp_path).unlink()
@@ -174,7 +172,11 @@ async def test_upload_and_list_versions(binary_version_service, monkeypatch):
         # Debug: Check what was written
         print(f"\n=== DEBUG: After upload ===")
         binary_versions_table = next(
-            (t for t in binary_version_service.schema.model.tables if t.table_name == "binary_versions"),
+            (
+                t
+                for t in binary_version_service.schema.model.tables
+                if t.table_name == "binary_versions"
+            ),
             None,
         )
         print(f"Table found: {binary_versions_table is not None}")
@@ -187,7 +189,7 @@ async def test_upload_and_list_versions(binary_version_service, monkeypatch):
         versions = binary_version_service.versions_list
 
         print(f"Versions found: {len(versions) if versions else 0}")
-        
+
         assert versions is not None
         assert len(versions) == 1
         assert versions[0].binary_name == "gosling"
@@ -200,7 +202,6 @@ async def test_upload_and_list_versions(binary_version_service, monkeypatch):
         Path(temp_path).unlink()
 
 
-@pytest.mark.skip(reason="YDB table persistence issue in tests - data not persisting between write and read operations")
 @pytest.mark.asyncio
 async def test_activate_version(binary_version_service, monkeypatch):
     """Test activating a version."""
@@ -253,7 +254,6 @@ async def test_activate_version(binary_version_service, monkeypatch):
         Path(temp_path).unlink()
 
 
-@pytest.mark.skip(reason="YDB table persistence issue in tests - data not persisting between write and read operations")
 @pytest.mark.asyncio
 async def test_activate_deactivates_previous(binary_version_service, monkeypatch):
     """Test that activating a version deactivates the previous active version."""

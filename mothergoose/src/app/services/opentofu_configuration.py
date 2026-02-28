@@ -15,7 +15,7 @@ from app.schema.tofu_schemas import TofuBackendS3Options, TofuProvidersVer
 from app.schema.url_schemas import URLAuthSchema
 from app.util.base_logging import logged
 
-from .opentofu_binary import OpenTofuUpdateGithub, OpenTofuUpdateOtherSource
+from .binary_service import UpdateGithub, UpdateOtherSource
 from .s3_artifact_cache import S3ArtifactCache
 
 
@@ -95,8 +95,8 @@ class OpenTofuConfiguration:
     def __init__(
         self,
         updater: Union[
-            OpenTofuUpdateGithub,
-            OpenTofuUpdateOtherSource,
+            UpdateGithub,
+            UpdateOtherSource,
         ],
         tofu_settings: TofuSetting,
         artifact_cache: Optional[S3ArtifactCache] = None,
@@ -239,7 +239,7 @@ class OpenTofuConfiguration:
 
         if self.updater.c_version[0] == "dummy_id":
             self.info("Updating OpenTofu binary...")
-            if isinstance(self.updater, OpenTofuUpdateOtherSource):
+            if isinstance(self.updater, UpdateOtherSource):
                 self.info("Using other source to update OpenTofu binary...")
                 self.updater.rollback = self.__updater_rollback
                 await self.updater.start_update(

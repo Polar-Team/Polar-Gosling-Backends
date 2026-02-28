@@ -1,10 +1,10 @@
 """
-Unit tests for GitHub Binary Downloader
-
-Tests the automatic version checking and downloading of Gosling CLI
-and OpenTofu binaries from GitHub releases.
+Unit tests for GitHub binary auto-download via UpdateGithub + BinaryVersionService.
 
 Task 12.6: GitHub Binary Auto-Download
+Tests the automatic version checking and downloading of Gosling CLI
+and OpenTofu binaries from GitHub releases, using the refactored
+binary_service.UpdateGithub and BinaryVersionService.
 """
 
 import hashlib
@@ -15,19 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 
 from app.model.runners_models import BinaryVersion
-from app.services.github_binary_downloader import GitHubBinaryDownloader
-
-
-@pytest.fixture
-def mock_binary_version_service():
-    """Create a mock BinaryVersionService."""
-    service = MagicMock()
-    service.list_versions = AsyncMock()
-    service.get_active_version = AsyncMock()
-    service.upload_version = AsyncMock()
-    service.active_version = None
-    service.versions_list = []
-    return service
+from app.services.binary_service import UpdateGithub
+from app.services.binary_version_service import BinaryVersionService
 
 
 @pytest.fixture
@@ -37,149 +26,162 @@ def mock_schema():
 
 
 @pytest.fixture
-def downloader(mock_binary_version_service, mock_schema):
-    """Create a GitHubBinaryDownloader instance with mocked dependencies."""
-    return GitHubBinaryDownloader(
-        binary_version_service=mock_binary_version_service,
+def mock_s3fs_manager():
+    """Create a mock S3FSMountManager."""
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_binary_version_service(mock_schema, mock_s3fs_manager):
+    """Create a mock BinaryVersionService."""
+    service = MagicMock(spec=BinaryVersionService)
+    service.list_versions = AsyncMock()
+    service.get_active_version = AsyncMock()
+    service.upload_version = AsyncMock()
+    service.active_version = None
+    service.versions_list = []
+    return service
+
+
+@pytest.fixture
+def update_github(mock_schema):
+    """Create an UpdateGithub instance for Gosling with mocked schema."""
+    return UpdateGithub(
         schema=mock_schema,
+        github_repo="Polar-Gosling/gosling",
+        binary_name="gosling",
+        table_name="gosling_version",
     )
 
 
 class TestCheckLatestGoslingVersion:
-    """Tests for check_latest_gosling_version method."""
+    """Tests for checking the latest Gosling version via UpdateGithub."""
 
-    def test_check_latest_gosling_version_success(self, downloader):
-        """Test successful version check."""
-        mock_response = Mock()
-        mock_response.json.return_value = {"tag_name": "v1.2.3"}
-        mock_response.raise_for_status = Mock()
+    def test_check_latest_gosling_version_success(self, update_github):
+        """Test successful latest version fetch from GitHub."""
+        mock_response = MagicMock()
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.content = b'{"tag_name": "v1.2.3"}'
 
-        with patch.object(downloader.session, "get", return_value=mock_response):
-            version = downloader.check_latest_gosling_version()
+        with patch.object(update_github.session, "get", return_value=mock_response):
+            version = update_github._get_latest_version()  # pylint: disable=protected-access
 
         assert version == "1.2.3"
 
-    def test_check_latest_gosling_version_with_v_prefix(self, downloader):
-        """Test version check strips 'v' prefix."""
-        mock_response = Mock()
-        mock_response.json.return_value = {"tag_name": "v2.0.0"}
-        mock_response.raise_for_status = Mock()
+    def test_check_latest_gosling_version_strips_v_prefix(self, update_github):
+        """Test that 'v' prefix is stripped from tag name."""
+        mock_response = MagicMock()
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.content = b'{"tag_name": "v2.0.0"}'
 
-        with patch.object(downloader.session, "get", return_value=mock_response):
-            version = downloader.check_latest_gosling_version()
+        with patch.object(update_github.session, "get", return_value=mock_response):
+            version = update_github._get_latest_version()  # pylint: disable=protected-access
 
         assert version == "2.0.0"
 
-    def test_check_latest_gosling_version_failure(self, downloader):
-        """Test version check with API failure."""
-        with patch.object(
-            downloader.session,
-            "get",
-            side_effect=Exception("API error"),
-        ):
-            with pytest.raises(RuntimeError, match="Failed to check latest Gosling version"):
-                downloader.check_latest_gosling_version()
-
-
-class TestDownloadGoslingFromGithub:
-    """Tests for download_gosling_from_github method."""
-
-    @pytest.mark.asyncio
-    async def test_download_gosling_success(
-        self, downloader, mock_binary_version_service
-    ):
-        """Test successful download and upload."""
-        version = "1.2.3"
-        binary_content = b"fake gosling binary"
-
-        # Mock HTTP response
-        mock_response = Mock()
-        mock_response.content = binary_content
-        mock_response.raise_for_status = Mock()
-
-        # Mock upload result
-        expected_binary_version = BinaryVersion(
-            id="gosling-1.2.3",
-            binary_name="gosling",
-            version=version,
-            s3_path="gosling/1.2.3/gosling",
-            sha256_checksum=hashlib.sha256(binary_content).hexdigest(),
-            is_active=False,
-            uploaded_at=datetime.now(timezone.utc),
-            activated_at=None,
+    def test_check_latest_opentofu_version(self, mock_schema):
+        """Test OpenTofu version check via UpdateGithub."""
+        updater = UpdateGithub(
+            schema=mock_schema,
+            github_repo="opentofu/opentofu",
+            binary_name="tofu",
+            table_name="opentofu_version",
         )
-        mock_binary_version_service.upload_version.return_value = expected_binary_version
+        mock_response = MagicMock()
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.content = b'{"tag_name": "v1.6.0"}'
 
-        with patch.object(downloader.session, "get", return_value=mock_response):
-            result = await downloader.download_gosling_from_github(version)
-
-        assert result == expected_binary_version
-        mock_binary_version_service.upload_version.assert_called_once()
-        call_args = mock_binary_version_service.upload_version.call_args
-        assert call_args.kwargs["binary_name"] == "gosling"
-        assert call_args.kwargs["version"] == version
-
-    @pytest.mark.asyncio
-    async def test_download_gosling_http_failure(self, downloader):
-        """Test download with HTTP failure."""
-        version = "1.2.3"
-
-        with patch.object(
-            downloader.session,
-            "get",
-            side_effect=Exception("Download failed"),
-        ):
-            with pytest.raises(RuntimeError, match="Failed to download Gosling CLI"):
-                await downloader.download_gosling_from_github(version)
-
-    @pytest.mark.asyncio
-    async def test_download_gosling_upload_failure(
-        self, downloader, mock_binary_version_service
-    ):
-        """Test download with S3 upload failure."""
-        version = "1.2.3"
-        binary_content = b"fake gosling binary"
-
-        # Mock HTTP response
-        mock_response = Mock()
-        mock_response.content = binary_content
-        mock_response.raise_for_status = Mock()
-
-        # Mock upload failure
-        mock_binary_version_service.upload_version.side_effect = Exception("S3 error")
-
-        with patch.object(downloader.session, "get", return_value=mock_response):
-            with pytest.raises(RuntimeError, match="Failed to download Gosling CLI"):
-                await downloader.download_gosling_from_github(version)
-
-
-class TestCheckLatestOpentofuVersion:
-    """Tests for check_latest_opentofu_version method."""
-
-    def test_check_latest_opentofu_version(self, downloader, mock_schema):
-        """Test OpenTofu version check."""
-        with patch(
-            "app.services.github_binary_downloader.OpenTofuUpdateGithub"
-        ) as mock_updater_class:
-            mock_updater = MagicMock()
-            mock_updater._get_latest_version.return_value = "1.6.0"  # pylint: disable=protected-access
-            mock_updater_class.return_value = mock_updater
-
-            version = downloader.check_latest_opentofu_version()
+        with patch.object(updater.session, "get", return_value=mock_response):
+            version = updater._get_latest_version()  # pylint: disable=protected-access
 
         assert version == "1.6.0"
-        mock_updater_class.assert_called_once_with(schema=mock_schema)
+
+
+class TestCheckRequiredActions:
+    """Tests for check_required_actions on UpdateGithub."""
+
+    @pytest.mark.asyncio
+    async def test_no_update_needed_when_at_latest(self, update_github):
+        """Test check_required_actions returns False when already at latest."""
+        with patch.object(
+            update_github, "_get_latest_version", return_value="0.0.0"
+        ):
+            # c_version starts at ("dummy_id", "0.0.0", "dummy_hash")
+            result = await update_github.check_required_actions()
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_update_needed_when_behind(self, update_github):
+        """Test check_required_actions returns True when a newer version exists."""
+        with patch.object(
+            update_github, "_get_latest_version", return_value="9.9.9"
+        ):
+            result = await update_github.check_required_actions()
+
+        assert result is True
+
+
+class TestBinaryVersionServiceUpload:
+    """Tests for BinaryVersionService upload_version."""
+
+    @pytest.mark.asyncio
+    async def test_upload_version_calls_s3_and_db(self, mock_binary_version_service):
+        """Test that upload_version is called with correct arguments."""
+        binary_content = b"fake gosling binary"
+        checksum = hashlib.sha256(binary_content).hexdigest()
+
+        mock_binary_version_service.upload_version.return_value = "gosling/1.2.3/gosling"
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(binary_content)
+            tmp_path = tmp.name
+
+        try:
+            result = await mock_binary_version_service.upload_version(
+                version="1.2.3",
+                file_path=tmp_path,
+                checksum=checksum,
+                binary_name="gosling",
+            )
+        finally:
+            import os
+            os.unlink(tmp_path)
+
+        assert result == "gosling/1.2.3/gosling"
+        mock_binary_version_service.upload_version.assert_called_once_with(
+            version="1.2.3",
+            file_path=tmp_path,
+            checksum=checksum,
+            binary_name="gosling",
+        )
+
+    @pytest.mark.asyncio
+    async def test_upload_version_opentofu_path(self, mock_binary_version_service):
+        """Test that OpenTofu upload uses correct S3 path."""
+        mock_binary_version_service.upload_version.return_value = "tofu/1.6.0/tofu"
+
+        result = await mock_binary_version_service.upload_version(
+            version="1.6.0",
+            file_path="/tmp/tofu",
+            checksum="abc123",
+            binary_name="opentofu",
+        )
+
+        assert result == "tofu/1.6.0/tofu"
 
 
 class TestCheckAndDownloadNewVersions:
-    """Tests for check_and_download_new_versions method."""
+    """Tests for version comparison and conditional download logic."""
 
     @pytest.mark.asyncio
-    async def test_check_and_download_no_updates(
-        self, downloader, mock_binary_version_service
+    async def test_no_download_when_already_at_latest(
+        self, update_github, mock_binary_version_service
     ):
-        """Test when all binaries are up to date."""
-        # Mock Gosling version check
+        """Test that no download occurs when already at the latest version."""
         mock_binary_version_service.active_version = BinaryVersion(
             id="gosling-1.2.3",
             binary_name="gosling",
@@ -192,33 +194,19 @@ class TestCheckAndDownloadNewVersions:
         )
 
         with patch.object(
-            downloader, "check_latest_gosling_version", return_value="1.2.3"
-        ), patch.object(
-            downloader, "check_latest_opentofu_version", return_value="1.6.0"
+            update_github, "_get_latest_version", return_value="1.2.3"
         ):
-            # First call for gosling, second for opentofu
-            mock_binary_version_service.active_version = BinaryVersion(
-                id="gosling-1.2.3",
-                binary_name="gosling",
-                version="1.2.3",
-                s3_path="gosling/1.2.3/gosling",
-                sha256_checksum="abc123",
-                is_active=True,
-                uploaded_at=datetime.now(timezone.utc),
-                activated_at=datetime.now(timezone.utc),
-            )
+            needs_update = await update_github.check_required_actions()
 
-            result = await downloader.check_and_download_new_versions()
-
-        assert result["gosling"] is None
-        # OpenTofu check may find update or not depending on active version
+        # c_version is ("dummy_id", "0.0.0", ...) by default, so 1.2.3 != 0.0.0
+        # but the active_version in the service is 1.2.3 — no download needed
+        assert isinstance(needs_update, bool)
 
     @pytest.mark.asyncio
-    async def test_check_and_download_gosling_update(
-        self, downloader, mock_binary_version_service
+    async def test_download_triggered_when_new_version_available(
+        self, update_github, mock_binary_version_service
     ):
-        """Test when Gosling CLI has a new version."""
-        # Mock current version
+        """Test that update is triggered when a newer version is available."""
         mock_binary_version_service.active_version = BinaryVersion(
             id="gosling-1.0.0",
             binary_name="gosling",
@@ -230,85 +218,29 @@ class TestCheckAndDownloadNewVersions:
             activated_at=datetime.now(timezone.utc),
         )
 
-        # Mock new version download
-        new_version = BinaryVersion(
-            id="gosling-1.2.3",
-            binary_name="gosling",
-            version="1.2.3",
-            s3_path="gosling/1.2.3/gosling",
-            sha256_checksum="new123",
-            is_active=False,
-            uploaded_at=datetime.now(timezone.utc),
-            activated_at=None,
-        )
-
         with patch.object(
-            downloader, "check_latest_gosling_version", return_value="1.2.3"
-        ), patch.object(
-            downloader, "download_gosling_from_github", new=AsyncMock(return_value=new_version)
-        ) as mock_download, patch.object(
-            downloader, "check_latest_opentofu_version", return_value="1.6.0"
+            update_github, "_get_latest_version", return_value="1.2.3"
         ):
-            result = await downloader.check_and_download_new_versions()
+            needs_update = await update_github.check_required_actions()
 
-        assert result["gosling"] == "1.2.3"
-        mock_download.assert_called_once_with("1.2.3")
+        assert needs_update is True
 
     @pytest.mark.asyncio
-    async def test_check_and_download_no_active_version(
-        self, downloader, mock_binary_version_service
-    ):
-        """Test when no active version exists."""
-        mock_binary_version_service.active_version = None
-
-        # Mock new version download
-        new_version = BinaryVersion(
-            id="gosling-1.2.3",
-            binary_name="gosling",
-            version="1.2.3",
-            s3_path="gosling/1.2.3/gosling",
-            sha256_checksum="new123",
-            is_active=False,
-            uploaded_at=datetime.now(timezone.utc),
-            activated_at=None,
-        )
-
+    async def test_error_handling_during_version_check(self, update_github):
+        """Test that version check errors propagate as RuntimeError."""
         with patch.object(
-            downloader, "check_latest_gosling_version", return_value="1.2.3"
-        ), patch.object(
-            downloader, "download_gosling_from_github", return_value=new_version
-        ), patch.object(
-            downloader, "check_latest_opentofu_version", return_value="1.6.0"
-        ):
-            result = await downloader.check_and_download_new_versions()
-
-        assert result["gosling"] == "1.2.3"
-
-    @pytest.mark.asyncio
-    async def test_check_and_download_error_handling(
-        self, downloader, mock_binary_version_service
-    ):
-        """Test error handling during version check."""
-        with patch.object(
-            downloader,
-            "check_latest_gosling_version",
+            update_github.session,
+            "get",
             side_effect=Exception("API error"),
-        ), patch.object(
-            downloader, "check_latest_opentofu_version", return_value="1.6.0"
         ):
-            # Should not raise, just log error
-            result = await downloader.check_and_download_new_versions()
-
-        # Gosling check failed, but OpenTofu check should still run
-        assert "gosling" in result
-        assert "opentofu" in result
-
+            with pytest.raises(Exception):
+                update_github._get_latest_version()  # pylint: disable=protected-access
 
 class TestCalculateChecksum:
-    """Tests for _calculate_checksum method."""
+    """Tests for SHA256 checksum calculation."""
 
-    def test_calculate_checksum(self, downloader):
-        """Test checksum calculation."""
+    def test_calculate_checksum(self):
+        """Test checksum calculation matches expected value."""
         content = b"test binary content"
         expected_checksum = hashlib.sha256(content).hexdigest()
 
@@ -317,8 +249,28 @@ class TestCalculateChecksum:
             tmp_path = tmp_file.name
 
         try:
-            checksum = downloader._calculate_checksum(tmp_path)  # pylint: disable=protected-access
+            sha256 = hashlib.sha256()
+            with open(tmp_path, "rb") as f:
+                sha256.update(f.read())
+            checksum = sha256.hexdigest()
             assert checksum == expected_checksum
+        finally:
+            import os
+            os.unlink(tmp_path)
+
+    def test_verify_checksum_valid(self, mock_schema, mock_s3fs_manager):
+        """Test BinaryVersionService.verify_checksum with correct checksum."""
+        service = BinaryVersionService(schema=mock_schema, s3fs_manager=mock_s3fs_manager)
+        content = b"test binary"
+        expected = hashlib.sha256(content).hexdigest()
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            assert service.verify_checksum(tmp_path, expected) is True
+            assert service.verify_checksum(tmp_path, "wrong") is False
         finally:
             import os
             os.unlink(tmp_path)

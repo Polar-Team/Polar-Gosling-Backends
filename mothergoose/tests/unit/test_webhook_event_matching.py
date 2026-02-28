@@ -460,10 +460,10 @@ async def test_webhook_event_matching_no_match(egg_service: EggService) -> None:
     This edge case test verifies that the matching algorithm correctly
     handles webhooks from unknown projects/groups.
     """
-    # Create an Egg with project_id=12345
+    # Use IDs that won't collide with example tests (which use 12345, 67890, 11111)
     egg = create_egg_config(
         name="test-app",
-        project_id=12345,
+        project_id=55555,
         gitlab_server="gitlab.com",
         commit="abc123",
     )
@@ -475,7 +475,7 @@ async def test_webhook_event_matching_no_match(egg_service: EggService) -> None:
     assert matched is None, "Should not match non-existent project_id"
 
     # Try to match a group_id (Egg only has project_id)
-    await egg_service.get_egg_by_group_id(12345)
+    await egg_service.get_egg_by_group_id(55555)
     matched_group = egg_service.egg_query_result
     assert matched_group is None, "Should not match group_id when Egg has project_id"
 
@@ -532,9 +532,7 @@ async def test_webhook_event_matching_example_project(egg_service: EggService) -
 
     # Simulate webhook from unknown project
     await egg_service.get_egg_by_project_id(99999)
-    if egg_service.egg_query_result == matched:
-        matched = None
-    assert matched is None
+    assert egg_service.egg_query_result is None, "Should not match unknown project_id"
 
 
 @pytest.mark.asyncio
@@ -575,9 +573,7 @@ async def test_webhook_event_matching_example_group(egg_service: EggService) -> 
 
     # Simulate webhook from unknown group
     await egg_service.get_egg_by_group_id(999)
-    if egg_service.egg_query_result == matched:
-        matched = None
-    assert matched is None
+    assert egg_service.egg_query_result is None, "Should not match unknown group_id"
 
 
 @pytest.mark.asyncio

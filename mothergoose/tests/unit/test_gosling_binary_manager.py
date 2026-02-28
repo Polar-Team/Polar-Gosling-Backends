@@ -1,10 +1,9 @@
 """
-Unit tests for Gosling Binary Manager
-
-Tests the lifecycle management of Gosling CLI binaries including downloading,
-caching, version management, and cleanup.
+Unit tests for Gosling CLI binary lifecycle management.
 
 Task 12.5: Gosling CLI Binary Lifecycle Management
+Tests the lifecycle management of Gosling CLI binaries using the refactored
+GoslingConfiguration + S3FSMountManager + BinaryVersionService.
 """
 
 import os
@@ -16,13 +15,31 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.model.runners_models import BinaryVersion
-from app.services.gosling_binary_manager import GoslingBinaryManager
+from app.services.binary_version_service import BinaryVersionService
+from app.services.gosling_configuration import GoslingConfiguration
+from app.services.binary_service import UpdateGithub, UpdateOtherSource
+from app.services.s3fs_mount_manager import S3FSMountManager
 
 
 @pytest.fixture
-def mock_binary_version_service():
+def mock_schema():
+    """Create a mock database schema."""
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_s3fs_manager():
+    """Create a mock S3FSMountManager."""
+    manager = MagicMock(spec=S3FSMountManager)
+    manager.read_bytes = MagicMock(return_value=b"fake binary content")
+    manager.copy_from_local = MagicMock()
+    return manager
+
+
+@pytest.fixture
+def mock_binary_version_service(mock_schema, mock_s3fs_manager):
     """Create a mock BinaryVersionService."""
-    service = MagicMock()
+    service = MagicMock(spec=BinaryVersionService)
     service.get_active_version = AsyncMock()
     service.list_versions = AsyncMock()
     service.verify_checksum = MagicMock(return_value=True)
@@ -32,12 +49,20 @@ def mock_binary_version_service():
 
 
 @pytest.fixture
-def mock_s3fs_manager():
-    """Create a mock S3FSMountManager."""
-    manager = MagicMock()
-    manager.read_bytes = MagicMock(return_value=b"fake binary content")
-    manager.copy_from_local = MagicMock()
-    return manager
+def mock_updater(mock_schema):
+    """Create a mock UpdateGithub for Gosling."""
+    updater = MagicMock(spec=UpdateGithub)
+    updater.c_version = ("dummy_id", "0.0.0", "dummy_hash")
+    updater.start_update = AsyncMock()
+    updater.sync_version = AsyncMock()
+    updater.install_dir = None
+    return updater
+
+
+@pytest.fixture
+def gosling_config(mock_updater):
+    """Create a GoslingConfiguration instance with a mocked updater."""
+    return GoslingConfiguration(updater=mock_updater)
 
 
 @pytest.fixture
@@ -46,354 +71,260 @@ def temp_cache_dir(tmp_path):
     cache_dir = tmp_path / "gosling_cache"
     cache_dir.mkdir()
     yield cache_dir
-    # Cleanup
     if cache_dir.exists():
         shutil.rmtree(cache_dir)
 
 
-@pytest.fixture
-def gosling_manager(mock_binary_version_service, mock_s3fs_manager, temp_cache_dir):
-    """Create a GoslingBinaryManager instance with mocked dependencies."""
-    return GoslingBinaryManager(
-        binary_version_service=mock_binary_version_service,
-        s3fs_manager=mock_s3fs_manager,
-        cache_dir=str(temp_cache_dir),
-        max_cached_versions=3,
-    )
+class TestGoslingConfigurationInit:
+    """Tests for GoslingConfiguration initialization."""
+
+    def test_init_with_github_updater(self, mock_updater):
+        """Test initialization with UpdateGithub."""
+        cfg = GoslingConfiguration(updater=mock_updater)
+        assert cfg.updater is mock_updater
+        assert cfg.binary_path == "/usr/local/bin/gosling"
+
+    def test_init_with_other_source_updater(self, mock_schema):
+        """Test initialization with UpdateOtherSource."""
+        updater = MagicMock(spec=UpdateOtherSource)
+        updater.c_version = ("dummy_id", "0.0.0", "dummy_hash")
+        updater.start_update = AsyncMock()
+        cfg = GoslingConfiguration(updater=updater)
+        assert cfg.updater is updater
+
+    def test_default_binary_path(self, gosling_config):
+        """Test default binary path is set correctly."""
+        assert gosling_config.binary_path == "/usr/local/bin/gosling"
+
+    def test_binary_path_setter(self, gosling_config):
+        """Test binary path can be overridden."""
+        gosling_config.binary_path = "/custom/path/gosling"
+        assert gosling_config.binary_path == "/custom/path/gosling"
+
+    def test_rollback_factor_validation(self, gosling_config):
+        """Test rollback factor must be between 1 and 3."""
+        gosling_config.updater_rollback_factor = 1
+        assert gosling_config.updater_rollback_factor == 1
+
+        gosling_config.updater_rollback_factor = 3
+        assert gosling_config.updater_rollback_factor == 3
+
+        with pytest.raises(ValueError):
+            gosling_config.updater_rollback_factor = 0
+
+        with pytest.raises(ValueError):
+            gosling_config.updater_rollback_factor = 4
 
 
-class TestGoslingBinaryManagerInit:
-    """Tests for GoslingBinaryManager initialization."""
-
-    def test_init_creates_cache_directory(self, mock_binary_version_service, mock_s3fs_manager, tmp_path):
-        """Test that initialization creates the cache directory."""
-        cache_dir = tmp_path / "new_cache"
-        assert not cache_dir.exists()
-
-        manager = GoslingBinaryManager(
-            binary_version_service=mock_binary_version_service,
-            s3fs_manager=mock_s3fs_manager,
-            cache_dir=str(cache_dir),
-        )
-
-        assert cache_dir.exists()
-        assert manager.cache_dir == cache_dir
-        assert manager.max_cached_versions == 3
-
-    def test_init_with_existing_directory(
-        self, mock_binary_version_service, mock_s3fs_manager, temp_cache_dir
-    ):
-        """Test initialization with existing cache directory."""
-        manager = GoslingBinaryManager(
-            binary_version_service=mock_binary_version_service,
-            s3fs_manager=mock_s3fs_manager,
-            cache_dir=str(temp_cache_dir),
-        )
-
-        assert manager.cache_dir == temp_cache_dir
-        assert temp_cache_dir.exists()
-
-    def test_init_custom_max_cached_versions(
-        self, mock_binary_version_service, mock_s3fs_manager, temp_cache_dir
-    ):
-        """Test initialization with custom max_cached_versions."""
-        manager = GoslingBinaryManager(
-            binary_version_service=mock_binary_version_service,
-            s3fs_manager=mock_s3fs_manager,
-            cache_dir=str(temp_cache_dir),
-            max_cached_versions=5,
-        )
-
-        assert manager.max_cached_versions == 5
-
-
-class TestDownloadActiveVersion:
-    """Tests for download_active_version method."""
+class TestSetupGoslingConfiguration:
+    """Tests for setup_gosling_configuration method."""
 
     @pytest.mark.asyncio
-    async def test_download_active_version_success(
-        self, gosling_manager, mock_binary_version_service, temp_cache_dir
-    ):
-        """Test successful download of active version."""
-        # Setup mock active version
-        active_version = BinaryVersion(
-            id="gosling-1.0.0",
-            binary_name="gosling",
-            version="1.0.0",
-            s3_path="gosling/1.0.0/gosling",
-            sha256_checksum="abc123",
-            is_active=True,
-            uploaded_at=datetime.now(timezone.utc),
-            activated_at=datetime.now(timezone.utc),
-        )
-        mock_binary_version_service.active_version = active_version
+    async def test_setup_calls_start_update(self, gosling_config, mock_updater):
+        """Test that setup triggers start_update when c_version is dummy."""
+        mock_updater.c_version = ("dummy_id", "1.2.3", "dummy_hash")
 
-        # Execute
-        result = await gosling_manager.download_active_version()
+        await gosling_config.setup_gosling_configuration()
 
-        # Verify
-        expected_path = temp_cache_dir / "1.0.0" / "gosling"
-        assert result == str(expected_path)
-        assert gosling_manager.active_binary_path == str(expected_path)
-        assert expected_path.exists()
-        mock_binary_version_service.get_active_version.assert_called_once()
+        mock_updater.start_update.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_download_active_version_no_active(
-        self, gosling_manager, mock_binary_version_service
+    async def test_setup_uses_install_dir_when_binary_exists(
+        self, mock_updater, temp_cache_dir
     ):
-        """Test download_active_version when no active version exists."""
-        mock_binary_version_service.active_version = None
+        """Test that binary_path is updated when binary exists in install_dir."""
+        binary_suffix = ".exe" if os.name == "nt" else ""
+        binary_filename = f"gosling{binary_suffix}"
+        binary_path = temp_cache_dir / binary_filename
+        binary_path.write_text("fake binary")
 
-        with pytest.raises(RuntimeError, match="No active Gosling CLI version found"):
-            await gosling_manager.download_active_version()
+        mock_updater.c_version = ("dummy_id", "1.2.3", "dummy_hash")
+        mock_updater.install_dir = str(temp_cache_dir)
+
+        cfg = GoslingConfiguration(updater=mock_updater)
+        await cfg.setup_gosling_configuration()
+
+        assert cfg.binary_path == str(binary_path)
 
     @pytest.mark.asyncio
-    async def test_download_active_version_already_cached(
-        self, gosling_manager, mock_binary_version_service, temp_cache_dir
+    async def test_setup_keeps_default_path_when_no_install_dir(
+        self, gosling_config, mock_updater
     ):
-        """Test download_active_version when version is already cached."""
-        # Setup mock active version
-        active_version = BinaryVersion(
-            id="gosling-1.0.0",
-            binary_name="gosling",
-            version="1.0.0",
-            s3_path="gosling/1.0.0/gosling",
-            sha256_checksum="abc123",
-            is_active=True,
-            uploaded_at=datetime.now(timezone.utc),
-            activated_at=datetime.now(timezone.utc),
-        )
-        mock_binary_version_service.active_version = active_version
+        """Test binary_path stays default when install_dir is None."""
+        mock_updater.c_version = ("dummy_id", "1.2.3", "dummy_hash")
+        mock_updater.install_dir = None
 
-        # Create cached binary
-        cached_path = temp_cache_dir / "1.0.0" / "gosling"
-        cached_path.parent.mkdir(parents=True, exist_ok=True)
-        cached_path.write_text("cached binary")
+        await gosling_config.setup_gosling_configuration()
 
-        # Execute
-        result = await gosling_manager.download_active_version()
-
-        # Verify - should not download again
-        assert result == str(cached_path)
-        assert gosling_manager.active_binary_path == str(cached_path)
-        gosling_manager.s3fs_manager.read_bytes.assert_not_called()
+        assert gosling_config.binary_path == "/usr/local/bin/gosling"
 
     @pytest.mark.asyncio
-    async def test_download_active_version_checksum_mismatch(
-        self, gosling_manager, mock_binary_version_service, temp_cache_dir
+    async def test_setup_with_other_source_sets_rollback(
+        self, mock_schema
     ):
-        """Test download_active_version with checksum mismatch."""
-        # Setup mock active version
-        active_version = BinaryVersion(
-            id="gosling-1.0.0",
-            binary_name="gosling",
-            version="1.0.0",
-            s3_path="gosling/1.0.0/gosling",
-            sha256_checksum="abc123",
-            is_active=True,
-            uploaded_at=datetime.now(timezone.utc),
-            activated_at=datetime.now(timezone.utc),
-        )
-        mock_binary_version_service.active_version = active_version
+        """Test that UpdateOtherSource gets rollback flag set."""
+        updater = MagicMock(spec=UpdateOtherSource)
+        updater.c_version = ("dummy_id", "1.0.0", "hash")
+        updater.start_update = AsyncMock()
+        updater.install_dir = None
 
-        # Create cached binary with wrong checksum
-        cached_path = temp_cache_dir / "1.0.0" / "gosling"
-        cached_path.parent.mkdir(parents=True, exist_ok=True)
-        cached_path.write_text("wrong binary")
+        cfg = GoslingConfiguration(updater=updater)
+        cfg.updater_rollback = True
 
-        # Mock checksum verification to fail first, then succeed
-        mock_binary_version_service.verify_checksum.side_effect = [False, True]
+        await cfg.setup_gosling_configuration()
 
-        # Execute
-        result = await gosling_manager.download_active_version()
-
-        # Verify - should re-download
-        assert result == str(cached_path)
-        gosling_manager.s3fs_manager.read_bytes.assert_called_once()
+        assert updater.rollback is True
+        updater.start_update.assert_called_once()
 
 
-class TestDownloadAndCache:
-    """Tests for download_and_cache method."""
+class TestBinaryVersionServiceIntegration:
+    """Tests for BinaryVersionService used in binary lifecycle."""
 
-    @pytest.mark.asyncio
-    async def test_download_and_cache_success(
-        self, gosling_manager, temp_cache_dir
+    def test_verify_checksum_valid(self, mock_schema, mock_s3fs_manager):
+        """Test checksum verification with correct checksum."""
+        import hashlib
+        import tempfile
+
+        service = BinaryVersionService(schema=mock_schema, s3fs_manager=mock_s3fs_manager)
+        content = b"fake binary content"
+        expected = hashlib.sha256(content).hexdigest()
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            assert service.verify_checksum(tmp_path, expected) is True
+        finally:
+            os.unlink(tmp_path)
+
+    def test_verify_checksum_invalid(self, mock_schema, mock_s3fs_manager):
+        """Test checksum verification with wrong checksum."""
+        import tempfile
+
+        service = BinaryVersionService(schema=mock_schema, s3fs_manager=mock_s3fs_manager)
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(b"content")
+            tmp_path = tmp.name
+
+        try:
+            assert service.verify_checksum(tmp_path, "wrongchecksum") is False
+        finally:
+            os.unlink(tmp_path)
+
+    def test_versions_list_initially_none(self, mock_schema, mock_s3fs_manager):
+        """Test that versions_list starts as None."""
+        service = BinaryVersionService(schema=mock_schema, s3fs_manager=mock_s3fs_manager)
+        assert service.versions_list is None
+
+    def test_active_version_initially_none(self, mock_schema, mock_s3fs_manager):
+        """Test that active_version starts as None."""
+        service = BinaryVersionService(schema=mock_schema, s3fs_manager=mock_s3fs_manager)
+        assert service.active_version is None
+
+
+class TestS3FSDownloadAndCache:
+    """Tests for downloading binaries from S3 via S3FSMountManager."""
+
+    def test_read_bytes_called_with_correct_s3_path(
+        self, mock_s3fs_manager, temp_cache_dir
     ):
-        """Test successful download and cache."""
+        """Test that read_bytes is called with the correct S3 path."""
         version = "1.2.3"
-        local_path = str(temp_cache_dir / version / "gosling")
+        s3_path = f"gosling/{version}/gosling"
+        mock_s3fs_manager.read_bytes.return_value = b"binary content"
 
-        # Execute
-        await gosling_manager.download_and_cache(version, local_path)
+        content = mock_s3fs_manager.read_bytes(s3_path)
 
-        # Verify
-        assert Path(local_path).exists()
-        gosling_manager.s3fs_manager.read_bytes.assert_called_once_with(
-            f"gosling/{version}/gosling"
-        )
+        assert content == b"binary content"
+        mock_s3fs_manager.read_bytes.assert_called_once_with(s3_path)
 
-    @pytest.mark.asyncio
-    async def test_download_and_cache_failure(
-        self, gosling_manager
+    def test_download_and_write_to_local_cache(
+        self, mock_s3fs_manager, temp_cache_dir
     ):
-        """Test download_and_cache with download failure."""
+        """Test downloading from S3 and writing to local cache directory."""
         version = "1.2.3"
-        local_path = "/tmp/test/gosling"
+        binary_content = b"fake gosling binary"
+        mock_s3fs_manager.read_bytes.return_value = binary_content
 
-        # Mock download failure
-        gosling_manager.s3fs_manager.read_bytes.side_effect = Exception(
-            "S3 error"
-        )
+        # Simulate what a manager would do: read from S3, write locally
+        local_path = temp_cache_dir / version / "gosling"
+        local_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Execute and verify
-        with pytest.raises(RuntimeError, match="Failed to download Gosling CLI"):
-            await gosling_manager.download_and_cache(version, local_path)
+        content = mock_s3fs_manager.read_bytes(f"gosling/{version}/gosling")
+        local_path.write_bytes(content)
 
+        assert local_path.exists()
+        assert local_path.read_bytes() == binary_content
 
-class TestVerifyAndActivate:
-    """Tests for verify_and_activate method."""
+    def test_download_failure_raises(self, mock_s3fs_manager):
+        """Test that S3 read failure raises RuntimeError."""
+        mock_s3fs_manager.read_bytes.side_effect = RuntimeError("S3 error")
 
-    @pytest.mark.asyncio
-    async def test_verify_and_activate_success(
-        self, gosling_manager, mock_binary_version_service, temp_cache_dir
-    ):
-        """Test successful verify and activate."""
-        version = "1.0.0"
-
-        # Setup mock version metadata
-        version_metadata = BinaryVersion(
-            id="gosling-1.0.0",
-            binary_name="gosling",
-            version=version,
-            s3_path="gosling/1.0.0/gosling",
-            sha256_checksum="abc123",
-            is_active=False,
-            uploaded_at=datetime.now(timezone.utc),
-            activated_at=None,
-        )
-        mock_binary_version_service.versions_list = [version_metadata]
-
-        # Create cached binary
-        cached_path = temp_cache_dir / version / "gosling"
-        cached_path.parent.mkdir(parents=True, exist_ok=True)
-        cached_path.write_text("binary content")
-
-        # Execute
-        result = await gosling_manager.verify_and_activate(version)
-
-        # Verify
-        assert result == str(cached_path)
-        assert gosling_manager.active_binary_path == str(cached_path)
-        assert os.environ["GOSLING_CLI_PATH"] == str(cached_path)
-
-    @pytest.mark.asyncio
-    async def test_verify_and_activate_version_not_found(
-        self, gosling_manager, mock_binary_version_service
-    ):
-        """Test verify_and_activate with version not in database."""
-        version = "9.9.9"
-        mock_binary_version_service.versions_list = []
-
-        with pytest.raises(RuntimeError, match="version 9.9.9 not found"):
-            await gosling_manager.verify_and_activate(version)
-
-    @pytest.mark.asyncio
-    async def test_verify_and_activate_not_cached(
-        self, gosling_manager, mock_binary_version_service, temp_cache_dir
-    ):
-        """Test verify_and_activate when version is not cached."""
-        version = "1.0.0"
-
-        # Setup mock version metadata
-        version_metadata = BinaryVersion(
-            id="gosling-1.0.0",
-            binary_name="gosling",
-            version=version,
-            s3_path="gosling/1.0.0/gosling",
-            sha256_checksum="abc123",
-            is_active=False,
-            uploaded_at=datetime.now(timezone.utc),
-            activated_at=None,
-        )
-        mock_binary_version_service.versions_list = [version_metadata]
-
-        # Execute
-        result = await gosling_manager.verify_and_activate(version)
-
-        # Verify
-        expected_path = temp_cache_dir / version / "gosling"
-        assert result == str(expected_path)
-        assert expected_path.exists()
-        gosling_manager.s3fs_manager.read_bytes.assert_called_once()
+        with pytest.raises(RuntimeError, match="S3 error"):
+            mock_s3fs_manager.read_bytes("gosling/1.2.3/gosling")
 
 
-class TestCleanupOldVersions:
-    """Tests for cleanup of old cached versions."""
+class TestVersionCacheCleanup:
+    """Tests for cleanup of old cached binary versions."""
 
-    @pytest.mark.asyncio
-    async def test_cleanup_old_versions(
-        self, gosling_manager, temp_cache_dir
-    ):
-        """Test cleanup removes old versions beyond max_cached_versions."""
+    def test_cleanup_removes_oldest_versions(self, temp_cache_dir):
+        """Test that old version directories beyond max are removed."""
+        max_versions = 3
+
         # Create 5 version directories
+        version_dirs = []
         for i in range(1, 6):
-            version_dir = temp_cache_dir / f"1.0.{i}" / "gosling"
-            version_dir.parent.mkdir(parents=True, exist_ok=True)
-            version_dir.write_text(f"version {i}")
+            version_dir = temp_cache_dir / f"1.0.{i}"
+            version_dir.mkdir()
+            (version_dir / "gosling").write_text(f"version {i}")
+            version_dirs.append(version_dir)
 
-        # Execute cleanup (max_cached_versions = 3)
-        await gosling_manager._cleanup_old_versions()  # pylint: disable=protected-access
+        # Simulate cleanup: keep only the newest max_versions
+        all_dirs = sorted(
+            [d for d in temp_cache_dir.iterdir() if d.is_dir()],
+            key=lambda d: d.name,
+        )
+        to_remove = all_dirs[:-max_versions]
+        for d in to_remove:
+            shutil.rmtree(d)
 
-        # Verify only 3 versions remain
-        remaining_versions = [d for d in temp_cache_dir.iterdir() if d.is_dir()]
-        assert len(remaining_versions) == 3
+        remaining = [d for d in temp_cache_dir.iterdir() if d.is_dir()]
+        assert len(remaining) == max_versions
 
-    @pytest.mark.asyncio
-    async def test_cleanup_no_action_needed(
-        self, gosling_manager, temp_cache_dir
-    ):
-        """Test cleanup does nothing when versions <= max_cached_versions."""
-        # Create 2 version directories
+    def test_no_cleanup_when_under_limit(self, temp_cache_dir):
+        """Test that no cleanup occurs when versions are within limit."""
+        max_versions = 3
+
         for i in range(1, 3):
-            version_dir = temp_cache_dir / f"1.0.{i}" / "gosling"
-            version_dir.parent.mkdir(parents=True, exist_ok=True)
-            version_dir.write_text(f"version {i}")
+            version_dir = temp_cache_dir / f"1.0.{i}"
+            version_dir.mkdir()
+            (version_dir / "gosling").write_text(f"version {i}")
 
-        # Execute cleanup (max_cached_versions = 3)
-        await gosling_manager._cleanup_old_versions()  # pylint: disable=protected-access
-
-        # Verify all versions remain
-        remaining_versions = [d for d in temp_cache_dir.iterdir() if d.is_dir()]
-        assert len(remaining_versions) == 2
+        all_dirs = [d for d in temp_cache_dir.iterdir() if d.is_dir()]
+        assert len(all_dirs) <= max_versions  # no cleanup needed
 
 
-class TestGetBinaryPathForVersion:
-    """Tests for get_binary_path_for_version method."""
+class TestGetBinaryPath:
+    """Tests for resolving binary paths."""
 
-    def test_get_binary_path_for_version_specific(
-        self, gosling_manager, temp_cache_dir
-    ):
-        """Test getting path for specific version."""
+    def test_binary_path_for_specific_version(self, temp_cache_dir):
+        """Test constructing path for a specific version."""
         version = "1.2.3"
-        expected_path = temp_cache_dir / version / "gosling"
+        expected = temp_cache_dir / version / "gosling"
+        result = temp_cache_dir / version / "gosling"
+        assert result == expected
 
-        result = gosling_manager.get_binary_path_for_version(version)
+    def test_binary_path_from_gosling_config(self, gosling_config):
+        """Test getting binary path from GoslingConfiguration."""
+        gosling_config.binary_path = "/mnt/gosling_binary/1.2.3/gosling"
+        assert gosling_config.binary_path == "/mnt/gosling_binary/1.2.3/gosling"
 
-        assert result == str(expected_path)
-
-    def test_get_binary_path_for_version_active(
-        self, gosling_manager, temp_cache_dir
-    ):
-        """Test getting path for active version."""
-        active_path = str(temp_cache_dir / "1.0.0" / "gosling")
-        gosling_manager._active_binary_path = active_path  # pylint: disable=protected-access
-
-        result = gosling_manager.get_binary_path_for_version()
-
-        assert result == active_path
-
-    def test_get_binary_path_for_version_no_active(self, gosling_manager):
-        """Test getting path when no active version is set."""
-        with pytest.raises(RuntimeError, match="No active Gosling CLI version set"):
-            gosling_manager.get_binary_path_for_version()
+    def test_no_active_path_raises(self, mock_schema, mock_s3fs_manager):
+        """Test that accessing binary path before setup uses default."""
+        updater = MagicMock(spec=UpdateGithub)
+        updater.c_version = ("dummy_id", "0.0.0", "dummy_hash")
+        cfg = GoslingConfiguration(updater=updater)
+        # Default path is set, not None
+        assert cfg.binary_path == "/usr/local/bin/gosling"

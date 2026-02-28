@@ -9,7 +9,7 @@ immediately after should return the updated state.
 """
 
 import pytest
-import asyncio
+import pytest_asyncio
 from hypothesis import given, settings, strategies as st, HealthCheck
 
 from ydb import AnonymousCredentials
@@ -30,8 +30,8 @@ from app.db.ydb_connection import AsyncYDBOperations
 from app.db.manage_db import AsyncYDBFunctionsCollections
 
 
-@pytest.fixture(scope="module", name="ydb_schema")
-def ydb_schema(ydb_container):
+@pytest_asyncio.fixture(scope="module", name="ydb_schema")
+async def ydb_schema(ydb_container):
     """Fixture to provide YDB configuration with runner tables."""
     config = YDBConfig(
         endpoint=f"grpc://{ydb_container.get_container_host_ip()}:"
@@ -54,11 +54,7 @@ def ydb_schema(ydb_container):
     delete_operation = AsyncYDBOperations(
         schema, AsyncYDBFunctionsCollections.drop_tables
     )
-
-    async def process():
-        await delete_operation.process()
-
-    asyncio.run(process())
+    await delete_operation.process()
 
 
 @pytest.fixture(scope="module", name="runner_service")

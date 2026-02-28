@@ -15,15 +15,69 @@ import requests_mock as req_mock
 from app.db.manage_db import AsyncYDBFunctionsCollections
 from app.db.ydb_connection import AsyncYDBOperations
 from app.model.gosling_models import GoslingModelYDB, GoslingVersionTableYDB
-from app.schema.tofu_schemas import OpenTofuBinFileInfo
+from app.schema.binary_schemas import BinFileInfo
 from app.schema.ydb_schemas import YDBConfig, YDBSchema
-from app.services.gosling_binary import (
-    GoslingDownloadFromOtherSource,
-    GoslingDownloadGithub,
-    GoslingUpdateGithub,
-    GoslingUpdateOtherSource,
+from app.services.binary_service import (
+    DownloadFromOtherSource,
+    DownloadGithub,
+    UpdateGithub,
+    UpdateOtherSource,
 )
 from ydb import AnonymousCredentials
+
+
+class GoslingDownloadGithub(DownloadGithub):
+    """DownloadGithub pre-wired for Gosling CLI."""
+
+    def __init__(
+        self, version=None, install_dir=None, github_repo="Polar-Gosling/gosling"
+    ):
+        super().__init__(
+            github_repo=github_repo,
+            binary_name="gosling",
+            version=version,
+            install_dir=install_dir,
+        )
+
+
+class GoslingDownloadFromOtherSource(DownloadFromOtherSource):
+    """DownloadFromOtherSource pre-wired for Gosling CLI."""
+
+    def __init__(self, version, download_url, hash_sha256, install_dir=None, **kwargs):
+        super().__init__(
+            version=version,
+            download_url=download_url,
+            hash_sha256=hash_sha256,
+            binary_name="gosling",
+            install_dir=install_dir,
+            **kwargs,
+        )
+
+
+class GoslingUpdateGithub(UpdateGithub):
+    """UpdateGithub pre-wired for Gosling CLI."""
+
+    def __init__(self, schema, install_dir=None):
+        super().__init__(
+            schema=schema,
+            github_repo="Polar-Gosling/gosling",
+            binary_name="gosling",
+            table_name="gosling_version",
+            install_dir=install_dir,
+        )
+
+
+class GoslingUpdateOtherSource(UpdateOtherSource):
+    """UpdateOtherSource pre-wired for Gosling CLI."""
+
+    def __init__(self, schema, files, install_dir=None):
+        super().__init__(
+            schema=schema,
+            files=files,
+            binary_name="gosling",
+            table_name="gosling_version",
+            install_dir=install_dir,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +256,22 @@ class TestGoslingDownloadFromOtherSourceAuthHeader:
 
         assert "Authorization" in captured_headers
         assert captured_headers["Authorization"] == f"Bearer {token}"
+
+
+# ---------------------------------------------------------------------------
+# Clear bin files info before running tests to avoid interference from previous test
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module", name="clear_bin_files_info", autouse=True)
+def clear_registries():
+    DownloadGithub.clear_bin_files_info()
+    DownloadGithub.clear_sha256_registry()
+    DownloadFromOtherSource.clear_bin_files_info()
+    yield
+    DownloadGithub.clear_bin_files_info()
+    DownloadGithub.clear_sha256_registry()
+    DownloadFromOtherSource.clear_bin_files_info()
 
 
 # ---------------------------------------------------------------------------
@@ -460,7 +530,7 @@ class TestGoslingDownloadGithubStoreBin:
 
         entries = [
             e
-            for e in GoslingDownloadGithub.get_gosling_bin_files_info()
+            for e in GoslingDownloadGithub.get_bin_files_info()
             if e.bin_version == "0.1.0"
         ]
         assert len(entries) >= 1
@@ -472,7 +542,8 @@ class TestGoslingDownloadGithubStoreBin:
 
 
 @pytest.fixture(scope="module", name="gosling_ydb_schema")
-def gosling_ydb_schema(ydb_container) -> YDBSchema:  # type: ignore[no-any-unimported]
+# type: ignore[no-any-unimported]
+def gosling_ydb_schema(ydb_container) -> YDBSchema:
     """Fixture providing a YDB schema configured for Gosling versioning tests."""
     config = YDBConfig(
         endpoint=(
@@ -514,7 +585,9 @@ class TestGoslingUpdateGithubYDB:
         depends=["TestGoslingUpdateGithubYDB::test_create_gosling_version_table"]
     )
     @pytest.mark.asyncio
-    async def test_upsert_writes_to_gosling_version_table(self, gosling_ydb_schema: YDBSchema):
+    async def test_upsert_writes_to_gosling_version_table(
+        self, gosling_ydb_schema: YDBSchema
+    ):
         """_upsert_data_ydb() should write a row to the gosling_version table."""
         updater = GoslingUpdateGithub(gosling_ydb_schema)
 
@@ -536,10 +609,14 @@ class TestGoslingUpdateGithubYDB:
         assert result[0][0].rows, "Expected rows in gosling_version after upsert."
 
     @pytest.mark.dependency(
-        depends=["TestGoslingUpdateGithubYDB::test_upsert_writes_to_gosling_version_table"]
+        depends=[
+            "TestGoslingUpdateGithubYDB::test_upsert_writes_to_gosling_version_table"
+        ]
     )
     @pytest.mark.asyncio
-    async def test_select_version_queries_gosling_version(self, gosling_ydb_schema: YDBSchema):
+    async def test_select_version_queries_gosling_version(
+        self, gosling_ydb_schema: YDBSchema
+    ):
         """_select_version('github') should return the row with the correct version."""
         updater = GoslingUpdateGithub(gosling_ydb_schema)
         result = await updater._select_version("github")  # pylint: disable=protected-access
@@ -551,7 +628,9 @@ class TestGoslingUpdateGithubYDB:
         assert "1.0.0" in versions, f"Expected version '1.0.0' in rows, got: {versions}"
 
     @pytest.mark.dependency(
-        depends=["TestGoslingUpdateGithubYDB::test_select_version_queries_gosling_version"]
+        depends=[
+            "TestGoslingUpdateGithubYDB::test_select_version_queries_gosling_version"
+        ]
     )
     @pytest.mark.asyncio
     async def test_activation_sets_active_true(self, gosling_ydb_schema: YDBSchema):
@@ -589,7 +668,9 @@ class TestGoslingUpdateGithubYDB:
         with patch.object(updater, "_get_latest_version", return_value="99.99.99"):
             result = await updater.check_required_actions()
 
-        assert result is True, "Expected True when latest version is newer than current."
+        assert result is True, (
+            "Expected True when latest version is newer than current."
+        )
 
     @pytest.mark.asyncio
     async def test_check_required_actions_returns_false_when_current(
@@ -614,12 +695,14 @@ class TestGoslingUpdateOtherSourceYDB:
     """Integration tests for GoslingUpdateOtherSource using the same YDB schema."""
 
     @pytest.mark.asyncio
-    async def test_check_required_actions_returns_true(self, gosling_ydb_schema: YDBSchema):
+    async def test_check_required_actions_returns_true(
+        self, gosling_ydb_schema: YDBSchema
+    ):
         """check_required_actions() should return True when a newer file version exists."""
         updater = GoslingUpdateOtherSource(
             gosling_ydb_schema,
             files=[
-                OpenTofuBinFileInfo(
+                BinFileInfo(
                     bin_version="5.0.0",
                     bin_url="https://example.com/gosling-5.0.0.tar.gz",
                     bin_sha256="a" * 64,
@@ -638,7 +721,7 @@ class TestGoslingUpdateOtherSourceYDB:
         updater = GoslingUpdateOtherSource(
             gosling_ydb_schema,
             files=[
-                OpenTofuBinFileInfo(
+                BinFileInfo(
                     bin_version="0.0.0",
                     bin_url="https://example.com/gosling-0.0.0.tar.gz",
                     bin_sha256="b" * 64,
@@ -647,25 +730,29 @@ class TestGoslingUpdateOtherSourceYDB:
         )
         # Default __c_version is "0.0.0", max file version is also "0.0.0" → no update
         result = await updater.check_required_actions()
-        assert result is False, "Expected False when current version equals max file version."
+        assert result is False, (
+            "Expected False when current version equals max file version."
+        )
 
     @pytest.mark.asyncio
-    async def test_download_available_versions_sorted(self, gosling_ydb_schema: YDBSchema):
+    async def test_download_available_versions_sorted(
+        self, gosling_ydb_schema: YDBSchema
+    ):
         """download_available_versions() should return versions sorted descending."""
         updater = GoslingUpdateOtherSource(
             gosling_ydb_schema,
             files=[
-                OpenTofuBinFileInfo(
+                BinFileInfo(
                     bin_version="1.0.0",
                     bin_url="https://example.com/gosling-1.0.0.tar.gz",
                     bin_sha256="c" * 64,
                 ),
-                OpenTofuBinFileInfo(
+                BinFileInfo(
                     bin_version="3.0.0",
                     bin_url="https://example.com/gosling-3.0.0.tar.gz",
                     bin_sha256="d" * 64,
                 ),
-                OpenTofuBinFileInfo(
+                BinFileInfo(
                     bin_version="2.0.0",
                     bin_url="https://example.com/gosling-2.0.0.tar.gz",
                     bin_sha256="e" * 64,

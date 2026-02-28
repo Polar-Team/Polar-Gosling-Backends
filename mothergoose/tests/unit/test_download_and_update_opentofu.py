@@ -1,36 +1,55 @@
 import os
 import platform
-import time
-
 import tempfile
 
-
-import requests_mock
 import requests
+import requests_mock
 import pytest
 
 from pydantic import ValidationError
-from app.services.opentofu_binary import (
-    OpenTofuDownloadGithub,
-    OpenTofuDownloadFromOtherSource,
-    OpenTofuUpdateGithub,
-    OpenTofuUpdateOtherSource,
+from app.services.binary_service import (
+    DownloadGithub,
+    DownloadFromOtherSource,
+    UpdateGithub,
+    UpdateOtherSource,
 )
-from app.schema.tofu_schemas import OpenTofuBinFileInfo
-
+from app.schema.binary_schemas import BinFileInfo
 from app.model.opentofu_models import OpenTofuVersionTableYDB
-
-from app.schema.ydb_schemas import (
-    YDBConfig,
-    YDBSchema,
-    OpenTofuModelYDB,
-)
+from app.schema.ydb_schemas import YDBConfig, YDBSchema, OpenTofuModelYDB
 from app.schema.url_schemas import URLAuthSchema
-
 from ydb import AnonymousCredentials
 from ydb.issues import GenericError as AsyncGenericError
 from app.db.ydb_connection import AsyncYDBOperations
 from app.db.manage_db import AsyncYDBFunctionsCollections
+
+
+OpenTofuBinFileInfo = BinFileInfo
+
+
+class OpenTofuUpdateGithub(UpdateGithub):
+    """UpdateGithub pre-wired for OpenTofu."""
+
+    def __init__(self, schema, install_dir=None):
+        super().__init__(
+            schema=schema,
+            github_repo="opentofu/opentofu",
+            binary_name="tofu",
+            table_name="opentofu_version",
+            install_dir=install_dir,
+        )
+
+
+class OpenTofuUpdateOtherSource(UpdateOtherSource):
+    """UpdateOtherSource pre-wired for OpenTofu."""
+
+    def __init__(self, schema, files, install_dir=None):
+        super().__init__(
+            schema=schema,
+            files=files,
+            binary_name="tofu",
+            table_name="opentofu_version",
+            install_dir=install_dir,
+        )
 
 
 class MockDownloader:
@@ -40,12 +59,9 @@ class MockDownloader:
         self.bearer = bearer
 
     def download(self) -> str:
-        # Simulate download logic based on auth type
         if self.auth_header == "PRIVATE-TOKEN":
             return f"Downloaded with GitLab token: {self.token}"
-        elif self.auth_header == "Authorization" and self.token.startswith(
-            "ghp_",
-        ):
+        elif self.auth_header == "Authorization" and self.token.startswith("ghp_"):
             return f"Downloaded with GitHub token: {self.token}"
         elif self.auth_header == "Authorization" and self.bearer:
             return f"Downloaded with Bearer token: {self.token}"
@@ -53,74 +69,80 @@ class MockDownloader:
             return f"Downloaded with JWT token: {self.token}"
 
 
-class TestOpenTofuDownloadGithub(OpenTofuDownloadGithub):
+class TestOpenTofuDownloadGithub(DownloadGithub):
     """Test class for OpenTofuDownload."""
 
     __test__ = False
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, version=None, install_dir=None):
+        super().__init__(
+            github_repo="opentofu/opentofu",
+            binary_name="tofu",
+            version=version,
+            install_dir=install_dir,
+        )
         self.py_test_enabled = os.environ.get("PY_TEST") == "True"
 
     def tests_get_download_url(self):
-        """Test the download URL generation."""
-
         if self.py_test_enabled:
             return self._get_download_url()
-        else:
-            return None
+        return None
 
     def tests_download_and_extract(self):
-        """Test the download and extraction process."""
-
         if self.py_test_enabled:
             with tempfile.TemporaryDirectory() as tmpdir:
                 self._download_and_extract(tmpdir)
                 return os.listdir(tmpdir)
-        else:
-            return None
+        return None
 
     def tests_store_downloaded_bin(self):
-        """Test the download and extraction process."""
-
         if self.py_test_enabled:
             return self.store_downloaded_bin()
-        else:
-            return None
+        return None
 
 
-class TestOpenTofuDownloadFromOtherSource(OpenTofuDownloadFromOtherSource):
+class TestOpenTofuDownloadFromOtherSource(DownloadFromOtherSource):
     """Test class for OpenTofuDownloadFromOtherSource."""
 
     __test__ = False
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, version, url, hash_sha256, install_dir=None, **kwargs):
+        super().__init__(
+            version=version,
+            download_url=url,
+            hash_sha256=hash_sha256,
+            binary_name="tofu",
+            install_dir=install_dir,
+            **kwargs,
+        )
         self.py_test_enabled = os.environ.get("PY_TEST") == "True"
 
     def tests_download_and_extract_with_token(self):
-        """Test the download and extraction process."""
-
         if self.py_test_enabled:
             with tempfile.TemporaryDirectory() as tmpdir:
                 self._download_and_extract(tmpdir)
                 return os.listdir(tmpdir)
-        else:
-            return None
+        return None
 
     def tests_store_downloaded_bin(self):
-        """Test the download and extraction process."""
-
         if self.py_test_enabled:
             return self.store_downloaded_bin()
-        else:
-            return None
+        return None
+
+
+@pytest.fixture(scope="module", name="clear_bin_files_info", autouse=True)
+def clear_registries():
+    DownloadGithub.clear_bin_files_info()
+    DownloadGithub.clear_sha256_registry()
+    DownloadFromOtherSource.clear_bin_files_info()
+    yield
+    DownloadGithub.clear_bin_files_info()
+    DownloadGithub.clear_sha256_registry()
+    DownloadFromOtherSource.clear_bin_files_info()
 
 
 @pytest.fixture(scope="module", name="ydb_schema")
 def ydb_schema(ydb_container) -> YDBSchema:
-    """Fixture to provide YDB configuration."""
-
     config = YDBConfig(
         endpoint=(
             f"grpc://{ydb_container.get_container_host_ip()}:"
@@ -130,17 +152,11 @@ def ydb_schema(ydb_container) -> YDBSchema:
         credentials=AnonymousCredentials(),
     )
     model = OpenTofuModelYDB(tables=[OpenTofuVersionTableYDB()])
-    schema = YDBSchema(
-        config=config,
-        model=model,
-    )
-    return schema
+    return YDBSchema(config=config, model=model)
 
 
 @pytest.fixture(scope="module", name="inst_download")
 def inst_download():
-    """Function for init connection in OpensearchArchive class."""
-
     client = TestOpenTofuDownloadGithub(version="1.10.3")
     yield client
 
@@ -148,8 +164,6 @@ def inst_download():
 @pytest.mark.dependency()
 def test_tofu_get_download_get_downlload_url(inst_download):
     # pylint: disable=protected-access
-    """Function for testing download URL generation of OpenTofu binary."""
-
     if download_url := inst_download.tests_get_download_url():
         assert isinstance(download_url, str)
         assert download_url.startswith(
@@ -161,8 +175,6 @@ def test_tofu_get_download_get_downlload_url(inst_download):
 
 @pytest.mark.dependency(depends=["test_tofu_get_download_get_downlload_url"])
 def test_tofu_get_download_and_extract(inst_download):
-    """Function for testing download and extraction of OpenTofu binary."""
-
     if files := inst_download.tests_download_and_extract():
         assert isinstance(files, list)
         assert len(files) > 0
@@ -171,14 +183,7 @@ def test_tofu_get_download_and_extract(inst_download):
 
 
 @pytest.mark.dependency(depends=["test_tofu_get_download_and_extract"])
-def test_tofu_download_different_version_and_check_property(
-    inst_download,
-):
-    """
-    Function for testiong download and extraction of
-    OpenTofu binary with different version.
-    """
-
+def test_tofu_download_different_version_and_check_property(inst_download):
     new_instance = TestOpenTofuDownloadGithub(version="1.10.4")
 
     if files := new_instance.tests_download_and_extract():
@@ -200,15 +205,14 @@ def test_tofu_download_different_version_and_check_property(
     depends=["test_tofu_download_different_version_and_check_property"]
 )
 def test_store_downloaded_bin(inst_download):
-    """Function for testing download and extraction of OpenTofu binary."""
-
     inst_download.install_dir = tempfile.mkdtemp(prefix="opentofu_test_")
-
     inst_download.tests_store_downloaded_bin()
+
     inst2_download = TestOpenTofuDownloadGithub(version="1.10.4")
     inst2_download.install_dir = inst_download.install_dir
     inst2_download.tests_store_downloaded_bin()
-    binaries_list = OpenTofuDownloadGithub.get_opentofu_bin_files_info()
+
+    binaries_list = DownloadGithub.get_bin_files_info()
     assert isinstance(binaries_list[0], OpenTofuBinFileInfo), (
         "First item in binaries list is not instance of OpenTofuBinFileInfo."
     )
@@ -221,13 +225,14 @@ def test_store_downloaded_bin(inst_download):
     assert binaries_list[1].bin_version == "1.10.4", (
         "Version of second binary is not correct."
     )
+
     hash_10_3 = inst_download.get_packages_sha256_hash["1.10.3"]
     hash_10_4 = inst_download.get_packages_sha256_hash["1.10.4"]
     assert binaries_list[0].bin_sha256 == hash_10_3, (
-        "SHA256 hash of verxion 1.10.3 is not correct."
+        "SHA256 hash of version 1.10.3 is not correct."
     )
     assert binaries_list[1].bin_sha256 == hash_10_4, (
-        "SHA256 hash of verxion 1.10.4 is not correct."
+        "SHA256 hash of version 1.10.4 is not correct."
     )
     assert binaries_list[0].bin_url.startswith(
         "https://github.com/opentofu/opentofu/releases/download/v1.10.3"
@@ -239,9 +244,7 @@ def test_store_downloaded_bin(inst_download):
 
 @pytest.fixture(scope="module", name="inst_other")
 def test_tofu_get_download_and_extract_from_other_source(mock_server_url):
-    """Function for testing download and extraction of OpenTofu binary."""
-
-    binaries_list = OpenTofuDownloadGithub.get_opentofu_bin_files_info()
+    binaries_list = DownloadGithub.get_bin_files_info()
 
     url, token = mock_server_url
     client = TestOpenTofuDownloadFromOtherSource(
@@ -252,21 +255,13 @@ def test_tofu_get_download_and_extract_from_other_source(mock_server_url):
     client.auth_header_name = "Authorization"
     client.bearer_token = True
     client.token = token
-
     yield client
 
 
 @pytest.mark.dependency(depends=["test_store_downloaded_bin"])
-def test_tofu_download_and_extract_other(
-    inst_other,
-    mock_server_url,
-):
-    """Function for testing download and extraction of OpenTofu binary."""
+def test_tofu_download_and_extract_other(inst_other, mock_server_url):
     if (system := platform.system().lower()) == "linux":
-        if (arch := platform.machine().lower()) in ("x86_64", "amd64"):
-            arch = "amd64"
-        else:
-            arch = "arm64"
+        arch = "amd64" if platform.machine().lower() in ("x86_64", "amd64") else "arm64"
         dpath = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
     else:
         arch = "amd64"
@@ -280,9 +275,7 @@ def test_tofu_download_and_extract_other(
         m.get(
             url,
             content=response.content,
-            request_headers={
-                "Authorization": f"Bearer {token}",
-            },
+            request_headers={"Authorization": f"Bearer {token}"},
         )
 
         if files := inst_other.tests_download_and_extract_with_token():
@@ -293,8 +286,9 @@ def test_tofu_download_and_extract_other(
 
         inst_other.install_dir = tempfile.mkdtemp(prefix="opentofu_test_")
         inst_other.tests_store_downloaded_bin()
-        blist = OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info()
-        binaries_list = OpenTofuDownloadGithub.get_opentofu_bin_files_info()
+
+        blist = DownloadFromOtherSource.get_bin_files_info()
+        binaries_list = DownloadGithub.get_bin_files_info()
         assert isinstance(blist[0], OpenTofuBinFileInfo), (
             "First item in binaries list is not inst of OpenTofuBinFileInfo."
         )
@@ -303,23 +297,18 @@ def test_tofu_download_and_extract_other(
         )
         hash_10_4 = binaries_list[1].bin_sha256
         assert blist[0].bin_sha256 == hash_10_4, (
-            "SHA256 hash of verxion 1.10.4 is not correct."
+            "SHA256 hash of version 1.10.4 is not correct."
         )
         assert blist[0].bin_url == url, "Url of version 1.10.4 is not correct."
 
 
 @pytest.mark.dependency(depends=["test_tofu_download_and_extract_other"])
 def test_tofu_store_downloaded_bin_other(inst_other, mock_server_url):
-    """Function for testing download and extraction of OpenTofu binary."""
     if (system := platform.system().lower()) == "linux":
-        if (arch := platform.machine().lower()) in ("x86_64", "amd64"):
-            arch = "amd64"
-        else:
-            arch = "arm64"
+        arch = "amd64" if platform.machine().lower() in ("x86_64", "amd64") else "arm64"
         dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
         url_new = "https://mockserver.com/1.10.6/tofu.tar.gz"
         binhash = "b6b46b4fd8dd0b96e624f2a2d5fbc4efae2fc0174529b37292775c847c2e7d2c"
-
     else:
         arch = "amd64"
         dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.zip"
@@ -333,25 +322,19 @@ def test_tofu_store_downloaded_bin_other(inst_other, mock_server_url):
 
     inst_other.url = url_new
     inst_other.version = "1.10.6"
-    inst_other._opentofu_bin_files_info.append(
-        OpenTofuBinFileInfo(
-            bin_version="1.10.6",
-            bin_url=url_new,
-            bin_sha256=binhash,
-        )
+    inst_other._bin_files_info.append(
+        OpenTofuBinFileInfo(bin_version="1.10.6", bin_url=url_new, bin_sha256=binhash)
     )
     with requests_mock.Mocker() as m:
         m.get(
             url_new,
             content=response.content,
-            request_headers={
-                "Authorization": f"Bearer {token}",
-            },
+            request_headers={"Authorization": f"Bearer {token}"},
         )
         inst_other.install_dir = tempfile.mkdtemp(prefix="opentofu_test_")
         inst_other.tests_store_downloaded_bin()
 
-        blist = OpenTofuDownloadFromOtherSource.get_opentofu_bin_files_info()
+        blist = DownloadFromOtherSource.get_bin_files_info()
         assert isinstance(blist[2], OpenTofuBinFileInfo), (
             "First item in binaries list is not inst of OpenTofuBinFileInfo."
         )
@@ -363,37 +346,28 @@ def test_tofu_store_downloaded_bin_other(inst_other, mock_server_url):
 @pytest.mark.dependency(depends=["test_tofu_store_downloaded_bin_other"])
 @pytest.mark.asyncio
 async def test_ydb_create_tofu_version_table(ydb_schema):
-    """Create tables for testing OpenTofu Update modules."""
-
     operation = AsyncYDBOperations(
-        ydb_schema,
-        AsyncYDBFunctionsCollections.create_tables,
+        ydb_schema, AsyncYDBFunctionsCollections.create_tables
     )
     operation.fail_fast = True
-
     await operation.process()
 
     with pytest.raises(AsyncGenericError):
         await operation.process()
 
     await operation.check_tables_exist()
-
     assert operation.result[0].name == "opentofu_version", (
         "Table 'opentofu_version' was not created."
     )
-
     assert operation.result[0].type == 2, "Created target is not a table."
 
 
 @pytest.mark.dependency(depends=["test_ydb_create_tofu_version_table"])
 @pytest.mark.asyncio
 async def test_opentofu_update_github(ydb_schema):
-    """Function for testing OpenTofuUpdateGithub class."""
-
     updater = OpenTofuUpdateGithub(
         ydb_schema, install_dir=tempfile.mkdtemp(prefix="opentofu_test_")
     )
-
     await updater.start_update()
     await updater.sync_version()
 
@@ -410,12 +384,7 @@ async def test_opentofu_update_github(ydb_schema):
 @pytest.mark.parametrize(
     "token,bearer,auth_header,expected",
     [
-        (
-            "sometoken",
-            True,
-            "Authorization",
-            "Downloaded with Bearer token: sometoken",
-        ),
+        ("sometoken", True, "Authorization", "Downloaded with Bearer token: sometoken"),
         (
             "header.payload.signature",
             False,
@@ -460,13 +429,8 @@ def test_auth_types_invalid(token, bearer, auth_header):
 @pytest.mark.dependency(depends=["test_opentofu_update_github"])
 @pytest.mark.asyncio
 async def test_opentofu_update_other(ydb_schema):
-    """Function for testing OpenTofuUpdateOtherSource class."""
-
     if (system := platform.system().lower()) == "linux":
-        if (arch := platform.machine().lower()) in ("x86_64", "amd64"):
-            arch = "amd64"
-        else:
-            arch = "arm64"
+        arch = "amd64" if platform.machine().lower() in ("x86_64", "amd64") else "arm64"
         dpath_1 = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
         dpath_2 = f"v1.10.5/tofu_1.10.5_{system}_{arch}.tar.gz"
         dpath_3 = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
@@ -497,31 +461,20 @@ async def test_opentofu_update_other(ydb_schema):
 
     updater_1 = OpenTofuUpdateOtherSource(
         ydb_schema,
-        install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
         files=[
             OpenTofuBinFileInfo(
-                bin_version="1.10.4",
-                bin_url=url_first,
-                bin_sha256=hashsum1,
+                bin_version="1.10.4", bin_url=url_first, bin_sha256=hashsum1
             ),
             OpenTofuBinFileInfo(
-                bin_version="1.10.5",
-                bin_url=url_second,
-                bin_sha256=hashsum2,
+                bin_version="1.10.5", bin_url=url_second, bin_sha256=hashsum2
             ),
         ],
+        install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
     )
 
     with requests_mock.Mocker() as m:
-        m.get(
-            url_first,
-            content=response_first.content,
-        )
-        m.get(
-            url_second,
-            content=response_second.content,
-        )
-
+        m.get(url_first, content=response_first.content)
+        m.get(url_second, content=response_second.content)
         updater_1.rollback = True
         await updater_1.start_update()
         await updater_1.sync_version()
@@ -536,56 +489,41 @@ async def test_opentofu_update_other(ydb_schema):
 
     updater_2 = OpenTofuUpdateOtherSource(
         ydb_schema,
-        install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
         files=[
             OpenTofuBinFileInfo(
-                bin_version="1.10.6",
-                bin_url=url_third,
-                bin_sha256=hashsum3,
-            ),
+                bin_version="1.10.6", bin_url=url_third, bin_sha256=hashsum3
+            )
         ],
+        install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
     )
 
     with requests_mock.Mocker() as mocker:
-        mocker.get(
-            url_third,
-            content=response_third.content,
-        )
-
+        mocker.get(url_third, content=response_third.content)
         await updater_2.start_update(
             auth_url=URLAuthSchema(
-                auth_header="PRIVATE-TOKEN",
-                bearer=False,
-                token="glpat-" + "a" * 60,
+                auth_header="PRIVATE-TOKEN", bearer=False, token="glpat-" + "a" * 60
             )
         )
         await updater_2.sync_version()
 
-    # Verify updater_2 successfully updated to 1.10.6
-    assert (
-        updater_2.c_version[1] == "1.10.6"
-    ), f"updater_2 should have updated to 1.10.6, but got {updater_2.c_version[1]}"
+    assert updater_2.c_version[1] == "1.10.6", (
+        f"updater_2 should have updated to 1.10.6, but got {updater_2.c_version[1]}"
+    )
 
     checker = OpenTofuUpdateOtherSource(
         ydb_schema,
-        install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
         files=[
             OpenTofuBinFileInfo(
-                bin_version="1.10.6",
-                bin_url=url_third,
-                bin_sha256=hashsum3,
+                bin_version="1.10.6", bin_url=url_third, bin_sha256=hashsum3
             ),
             OpenTofuBinFileInfo(
-                bin_version="1.10.5",
-                bin_url=url_second,
-                bin_sha256=hashsum2,
+                bin_version="1.10.5", bin_url=url_second, bin_sha256=hashsum2
             ),
             OpenTofuBinFileInfo(
-                bin_version="1.10.4",
-                bin_url=url_first,
-                bin_sha256=hashsum1,
+                bin_version="1.10.4", bin_url=url_first, bin_sha256=hashsum1
             ),
         ],
+        install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
     )
     await checker.sync_version()
 

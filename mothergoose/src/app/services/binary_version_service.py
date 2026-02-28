@@ -26,25 +26,15 @@ class BinaryVersionService:
 
     # pylint: disable=no-member
 
-    __versions_list: Optional[List[BinaryVersion]] = None
-    __active_version: Optional[BinaryVersion] = None
-
     def __init__(
         self,
         schema: YDBSchema | DynamoDBSchema,
         s3fs_manager: S3FSMountManager,
     ) -> None:
-        """
-        Initialize Binary Version Service.
-
-        Args:
-            schema: YDB or DynamoDB schema containing table definitions
-            s3fs_manager: S3FS mount manager for filesystem access to S3
-        """
         self.schema = schema
         self.s3fs_manager = s3fs_manager
-        self.__versions_list = None
-        self.__active_version = None
+        self.__versions_list: Optional[List[BinaryVersion]] = None
+        self.__active_version: Optional[BinaryVersion] = None
 
     @property
     def versions_list(self) -> Optional[List[BinaryVersion]]:
@@ -57,23 +47,13 @@ class BinaryVersionService:
         return self.__active_version
 
     def verify_checksum(self, file_path: str, expected_checksum: str) -> bool:
-        """
-        Verify the SHA256 checksum of a file.
-
-        Args:
-            file_path: Path to the file to verify
-            expected_checksum: Expected SHA256 checksum
-
-        Returns:
-            bool: True if checksum matches, False otherwise
-        """
+        """Verify the SHA256 checksum of a file."""
         sha256_hash = hashlib.sha256()
         try:
             with open(file_path, "rb") as f:
                 for chunk in iter(lambda: f.read(8192), b""):
                     sha256_hash.update(chunk)
-            actual_checksum = sha256_hash.hexdigest()
-            return actual_checksum == expected_checksum
+            return sha256_hash.hexdigest() == expected_checksum
         except Exception as exc:  # pylint: disable=broad-exception-caught
             self.error("Failed to verify checksum for %s: %s", file_path, exc)
             return False
@@ -85,40 +65,23 @@ class BinaryVersionService:
         checksum: str,
         binary_name: str = "gosling",
     ) -> str:
-        """
-        Upload a binary version to S3 and record it in the database.
-
-        Args:
-            version: Version string (e.g., "1.0.0")
-            file_path: Local path to the binary file
-            checksum: SHA256 checksum of the binary
-            binary_name: Binary name ("gosling" or "opentofu", default: "gosling")
-
-        Returns:
-            str: S3 path where the binary was stored
-
-        Raises:
-            RuntimeError: If upload fails or checksum verification fails
-        """
+        """Upload a binary version to S3 and record it in the database."""
         self.info("Uploading %s version %s to S3...", binary_name, version)
 
-        # Verify checksum before uploading
         if not self.verify_checksum(file_path, checksum):
             raise RuntimeError(
                 f"Checksum verification failed for {binary_name} v{version}"
             )
 
-        # Determine S3 path
-        if binary_name == "gosling":
-            s3_path = f"gosling/{version}/gosling"
-        else:
-            s3_path = f"tofu/{version}/tofu"
+        s3_path = (
+            f"gosling/{version}/gosling"
+            if binary_name == "gosling"
+            else f"tofu/{version}/tofu"
+        )
 
-        # Copy to S3 via mounted filesystem
         self.s3fs_manager.copy_from_local(file_path, s3_path)
         self.info("Uploaded %s v%s to S3 path: %s", binary_name, version, s3_path)
 
-        # Record in database
         version_id = f"{binary_name}-{version}"
         now = datetime.now(timezone.utc).isoformat()
 
@@ -130,7 +93,7 @@ class BinaryVersionService:
                     version,
                     s3_path,
                     checksum,
-                    False,  # is_active
+                    0,  # is_active (Int64: 0 = False)
                     now,  # uploaded_at
                     "",  # activated_at (empty = NULL)
                 )
@@ -151,14 +114,7 @@ class BinaryVersionService:
         self,
         binary_name: str = "gosling",
     ) -> None:
-        """
-        List all binary versions from the database.
-
-        Args:
-            binary_name: Binary name to filter by (default: "gosling")
-
-        Sets self.__versions_list with the results.
-        """
+        """List all binary versions from the database, populating versions_list."""
         self.info("Listing %s versions from database...", binary_name)
 
         if isinstance(self.schema, YDBSchema):
@@ -181,7 +137,7 @@ class BinaryVersionService:
                 searching_values=[binary_name],
             )
             result = operation.result
-            versions = []
+            versions: List[BinaryVersion] = []
             table_idx = next(
                 (
                     i
@@ -200,11 +156,8 @@ class BinaryVersionService:
                             s3_path=row.s3_path,
                             sha256_checksum=row.sha256_checksum,
                             is_active=bool(row.is_active),
-                            uploaded_at=(
-                                datetime.fromisoformat(row.uploaded_at)
-                                if isinstance(row.uploaded_at, str)
-                                else (row.uploaded_at or datetime.now(timezone.utc))
-                            ),
+                            uploaded_at=row.uploaded_at
+                            or datetime.now(timezone.utc).isoformat(),
                             activated_at=row.activated_at if row.activated_at else None,
                         )
                         versions.append(bv)
@@ -218,14 +171,7 @@ class BinaryVersionService:
         self,
         binary_name: str = "gosling",
     ) -> None:
-        """
-        Get the active binary version from the database.
-
-        Args:
-            binary_name: Binary name to get active version for (default: "gosling")
-
-        Sets self.__active_version with the result (or None if not found).
-        """
+        """Get the active binary version from the database, populating active_version."""
         self.info("Getting active %s version from database...", binary_name)
 
         if isinstance(self.schema, YDBSchema):
@@ -266,11 +212,8 @@ class BinaryVersionService:
                         s3_path=row.s3_path,
                         sha256_checksum=row.sha256_checksum,
                         is_active=bool(row.is_active),
-                        uploaded_at=(
-                            datetime.fromisoformat(row.uploaded_at)
-                            if isinstance(row.uploaded_at, str)
-                            else (row.uploaded_at or datetime.now(timezone.utc))
-                        ),
+                        uploaded_at=row.uploaded_at
+                        or datetime.now(timezone.utc).isoformat(),
                         activated_at=row.activated_at if row.activated_at else None,
                     )
                 except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -281,28 +224,15 @@ class BinaryVersionService:
         elif isinstance(self.schema, DynamoDBSchema):
             raise NotImplementedError("DynamoDB is not supported yet.")
 
-    async def activate_version(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    async def activate_version(
         self,
         version: str,
         binary_name: str = "gosling",
         actor: str = "system",
     ) -> None:
-        """
-        Activate a specific binary version.
-
-        Deactivates the current active version and activates the specified one.
-
-        Args:
-            version: Version to activate (e.g., "1.0.0")
-            binary_name: Binary name (default: "gosling")
-            actor: Who is performing the activation (default: "system")
-
-        Raises:
-            RuntimeError: If version not found or activation fails
-        """
+        """Activate a specific binary version, deactivating the current one."""
         self.info("Activating %s version %s...", binary_name, version)
 
-        # First, deactivate all currently active versions
         await self.list_versions(binary_name=binary_name)
         versions = self.__versions_list or []
 
@@ -317,7 +247,7 @@ class BinaryVersionService:
                             v.version,
                             v.s3_path,
                             v.sha256_checksum,
-                            False,  # is_active = False
+                            0,  # is_active = False
                             (
                                 v.uploaded_at.isoformat()
                                 if isinstance(v.uploaded_at, datetime)
@@ -336,7 +266,6 @@ class BinaryVersionService:
                     )
                     await operation.process(table_name="binary_versions")
 
-        # Find the version to activate
         target = next((v for v in versions if v.version == version), None)
         if target is None:
             raise RuntimeError(
@@ -344,7 +273,6 @@ class BinaryVersionService:
                 "Upload the version first."
             )
 
-        # Activate the target version
         now = datetime.now(timezone.utc).isoformat()
         for table in self.schema.model.tables:
             if table.table_name == "binary_versions":
@@ -354,7 +282,7 @@ class BinaryVersionService:
                     target.version,
                     target.s3_path,
                     target.sha256_checksum,
-                    True,  # is_active = True
+                    1,  # is_active = True
                     (
                         target.uploaded_at.isoformat()
                         if isinstance(target.uploaded_at, datetime)
@@ -369,7 +297,6 @@ class BinaryVersionService:
             )
             await operation.process(table_name="binary_versions")
 
-        # Create audit log
         await self._create_audit_log(
             actor=actor,
             action="activate_version",
@@ -380,7 +307,7 @@ class BinaryVersionService:
 
         self.info("Activated %s v%s", binary_name, version)
 
-    async def _create_audit_log(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    async def _create_audit_log(
         self,
         actor: str,
         action: str,
@@ -388,17 +315,7 @@ class BinaryVersionService:
         resource_id: str,
         details: Dict[str, Any],
     ) -> None:
-        """
-        Create an audit log entry.
-
-        Args:
-            actor: Who performed the action
-            action: Action performed
-            resource_type: Type of resource affected
-            resource_id: ID of the affected resource
-            details: Additional action details
-        """
-        # Only write audit log if audit_logs table exists in schema
+        """Create an audit log entry if the audit_logs table is present."""
         has_audit_table = any(
             t.table_name == "audit_logs" for t in self.schema.model.tables
         )
@@ -429,6 +346,5 @@ class BinaryVersionService:
             await operation.process(table_name="audit_logs")
 
 
-# Global binary version service instance
 # pylint: disable=invalid-name
 binary_version_service: Optional[BinaryVersionService] = None

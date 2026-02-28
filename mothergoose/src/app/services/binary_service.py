@@ -139,7 +139,7 @@ class DownloadGithub(Binary):  # type: ignore[attr-defined]
         ``/mnt/<binary_name>_binary/<version>/``.
     """
 
-    # pylint: disable=no-member,too-many-positional-arguments
+    # pylint: disable=no-member,too-many-positional-arguments,too-many-arguments
 
     _github_sha256_hash_of_bundle: dict[str, str] = {}
     _bin_files_info: list[BinFileInfo] = []
@@ -330,7 +330,7 @@ class DownloadFromOtherSource(Binary):  # type: ignore[attr-defined]
         Optional authentication parameters (can also be set via properties).
     """
 
-    # pylint: disable=no-member,too-many-instance-attributes,too-many-positional-arguments
+    # pylint: disable=no-member,too-many-instance-attributes,too-many-positional-arguments,too-many-arguments
 
     _bin_files_info: list[BinFileInfo] = []
 
@@ -671,7 +671,7 @@ class UpdateGithub(Update):  # type: ignore[attr-defined]
         Directory where binaries are stored.
     """
 
-    # pylint: disable=no-member,too-many-positional-arguments
+    # pylint: disable=no-member,too-many-positional-arguments,too-many-arguments
 
     _source: Literal["github"] = "github"
     __c_version: tuple[str, str, str] = ("dummy_id", "0.0.0", "dummy_hash")
@@ -804,7 +804,7 @@ class UpdateOtherSource(Update):  # type: ignore[attr-defined]
         Directory where binaries are stored.
     """
 
-    # pylint: disable=no-member,too-many-positional-arguments
+    # pylint: disable=no-member,too-many-positional-arguments,too-many-arguments
 
     _source: Literal["other"] = "other"
     _rollback: bool = False

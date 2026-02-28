@@ -7,11 +7,38 @@ These tasks handle the lifecycle of both serverless and VM-based runners.
 
 # pylint: disable=duplicate-code
 
+import os
 from typing import Any
 
 from app.core.celery_app import celery_app
 from app.core.celery_base import BaseTask
+from app.core.config import (
+    get_ydb_schema,
+)
+from app.schema.tofu_schemas import (
+    TofuBackendS3Options,
+    TofuProvidersVer,
+)
+from app.services.binary_service import (
+    UpdateGithub,
+)
+from app.services.deployment_plan_service import (
+    DeploymentPlanService,
+)
+from app.services.egg_service import (
+    EggService,
+)
+from app.services.opentofu_configuration import (
+    OpenTofuConfiguration,
+    TofuSetting,
+)
 from app.services.runner_orchestration import RunnerOrchestrationService
+from app.services.runner_service import (
+    RunnerService,
+)
+from app.services.s3fs_mount_manager import (
+    S3FSMountManager,
+)
 from app.services.serverless_runner_deployment import ServerlessRunnerDeploymentService
 from app.util.base_logging import logger
 from app.util.runner_helpers import (
@@ -42,20 +69,6 @@ def _get_orchestration_service() -> RunnerOrchestrationService:
         - MOTHERGOOSE_YDB_POOL_SIZE
         - MOTHERGOOSE_YDB_USE_ANONYMOUS_CREDENTIALS
     """
-    import os  # pylint: disable=import-outside-toplevel
-
-    from app.core.config import (  # pylint: disable=import-outside-toplevel
-        get_ydb_schema,
-    )
-    from app.services.egg_service import (  # pylint: disable=import-outside-toplevel
-        EggService,
-    )
-    from app.services.runner_service import (  # pylint: disable=import-outside-toplevel
-        RunnerService,
-    )
-    from app.services.s3fs_mount_manager import (  # pylint: disable=import-outside-toplevel
-        S3FSMountManager,
-    )
 
     schema = get_ydb_schema()
     runner_service = RunnerService(schema=schema)
@@ -91,31 +104,6 @@ def _get_serverless_deployment_service() -> ServerlessRunnerDeploymentService:
         - Database: MOTHERGOOSE_YDB_* variables
         - OpenTofu: MOTHERGOOSE_TOFU_* variables
     """
-    import os  # pylint: disable=import-outside-toplevel
-
-    from app.core.config import (  # pylint: disable=import-outside-toplevel
-        get_ydb_schema,
-    )
-    from app.schema.tofu_schemas import (  # pylint: disable=import-outside-toplevel
-        TofuBackendS3Options,
-        TofuProvidersVer,
-    )
-    from app.services.deployment_plan_service import (  # pylint: disable=import-outside-toplevel
-        DeploymentPlanService,
-    )
-    from app.services.egg_service import (  # pylint: disable=import-outside-toplevel
-        EggService,
-    )
-    from app.services.opentofu_binary import (  # pylint: disable=import-outside-toplevel
-        OpenTofuUpdateGithub,
-    )
-    from app.services.opentofu_configuration import (  # pylint: disable=import-outside-toplevel
-        OpenTofuConfiguration,
-        TofuSetting,
-    )
-    from app.services.runner_service import (  # pylint: disable=import-outside-toplevel
-        RunnerService,
-    )
 
     schema = get_ydb_schema()
 
@@ -147,8 +135,11 @@ def _get_serverless_deployment_service() -> ServerlessRunnerDeploymentService:
     )
 
     opentofu_config = OpenTofuConfiguration(
-        updater=OpenTofuUpdateGithub(
+        updater=UpdateGithub(
             schema=schema,
+            binary_name="tofu",
+            github_repo="opentofu/opentofu",
+            table_name="opentofu_versions",
             install_dir=os.getenv("MOTHERGOOSE_TOFU_INSTALL_DIR"),
         ),
         tofu_settings=tofu_settings,

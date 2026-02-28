@@ -9,6 +9,8 @@ from typing import Any
 
 from ydb import AnonymousCredentials
 
+from app.model.gosling_models import GoslingVersionTableYDB
+from app.model.opentofu_models import OpenTofuVersionTableYDB
 from app.model.runners_models import (
     BinaryVersionsTableYDB,
     DeploymentPlansTableYDB,
@@ -360,21 +362,9 @@ async def initialize_gosling_binary_manager() -> None:
     Raises:
         RuntimeError: If initialization fails
     """
-    global _gosling_binary_manager_instance  # pylint: disable=global-statement
-
-    # Import here to avoid circular dependency
-    from app.services.binary_version_service import (  # pylint: disable=import-outside-toplevel
-        BinaryVersionService,
-    )
-    from app.services.gosling_binary_manager import (  # pylint: disable=import-outside-toplevel
-        GoslingBinaryManager,
-    )
 
     # Get S3 configuration from environment
     s3_bucket = os.getenv("MOTHERGOOSE_S3_BUCKET")
-    s3_endpoint_url = os.getenv("MOTHERGOOSE_S3_ENDPOINT_URL")
-    aws_access_key_id = os.getenv("MOTHERGOOSE_AWS_ACCESS_KEY_ID")
-    aws_secret_access_key = os.getenv("MOTHERGOOSE_AWS_SECRET_ACCESS_KEY")
 
     if not s3_bucket:
         raise RuntimeError(
@@ -383,7 +373,7 @@ async def initialize_gosling_binary_manager() -> None:
         )
 
     # Get cache configuration
-    cache_dir = os.getenv("MOTHERGOOSE_GOSLING_CACHE_DIR", "/tmp/gosling")
+
     max_cached_versions_str = os.getenv("MOTHERGOOSE_GOSLING_MAX_CACHED_VERSIONS", "3")
 
     try:
@@ -397,71 +387,3 @@ async def initialize_gosling_binary_manager() -> None:
         ) from e
 
     # Get YDB schema
-    schema = get_ydb_schema()
-
-    # Import S3FSMountManager here to avoid circular dependency
-    from app.services.s3fs_mount_manager import (  # pylint: disable=import-outside-toplevel
-        S3FSMountManager,
-    )
-
-    # Create S3FSMountManager
-    s3fs_manager = S3FSMountManager(
-        s3_bucket=s3_bucket,
-        mount_point=cache_dir,
-        s3_endpoint_url=s3_endpoint_url,
-        aws_access_key_id=aws_access_key_id,
-        aws_secret_access_key=aws_secret_access_key,
-    )
-
-    # Create BinaryVersionService
-    binary_version_service = BinaryVersionService(
-        schema=schema,
-        s3fs_manager=s3fs_manager,
-    )
-
-    # Create GoslingBinaryManager
-    _gosling_binary_manager_instance = GoslingBinaryManager(
-        binary_version_service=binary_version_service,
-        s3fs_manager=s3fs_manager,
-        cache_dir=cache_dir,
-        max_cached_versions=max_cached_versions,
-    )
-
-    # Download active version
-    try:
-        active_binary_path = (
-            await _gosling_binary_manager_instance.download_active_version()
-        )
-        logger.info("Gosling CLI active version downloaded: %s", active_binary_path)
-
-        # Update global GOSLING_CLI_PATH
-        global GOSLING_CLI_PATH  # pylint: disable=global-statement
-        GOSLING_CLI_PATH = active_binary_path
-        os.environ["GOSLING_CLI_PATH"] = active_binary_path
-
-    except RuntimeError as e:
-        logger.warning(
-            "Failed to download active Gosling CLI version: %s. "
-            "Using default path: %s",
-            e,
-            GOSLING_CLI_PATH,
-        )
-
-
-def get_gosling_binary_manager() -> Any:
-    """
-    Get the initialized Gosling Binary Manager instance.
-
-    Returns:
-        GoslingBinaryManager: The initialized binary manager
-
-    Raises:
-        RuntimeError: If manager has not been initialized
-    """
-    if _gosling_binary_manager_instance is None:
-        raise RuntimeError(
-            "Gosling Binary Manager not initialized. "
-            "Call initialize_gosling_binary_manager() during application startup."
-        )
-
-    return _gosling_binary_manager_instance

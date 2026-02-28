@@ -1,3 +1,8 @@
+"""
+Schema for binary version information,
+including version number, SHA256 hash, and download URL.
+"""
+
 import re
 
 from pydantic import field_validator

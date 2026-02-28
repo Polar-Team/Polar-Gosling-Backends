@@ -72,7 +72,7 @@ class VersionResolver:
                 f"Egg requires Gosling CLI version: {egg_version}, "
                 "checking availability"
             )
-            await self.binary_version_service.list_versions()
+            await self.binary_version_service.list_versions(binary_name="gosling")
             versions = self.binary_version_service.versions_list or []
 
             for version in versions:
@@ -96,7 +96,7 @@ class VersionResolver:
 
         # No Egg-specific version - use active version
         self.debug("No Egg-specific Gosling CLI version, using active version")
-        await self.binary_version_service.get_active_version()
+        await self.binary_version_service.get_active_version(binary_name="gosling")
         active_version = self.binary_version_service.active_version
 
         if not active_version:
@@ -139,7 +139,7 @@ class VersionResolver:
                 "Egg requires OpenTofu version: %s, checking availability",
                 egg_version,
             )
-            await self.binary_version_service.list_versions()
+            await self.binary_version_service.list_versions(binary_name="opentofu")
             versions = self.binary_version_service.versions_list or []
 
             for version in versions:
@@ -163,7 +163,7 @@ class VersionResolver:
 
         # No Egg-specific version - use active version
         self.debug("No Egg-specific OpenTofu version, using active version")
-        await self.binary_version_service.get_active_version()
+        await self.binary_version_service.get_active_version(binary_name="opentofu")
         active_version = self.binary_version_service.active_version
 
         if not active_version:

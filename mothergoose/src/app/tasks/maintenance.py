@@ -5,10 +5,24 @@ Celery tasks for background maintenance operations.
 These tasks run periodically to clean up old data and update metrics.
 """
 
+import asyncio
+import os
 from typing import Any
 
 from app.core.celery_app import celery_app
 from app.core.celery_base import BaseTask
+from app.core.config import (
+    get_ydb_schema,
+)
+from app.db.manage_db import AsyncYDBFunctionsCollections
+from app.db.ydb_connection import AsyncYDBOperations
+from app.services.binary_service import UpdateGithub
+from app.services.binary_version_service import (
+    BinaryVersionService,
+)
+from app.services.s3fs_mount_manager import (
+    S3FSMountManager,
+)
 from app.util.base_logging import logger
 
 
@@ -128,26 +142,12 @@ def check_binary_versions(self: BaseTask) -> dict[str, Any]:
 
     try:
         # Task 12.6: Import here to avoid circular dependencies
-        import os  # pylint: disable=import-outside-toplevel
-
-        from app.core.config import (  # pylint: disable=import-outside-toplevel
-            get_ydb_schema,
-        )
-        from app.services.binary_version_service import (  # pylint: disable=import-outside-toplevel
-            BinaryVersionService,
-        )
-        from app.services.github_binary_downloader import (  # pylint: disable=import-outside-toplevel
-            GitHubBinaryDownloader,
-        )
-        from app.services.s3fs_mount_manager import (  # pylint: disable=import-outside-toplevel
-            S3FSMountManager,
-        )
 
         # Initialize services
         schema = get_ydb_schema()
         s3fs_manager = S3FSMountManager(
             s3_bucket=os.getenv("MOTHERGOOSE_S3_BUCKET", "binaries"),
-            mount_point=os.getenv("MOTHERGOOSE_GOSLING_CACHE_DIR", "/tmp/gosling"),
+            mount_point=os.getenv("MOTHERGOOSE_BINARY_CACHE_DIR", "/tmp/mnt"),
             s3_endpoint_url=os.getenv("MOTHERGOOSE_S3_ENDPOINT_URL"),
             aws_access_key_id=os.getenv("MOTHERGOOSE_AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("MOTHERGOOSE_AWS_SECRET_ACCESS_KEY"),
@@ -155,30 +155,69 @@ def check_binary_versions(self: BaseTask) -> dict[str, Any]:
         binary_version_service = BinaryVersionService(
             schema=schema, s3fs_manager=s3fs_manager
         )
-        downloader = GitHubBinaryDownloader(
-            binary_version_service=binary_version_service,
+        downloader_gosling = UpdateGithub(
             schema=schema,
+            github_repo="polar-team/polar-gosling",
+            binary_name="gosling",
+            table_name="gosling_versions",
+            install_dir=os.getenv(
+                "MOTHERGOOSE_GOSLING_CACHE_DIR",
+                "/tmp/gosling",
+            ),
+        )
+
+        downloader_opentofu = UpdateGithub(
+            schema=schema,
+            github_repo="opentofu/opentofu",
+            binary_name="opentofu",
+            table_name="opentofu_versions",
+            install_dir=os.getenv(
+                "MOTHERGOOSE_OPENTOFU_CACHE_DIR",
+                "/tmp/opentofu",
+            ),
         )
 
         # Check and download new versions (async operation)
-        import asyncio  # pylint: disable=import-outside-toplevel
 
-        new_versions = asyncio.run(downloader.check_and_download_new_versions())
+        asyncio.run(downloader_gosling.start_update())
+        asyncio.run(downloader_opentofu.start_update())
+
+        operation = AsyncYDBOperations(
+            schema,
+            AsyncYDBFunctionsCollections.select_parameterized_query,
+        )
+        asyncio.run(
+            operation.process(
+                selected_columns=["version_id", "version", "sha256_hash"],
+                searching_columns=["active", "source"],
+                searching_values=[True, "github"],
+            )
+        )
+
+        asyncio.run(
+            binary_version_service.upload_version(
+                version=operation.result[0]["version"],
+                file_path="/tmp/gosling/gosling",
+                checksum=operation.result[0]["sha256_hash"],
+                binary_name="gosling",
+            )
+        )
+
+        asyncio.run(
+            binary_version_service.upload_version(
+                version=operation.result[0]["version"],
+                file_path="/tmp/opentofu/tofu",
+                checksum=operation.result[0]["sha256_hash"],
+                binary_name="tofu",
+            )
+        )
 
         result = {
             "status": "success",
             "task_id": task_id,
-            "new_versions": new_versions,
+            "new_versions": operation.result,
             "message": "Binary version check completed",
         }
-
-        if new_versions["gosling"] or new_versions["opentofu"]:
-            logger.warning(
-                "New binary versions available: %s",
-                {k: v for k, v in new_versions.items() if v is not None},
-            )
-        else:
-            logger.info("All binaries are up to date")
 
         return result
 

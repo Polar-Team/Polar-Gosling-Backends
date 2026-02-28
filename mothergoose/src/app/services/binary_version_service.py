@@ -189,9 +189,11 @@ class BinaryVersionService:
                             v.id,
                             v.version,
                             "other",
-                            v.uploaded_at.isoformat()
-                            if isinstance(v.uploaded_at, datetime)
-                            else (v.uploaded_at or now),
+                            (
+                                v.uploaded_at.isoformat()
+                                if isinstance(v.uploaded_at, datetime)
+                                else (v.uploaded_at or now)
+                            ),
                             v.sha256_checksum,
                             False,
                         )
@@ -208,9 +210,11 @@ class BinaryVersionService:
                     target.id,
                     target.version,
                     "other",
-                    target.uploaded_at.isoformat()
-                    if isinstance(target.uploaded_at, datetime)
-                    else (target.uploaded_at or now),
+                    (
+                        target.uploaded_at.isoformat()
+                        if isinstance(target.uploaded_at, datetime)
+                        else (target.uploaded_at or now)
+                    ),
                     target.sha256_checksum,
                     True,
                 )

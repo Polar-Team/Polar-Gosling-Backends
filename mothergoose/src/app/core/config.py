@@ -6,7 +6,6 @@ Central configuration for the MotherGoose application.
 
 import os
 
-
 from ydb import AnonymousCredentials
 
 from app.model.runners_models import (

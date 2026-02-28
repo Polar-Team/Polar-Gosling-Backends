@@ -6,17 +6,21 @@ based on failure thresholds, age limits, and idle timeouts.
 
 import logging
 from datetime import datetime
-from typing import List
+from typing import Any, Dict, Optional
 
 from app.core.celery_app import celery_app
 from app.core.config import settings
-from app.db.database_client import get_database_client
+from app.model.policy_models import PruningPolicy, UFConfig
+from app.services.policy_engine import PolicyEngine
+from app.services.policy_parser import PolicyParser
 
 logger = logging.getLogger(__name__)
 
 
 @celery_app.task(name="app.tasks.pruning.evaluate_pruning_policies", bind=True)
-def evaluate_pruning_policies(self) -> dict:  # type: ignore[no-untyped-def]
+def evaluate_pruning_policies(  # type: ignore[no-untyped-def]
+    self, uf_config_dict: Optional[Dict[str, Any]] = None
+) -> dict:
     """Evaluate pruning policies for all runners.
 
     This task evaluates UF/config.fly policies to determine which runners
@@ -26,14 +30,30 @@ def evaluate_pruning_policies(self) -> dict:  # type: ignore[no-untyped-def]
     - Idle timeout
     - Custom policy conditions
 
+    Args:
+        uf_config_dict: Optional pre-parsed UF config dict from DB cache.
+                        If None, falls back to UglyFoxSettings defaults.
+
     Returns:
         dict: Evaluation results with runners to prune
     """
     logger.info("Evaluating pruning policies")
 
-    # Task 20: Policy evaluation implementation placeholder
-    # This will be implemented in Task 21 (Policy Engine)
-    results = {
+    # Task 21: Resolve effective UFConfig
+    if uf_config_dict:
+        parser = PolicyParser()
+        uf_config = parser.parse_from_dict(uf_config_dict)
+    else:
+        # Task 21: Fall back to settings-based defaults
+        default_pruning = PruningPolicy(
+            max_failures=settings.failed_threshold,
+            max_age_hours=settings.max_runner_age / 3600.0,
+        )
+        uf_config = UFConfig(pruning=default_pruning)
+
+    engine = PolicyEngine(uf_config)
+
+    results: Dict[str, Any] = {
         "timestamp": datetime.utcnow().isoformat(),
         "runners_evaluated": 0,
         "runners_to_prune": [],

@@ -85,6 +85,12 @@ class UglyFoxSettings(BaseSettings):
         default=86400, description="Maximum runner age in seconds (default 24 hours)"
     )
 
+    # Gosling CLI configuration
+    gosling_cli_path: str = Field(
+        default="gosling",
+        description="Path to Gosling CLI binary (overridden by UGLYFOX_GOSLING_CLI_PATH)",
+    )
+
     # Celery task queue names
     uglyfox_queue_name: str = Field(
         default="uglyfox", description="Celery queue name for UglyFox tasks"

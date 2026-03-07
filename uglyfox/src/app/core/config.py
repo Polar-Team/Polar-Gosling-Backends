@@ -36,12 +36,8 @@ class UglyFoxSettings(BaseSettings):
     database_type: Literal["ydb", "dynamodb"] = Field(
         default="ydb", description="Database backend type"
     )
-    ydb_endpoint: Optional[str] = Field(
-        default=None, description="YDB endpoint URL"
-    )
-    ydb_database: Optional[str] = Field(
-        default=None, description="YDB database path"
-    )
+    ydb_endpoint: Optional[str] = Field(default=None, description="YDB endpoint URL")
+    ydb_database: Optional[str] = Field(default=None, description="YDB database path")
     dynamodb_region: Optional[str] = Field(
         default=None, description="DynamoDB AWS region"
     )
@@ -71,18 +67,25 @@ class UglyFoxSettings(BaseSettings):
         default="yc-lockbox", description="Secret storage backend"
     )
 
-    # UglyFox-specific settings
+    # UglyFox-specific settings — field names match UF/config.fly pruning block
     health_check_interval: int = Field(
-        default=600, description="Health check interval in seconds (default 10 minutes)"
-    )
-    pruning_check_interval: int = Field(
-        default=300, description="Pruning check interval in seconds (default 5 minutes)"
+        default=60,
+        description="Health check interval in seconds",
     )
     failed_threshold: int = Field(
-        default=3, description="Failure count threshold for termination"
+        default=5,
+        description="Consecutive failure count before pruning (maps to pruning.failed_threshold)",
     )
-    max_runner_age: int = Field(
-        default=86400, description="Maximum runner age in seconds (default 24 hours)"
+    max_age: str = Field(
+        default="72h",
+        description="Maximum runner age as a duration string (maps to pruning.max_age)",
+    )
+    check_interval: str = Field(
+        default="5m",
+        description=(
+            "Health check polling interval as a duration string"
+            " (maps to pruning.check_interval)"
+        ),
     )
 
     # Gosling CLI configuration
@@ -104,12 +107,11 @@ class UglyFoxSettings(BaseSettings):
                 "endpoint": self.ydb_endpoint or os.getenv("YDB_ENDPOINT"),
                 "database": self.ydb_database or os.getenv("YDB_DATABASE"),
             }
-        else:  # dynamodb
-            return {
-                "type": "dynamodb",
-                "region": self.dynamodb_region or os.getenv("AWS_REGION", "us-east-1"),
-                "endpoint": self.dynamodb_endpoint,
-            }
+        return {
+            "type": "dynamodb",
+            "region": self.dynamodb_region or os.getenv("AWS_REGION", "us-east-1"),
+            "endpoint": self.dynamodb_endpoint,
+        }
 
     def get_celery_config(self) -> dict:
         """Get Celery configuration."""

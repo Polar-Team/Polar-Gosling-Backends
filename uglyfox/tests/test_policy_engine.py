@@ -5,53 +5,105 @@ Validates Requirements 7.2 and 7.4:
 - 7.4: UglyFox transitions runners between Apex and Nadir states based on policies
 """
 
+import tempfile
 from datetime import datetime, timedelta
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from app.model.policy_models import (
+    ApexConditionConfig,
     ApexPoolConfig,
+    NadirConditionConfig,
     NadirPoolConfig,
+    PoliciesConfig,
+    PolicyRule,
     PruningPolicy,
     RunnerCondition,
     UFConfig,
 )
 from app.services.policy_engine import PolicyEngine, PolicyEvaluationResult
 from app.services.policy_parser import PolicyParser
-from app.util.time_parser import hours_to_seconds, minutes_to_seconds, seconds_to_hours
+from app.util.time_parser import (
+    hours_to_seconds,
+    minutes_to_seconds,
+    parse_duration,
+    seconds_to_hours,
+)
 
 # ---------------------------------------------------------------------------
-# Sample Gosling CLI JSON output (what ``gosling parse --type=uglyfox`` returns)
+# Sample Gosling CLI JSON output — canonical AST format with blocks array
 # ---------------------------------------------------------------------------
 
 SAMPLE_GOSLING_OUTPUT = {
-    "pruning": {
-        "max_age_hours": 72,
-        "max_failures": 5,
-        "idle_timeout_minutes": 30,
-        "check_interval_seconds": 60,
-    },
-    "apex_pool": {
-        "min_size": 1,
-        "max_size": 10,
-        "scale_up_threshold": 5,
-    },
-    "nadir_pool": {
-        "min_size": 0,
-        "max_size": 5,
-        "warmup_time_seconds": 30,
-    },
-    "runners_condition": [
-        {"egg_name": "my-project", "max_failures": 3},
-        {"egg_name": "other-project", "max_age_hours": 24, "max_failures": 2},
+    "blocks": [
+        {
+            "type": "uglyfox",
+            "attributes": {},
+            "blocks": [
+                {
+                    "type": "pruning",
+                    "attributes": {
+                        "failed_threshold": 5,
+                        "max_age": "72h",
+                        "check_interval": "5m",
+                    },
+                    "blocks": [],
+                },
+                {
+                    "type": "runners_condition",
+                    "labels": ["default"],
+                    "attributes": {"eggs_entities": ["my-project", "other-project"]},
+                    "blocks": [
+                        {
+                            "type": "apex",
+                            "attributes": {
+                                "max_count": 10,
+                                "min_count": 2,
+                                "cpu_threshold": 80,
+                                "memory_threshold": 70,
+                            },
+                        },
+                        {
+                            "type": "nadir",
+                            "attributes": {
+                                "max_count": 5,
+                                "min_count": 0,
+                                "idle_timeout": "30m",
+                            },
+                        },
+                    ],
+                },
+                {
+                    "type": "policies",
+                    "attributes": {},
+                    "blocks": [
+                        {
+                            "type": "rule",
+                            "labels": ["terminate_old_failed"],
+                            "attributes": {
+                                "condition": "failed_count >= 3 AND age > 1h",
+                                "action": "terminate",
+                            },
+                        },
+                        {
+                            "type": "rule",
+                            "labels": ["demote_idle"],
+                            "attributes": {
+                                "condition": "state == 'apex' AND idle_time > 30m",
+                                "action": "demote_to_nadir",
+                            },
+                        },
+                    ],
+                },
+            ],
+        }
     ],
+    "apex_pool": {"min_size": 1, "max_size": 10, "scale_up_threshold": 5},
+    "nadir_pool": {"min_size": 0, "max_size": 5, "warmup_time_seconds": 30},
 }
 
-MINIMAL_GOSLING_OUTPUT = {
-    "pruning": {"max_failures": 7},
-}
+MINIMAL_GOSLING_OUTPUT: dict = {"pruning": {"failed_threshold": 7}}  # type: ignore[type-arg]
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +186,22 @@ class TestTimeParser:
         """hours → seconds → hours should be identity."""
         assert seconds_to_hours(hours_to_seconds(5.0)) == 5.0
 
+    def test_parse_duration_minutes(self) -> None:
+        assert parse_duration("30m") == 1800.0
+
+    def test_parse_duration_hours(self) -> None:
+        assert parse_duration("24h") == 86400.0
+
+    def test_parse_duration_seconds(self) -> None:
+        assert parse_duration("60s") == 60.0
+
+    def test_parse_duration_days(self) -> None:
+        assert parse_duration("1d") == 86400.0
+
+    def test_parse_duration_invalid_raises(self) -> None:
+        with pytest.raises(ValueError):
+            parse_duration("invalid")
+
 
 # ---------------------------------------------------------------------------
 # PolicyParser tests
@@ -143,15 +211,14 @@ class TestTimeParser:
 class TestPolicyParser:
     """Tests for PolicyParser."""
 
-    # --- parse_from_dict ---
+    # --- parse_from_dict (AST format) ---
 
-    def test_parse_from_dict_full(self, parser: PolicyParser) -> None:
-        """parse_from_dict converts a full Gosling output dict into UFConfig."""
+    def test_parse_from_dict_pruning(self, parser: PolicyParser) -> None:
+        """parse_from_dict reads canonical pruning fields from AST."""
         cfg = parser.parse_from_dict(SAMPLE_GOSLING_OUTPUT)
-        assert cfg.pruning.max_age_hours == 72.0
-        assert cfg.pruning.max_failures == 5
-        assert cfg.pruning.idle_timeout_minutes == 30.0
-        assert cfg.pruning.check_interval_seconds == 60.0
+        assert cfg.pruning.failed_threshold == 5
+        assert cfg.pruning.max_age == "72h"
+        assert cfg.pruning.check_interval == "5m"
 
     def test_parse_from_dict_apex_pool(self, parser: PolicyParser) -> None:
         cfg = parser.parse_from_dict(SAMPLE_GOSLING_OUTPUT)
@@ -165,27 +232,46 @@ class TestPolicyParser:
         assert cfg.nadir_pool.max_size == 5
         assert cfg.nadir_pool.warmup_time_seconds == 30.0
 
-    def test_parse_from_dict_runners_conditions(self, parser: PolicyParser) -> None:
+    def test_parse_from_dict_runners_condition(self, parser: PolicyParser) -> None:
         cfg = parser.parse_from_dict(SAMPLE_GOSLING_OUTPUT)
-        assert len(cfg.runners_condition) == 2
-        names = {c.egg_name for c in cfg.runners_condition}
-        assert "my-project" in names
-        assert "other-project" in names
+        assert len(cfg.runners_condition) == 1
+        cond = cfg.runners_condition[0]
+        assert cond.name == "default"
+        assert "my-project" in cond.eggs_entities
+        assert "other-project" in cond.eggs_entities
 
-    def test_parse_from_dict_condition_values(self, parser: PolicyParser) -> None:
+    def test_parse_from_dict_apex_condition(self, parser: PolicyParser) -> None:
         cfg = parser.parse_from_dict(SAMPLE_GOSLING_OUTPUT)
-        my_proj = next(c for c in cfg.runners_condition if c.egg_name == "my-project")
-        assert my_proj.max_failures == 3
-        assert my_proj.max_age_hours is None
+        apex = cfg.runners_condition[0].apex
+        assert apex.max_count == 10
+        assert apex.min_count == 2
+        assert apex.cpu_threshold == 80
+        assert apex.memory_threshold == 70
 
-        other = next(c for c in cfg.runners_condition if c.egg_name == "other-project")
-        assert other.max_failures == 2
-        assert other.max_age_hours == 24.0
+    def test_parse_from_dict_nadir_condition(self, parser: PolicyParser) -> None:
+        cfg = parser.parse_from_dict(SAMPLE_GOSLING_OUTPUT)
+        nadir = cfg.runners_condition[0].nadir
+        assert nadir.max_count == 5
+        assert nadir.min_count == 0
+        assert nadir.idle_timeout == "30m"
+
+    def test_parse_from_dict_policies(self, parser: PolicyParser) -> None:
+        cfg = parser.parse_from_dict(SAMPLE_GOSLING_OUTPUT)
+        assert len(cfg.policies.rules) == 2
+        names = {r.name for r in cfg.policies.rules}
+        assert "terminate_old_failed" in names
+        assert "demote_idle" in names
+
+    def test_parse_from_dict_policy_rule_values(self, parser: PolicyParser) -> None:
+        cfg = parser.parse_from_dict(SAMPLE_GOSLING_OUTPUT)
+        rule = next(r for r in cfg.policies.rules if r.name == "terminate_old_failed")
+        assert rule.action == "terminate"
+        assert "failed_count" in rule.condition
 
     def test_parse_from_dict_minimal_uses_defaults(self, parser: PolicyParser) -> None:
         """Missing apex_pool / nadir_pool / runners_condition use defaults."""
         cfg = parser.parse_from_dict(MINIMAL_GOSLING_OUTPUT)
-        assert cfg.pruning.max_failures == 7
+        assert cfg.pruning.failed_threshold == 7
         assert cfg.apex_pool.min_size == 1
         assert cfg.nadir_pool.max_size == 5
         assert cfg.runners_condition == []
@@ -196,49 +282,48 @@ class TestPolicyParser:
         assert isinstance(cfg.apex_pool, ApexPoolConfig)
         assert isinstance(cfg.nadir_pool, NadirPoolConfig)
         assert cfg.runners_condition == []
-        assert cfg.pruning.max_failures == 5  # PruningPolicy default
+        assert cfg.pruning.failed_threshold == 5  # PruningPolicy default
 
     # --- parse_file (mocks _call_gosling_parse) ---
 
-    def test_parse_file_calls_gosling_cli(self, parser: PolicyParser, tmp_path: Path) -> None:
+    def test_parse_file_calls_gosling_cli(self, parser: PolicyParser) -> None:
         """parse_file delegates to _call_gosling_parse and maps the result."""
-        fly_file = tmp_path / "config.fly"
-        fly_file.write_text("uglyfox {}")
+        with tempfile.NamedTemporaryFile(suffix=".fly", delete=False, mode="w") as f:
+            f.write("uglyfox {}")
+            fly_path = f.name
 
         with patch.object(parser, "_call_gosling_parse", return_value=SAMPLE_GOSLING_OUTPUT):
-            cfg = parser.parse_file(str(fly_file))
+            cfg = parser.parse_file(fly_path)
 
-        assert cfg.pruning.max_failures == 5
+        assert cfg.pruning.failed_threshold == 5
         assert cfg.apex_pool.max_size == 10
 
-    def test_parse_file_fallback_on_binary_not_found(
-        self, parser: PolicyParser, tmp_path: Path
-    ) -> None:
+    def test_parse_file_fallback_on_binary_not_found(self, parser: PolicyParser) -> None:
         """parse_file returns default UFConfig when binary is missing."""
-        fly_file = tmp_path / "config.fly"
-        fly_file.write_text("")
+        with tempfile.NamedTemporaryFile(suffix=".fly", delete=False, mode="w") as f:
+            f.write("")
+            fly_path = f.name
 
         with patch.object(parser, "_call_gosling_parse", side_effect=FileNotFoundError):
-            cfg = parser.parse_file(str(fly_file))
+            cfg = parser.parse_file(fly_path)
 
         assert isinstance(cfg, UFConfig)
-        assert cfg.pruning.max_failures == 5  # default
+        assert cfg.pruning.failed_threshold == 5  # default
 
-    def test_parse_file_fallback_on_cli_error(
-        self, parser: PolicyParser, tmp_path: Path
-    ) -> None:
+    def test_parse_file_fallback_on_cli_error(self, parser: PolicyParser) -> None:
         """parse_file returns default UFConfig when Gosling CLI exits non-zero."""
         import subprocess
 
-        fly_file = tmp_path / "config.fly"
-        fly_file.write_text("")
+        with tempfile.NamedTemporaryFile(suffix=".fly", delete=False, mode="w") as f:
+            f.write("")
+            fly_path = f.name
 
         with patch.object(
             parser,
             "_call_gosling_parse",
             side_effect=subprocess.CalledProcessError(1, "gosling", stderr="parse error"),
         ):
-            cfg = parser.parse_file(str(fly_file))
+            cfg = parser.parse_file(fly_path)
 
         assert isinstance(cfg, UFConfig)
 
@@ -262,27 +347,25 @@ class TestPolicyParser:
 class TestPolicyEngineEffectivePolicy:
     """Tests for get_effective_policy."""
 
-    def test_global_policy_returned_for_unknown_egg(self, engine: PolicyEngine) -> None:
+    def test_global_policy_returned(self, engine: PolicyEngine) -> None:
         policy = engine.get_effective_policy("unknown-egg")
-        assert policy.max_failures == 5
-        assert policy.max_age_hours == 72.0
+        assert policy.failed_threshold == 5
+        assert policy.max_age == "72h"
 
-    def test_per_egg_max_failures_override(self, engine: PolicyEngine) -> None:
-        policy = engine.get_effective_policy("my-project")
-        assert policy.max_failures == 3
+    def test_global_policy_same_for_any_egg(self, engine: PolicyEngine) -> None:
+        """pruning block is global — same policy regardless of egg name."""
+        p1 = engine.get_effective_policy("my-project")
+        p2 = engine.get_effective_policy("other-project")
+        assert p1.failed_threshold == p2.failed_threshold
+        assert p1.max_age == p2.max_age
 
-    def test_per_egg_inherits_global_max_age(self, engine: PolicyEngine) -> None:
-        policy = engine.get_effective_policy("my-project")
-        assert policy.max_age_hours == 72.0
+    def test_idle_timeout_from_runners_condition(self, engine: PolicyEngine) -> None:
+        """idle_timeout is resolved from runners_condition.nadir for matching egg."""
+        seconds = engine.get_idle_timeout_seconds("my-project")
+        assert seconds == 1800.0  # "30m"
 
-    def test_per_egg_full_override(self, engine: PolicyEngine) -> None:
-        policy = engine.get_effective_policy("other-project")
-        assert policy.max_failures == 2
-        assert policy.max_age_hours == 24.0
-
-    def test_idle_timeout_always_from_global(self, engine: PolicyEngine) -> None:
-        policy = engine.get_effective_policy("my-project")
-        assert policy.idle_timeout_minutes == 30.0
+    def test_idle_timeout_none_for_unknown_egg(self, engine: PolicyEngine) -> None:
+        assert engine.get_idle_timeout_seconds("unknown-egg") is None
 
 
 class TestPolicyEngineEvaluateRunner:
@@ -302,15 +385,9 @@ class TestPolicyEngineEvaluateRunner:
         assert result.reason == "exceeded_failure_threshold"
         assert result.policy_applied == "max_failures"
 
-    def test_prune_on_per_egg_failure_threshold(self, engine: PolicyEngine) -> None:
-        runner = _make_runner(failure_count=3)
-        result = engine.evaluate_runner(runner, "my-project")
-        assert result.should_prune is True
-        assert result.policy_applied == "max_failures"
-
-    def test_no_prune_below_per_egg_threshold(self, engine: PolicyEngine) -> None:
-        runner = _make_runner(failure_count=2)
-        result = engine.evaluate_runner(runner, "my-project")
+    def test_no_prune_below_threshold(self, engine: PolicyEngine) -> None:
+        runner = _make_runner(failure_count=4)
+        result = engine.evaluate_runner(runner, "unknown-egg")
         assert result.should_prune is False
 
     def test_prune_on_max_age(self, engine: PolicyEngine) -> None:
@@ -327,13 +404,22 @@ class TestPolicyEngineEvaluateRunner:
         result = engine.evaluate_runner(runner, "unknown-egg")
         assert result.should_prune is False
 
-    def test_prune_apex_idle_timeout(self, engine: PolicyEngine) -> None:
+    def test_prune_apex_idle_timeout_from_condition(self, engine: PolicyEngine) -> None:
+        """idle_timeout from runners_condition.nadir triggers prune for matching egg."""
+        old_heartbeat = datetime.utcnow() - timedelta(minutes=31)
+        runner = _make_runner(runner_type="apex", last_heartbeat=old_heartbeat)
+        result = engine.evaluate_runner(runner, "my-project")
+        assert result.should_prune is True
+        assert result.reason == "idle_timeout"
+        assert result.policy_applied == "idle_timeout"
+
+    def test_prune_apex_idle_timeout_default_fallback(self, engine: PolicyEngine) -> None:
+        """Falls back to 30m default when egg not in any runners_condition."""
         old_heartbeat = datetime.utcnow() - timedelta(minutes=31)
         runner = _make_runner(runner_type="apex", last_heartbeat=old_heartbeat)
         result = engine.evaluate_runner(runner, "unknown-egg")
         assert result.should_prune is True
         assert result.reason == "idle_timeout"
-        assert result.policy_applied == "idle_timeout"
 
     def test_no_prune_nadir_idle_timeout(self, engine: PolicyEngine) -> None:
         old_heartbeat = datetime.utcnow() - timedelta(minutes=60)
@@ -403,3 +489,5 @@ class TestPolicyEnginePoolManagement:
 
     def test_no_promote_when_apex_at_max(self, engine: PolicyEngine) -> None:
         assert engine.should_promote_to_apex(current_nadir_count=5, current_apex_count=10) is False
+
+

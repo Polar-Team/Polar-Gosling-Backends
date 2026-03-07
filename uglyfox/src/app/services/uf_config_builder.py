@@ -21,7 +21,7 @@ def build_uf_config(uf_config_dict: Optional[Dict[str, Any]] = None) -> UFConfig
     Returns:
         UFConfig instance ready for use by LifecycleService / PolicyEngine.
     """
-    if uf_config_dict:
+    if uf_config_dict is not None:
         return PolicyParser().parse_from_dict(uf_config_dict)
     return UFConfig(
         pruning=PruningPolicy(

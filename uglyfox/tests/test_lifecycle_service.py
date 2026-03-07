@@ -10,9 +10,8 @@ Also covers: health monitoring, pool transitions (Req 7.1, 7.4, 7.6).
 import asyncio
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from hypothesis import given, settings as h_settings
 from hypothesis import strategies as st
 
@@ -26,7 +25,7 @@ from app.model.policy_models import (
     RunnerCondition,
     UFConfig,
 )
-from app.model.runners_models import RunnerState, RunnerType
+from app.model.runners_models import RunnerState
 from app.services.lifecycle_service import (
     HealthCheckResult,
     LifecycleService,

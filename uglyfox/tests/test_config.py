@@ -1,7 +1,5 @@
 """Tests for UglyFox configuration."""
 
-import pytest
-
 from app.core.config import UglyFoxSettings
 
 

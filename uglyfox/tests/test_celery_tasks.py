@@ -1,7 +1,5 @@
 """Tests for UglyFox Celery tasks."""
 
-import pytest
-
 from app.tasks.health import (
     check_runner_health,
     collect_runner_metrics,

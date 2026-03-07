@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from app.core.config import settings
 from app.model.policy_models import (
     ApexConditionConfig,
     ApexPoolConfig,
@@ -29,9 +30,16 @@ from app.util.base_logging import logged
 
 
 def _get_gosling_cli_path() -> str:
-    """Return the Gosling CLI binary path from env vars."""
+    """Return the Gosling CLI binary path.
+
+    Resolution order:
+    1. ``UGLYFOX_GOSLING_CLI_PATH`` env var
+    2. ``GOSLING_CLI_PATH`` env var
+    3. ``settings.gosling_cli_path`` (defaults to ``"gosling"``)
+    """
     return os.getenv(
-        "UGLYFOX_GOSLING_CLI_PATH", os.getenv("GOSLING_CLI_PATH", "gosling")
+        "UGLYFOX_GOSLING_CLI_PATH",
+        os.getenv("GOSLING_CLI_PATH", settings.gosling_cli_path),
     )
 
 
@@ -339,6 +347,11 @@ class PolicyParser:
                 "Gosling CLI binary not found at '%s'. "
                 "Set UGLYFOX_GOSLING_CLI_PATH. Using default UFConfig.",
                 self.gosling_cli_path,
+            )
+            return UFConfig()
+        except subprocess.TimeoutExpired:
+            self.warning(  # pylint: disable=no-member
+                "Gosling CLI timed out parsing %s. Using default UFConfig.", path
             )
             return UFConfig()
         except subprocess.CalledProcessError as exc:

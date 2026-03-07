@@ -12,17 +12,12 @@ from unittest.mock import patch
 import pytest
 
 from app.model.policy_models import (
-    ApexConditionConfig,
     ApexPoolConfig,
-    NadirConditionConfig,
     NadirPoolConfig,
-    PoliciesConfig,
-    PolicyRule,
     PruningPolicy,
-    RunnerCondition,
     UFConfig,
 )
-from app.services.policy_engine import PolicyEngine, PolicyEvaluationResult
+from app.services.policy_engine import PolicyEngine
 from app.services.policy_parser import PolicyParser
 from app.util.time_parser import (
     hours_to_seconds,

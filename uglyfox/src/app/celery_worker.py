@@ -14,7 +14,7 @@ from app.core.config import settings
 
 # Configure logging
 logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper()),
+    level=getattr(logging, settings.log_level.upper()),  # pylint: disable=no-member
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 

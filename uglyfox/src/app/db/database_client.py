@@ -110,7 +110,7 @@ class DatabaseClient:
         """
         raise NotImplementedError
 
-    async def create_audit_log(
+    async def create_audit_log(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         action: str,
         resource_type: str,
@@ -162,11 +162,13 @@ class YDBDatabaseClient(DatabaseClient):
         # Use default values if not configured
         endpoint = self.endpoint or "grpc://localhost:2136"
         database = self.database or "/local"
-        
+
         config = YDBConfig(
             endpoint=endpoint,
             database=database,
             pool_size=10,
+            credentials=None,
+            root_certificates=None,
         )
         model = RunnerModelYDB(
             tables=[
@@ -176,7 +178,9 @@ class YDBDatabaseClient(DatabaseClient):
                 DeploymentPlansTableYDB(),
             ]
         )
-        return YDBSchema(config=config, model=model)
+        return YDBSchema(
+            config=config, model=model, default_table=None, version="1.0.0"
+        )
 
     async def connect(self) -> None:
         """Establish YDB connection."""
@@ -292,7 +296,7 @@ class YDBDatabaseClient(DatabaseClient):
                 current_metadata = json.loads(current_metadata.decode("utf-8"))
             elif not isinstance(current_metadata, dict):
                 current_metadata = {}
-            
+
             current_metadata.update(metadata)
             runner["metadata"] = json.dumps(current_metadata).encode("utf-8")
 
@@ -306,6 +310,8 @@ class YDBDatabaseClient(DatabaseClient):
         updated_schema = YDBSchema(
             config=self.schema.config,
             model=updated_model,
+            default_table=None,
+            version="1.0.0",
         )
 
         operations = AsyncYDBOperations(
@@ -316,7 +322,7 @@ class YDBDatabaseClient(DatabaseClient):
         await operations.process(table_name="runners")
         return operations.result is not None
 
-    async def create_audit_log(
+    async def create_audit_log(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
         self,
         action: str,
         resource_type: str,
@@ -352,14 +358,21 @@ class YDBDatabaseClient(DatabaseClient):
         # Create audit schema with same endpoint/database as main schema
         endpoint = self.endpoint or "grpc://localhost:2136"
         database = self.database or "/local"
-        
+
         audit_model = AuditModelYDB(tables=[audit_table])
         audit_config = YDBConfig(
             endpoint=endpoint,
             database=database,
             pool_size=10,
+            credentials=None,
+            root_certificates=None,
         )
-        audit_schema = YDBSchema(config=audit_config, model=audit_model)
+        audit_schema = YDBSchema(
+            config=audit_config,
+            model=audit_model,
+            default_table=None,
+            version="1.0.0",
+        )
 
         operations = AsyncYDBOperations(
             schema=audit_schema,
@@ -394,7 +407,7 @@ class YDBDatabaseClient(DatabaseClient):
     def _row_to_dict(row: Any, columns: tuple) -> Dict[str, Any]:
         """Convert YDB row to dictionary."""
         result = {}
-        for i, col in enumerate(columns):
+        for col in columns:
             value = row[col]
             # Convert bytes to string for JSON fields
             if isinstance(value, bytes):
@@ -474,7 +487,7 @@ class DynamoDBDatabaseClient(DatabaseClient):
         # Task 20: DynamoDB implementation deferred
         raise NotImplementedError("DynamoDB support not yet implemented")
 
-    async def create_audit_log(
+    async def create_audit_log(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         action: str,
         resource_type: str,
@@ -507,5 +520,4 @@ def get_database_client() -> DatabaseClient:
     """
     if settings.database_type == "ydb":
         return YDBDatabaseClient()
-    else:
-        return DynamoDBDatabaseClient()
+    return DynamoDBDatabaseClient()

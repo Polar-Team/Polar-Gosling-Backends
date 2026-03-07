@@ -1,7 +1,5 @@
 """Tests for UglyFox database client."""
 
-import json
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,7 +7,6 @@ import pytest
 from app.db.database_client import (
     DynamoDBDatabaseClient,
     YDBDatabaseClient,
-    get_database_client,
 )
 
 

@@ -1,7 +1,5 @@
 """Tests for UglyFox configuration."""
 
-import pytest
-
 from app.core.config import UglyFoxSettings
 
 
@@ -16,10 +14,10 @@ def test_uglyfox_settings_defaults():
     assert settings.message_queue_type == "redis"
     assert settings.cloud_provider == "yandex"
     assert settings.secret_backend == "yc-lockbox"
-    assert settings.health_check_interval == 600
-    assert settings.pruning_check_interval == 300
-    assert settings.failed_threshold == 3
-    assert settings.max_runner_age == 86400
+    assert settings.health_check_interval == 60
+    assert settings.failed_threshold == 5
+    assert settings.max_age == "72h"
+    assert settings.check_interval == "5m"
     assert settings.uglyfox_queue_name == "uglyfox"
 
 
@@ -31,10 +29,10 @@ def test_uglyfox_settings_custom_values():
         message_queue_type="sqs",
         cloud_provider="aws",
         secret_backend="aws-sm",
-        health_check_interval=300,
-        pruning_check_interval=180,
-        failed_threshold=5,
-        max_runner_age=43200,
+        health_check_interval=30,
+        failed_threshold=3,
+        max_age="24h",
+        check_interval="30s",
     )
 
     assert settings.environment == "production"
@@ -42,10 +40,10 @@ def test_uglyfox_settings_custom_values():
     assert settings.message_queue_type == "sqs"
     assert settings.cloud_provider == "aws"
     assert settings.secret_backend == "aws-sm"
-    assert settings.health_check_interval == 300
-    assert settings.pruning_check_interval == 180
-    assert settings.failed_threshold == 5
-    assert settings.max_runner_age == 43200
+    assert settings.health_check_interval == 30
+    assert settings.failed_threshold == 3
+    assert settings.max_age == "24h"
+    assert settings.check_interval == "30s"
 
 
 def test_get_database_config_ydb():

@@ -92,6 +92,9 @@ env_list = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"app" = ["templates/*.j2", "templates/**/*.j2"]
+
 [tool.tox.env_run_base]
 description = "Run tests under {base_python}"
 dependency_groups = [

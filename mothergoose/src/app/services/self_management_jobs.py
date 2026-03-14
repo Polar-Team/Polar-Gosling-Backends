@@ -11,7 +11,6 @@ Architecture:
 - Job runners: 10-minute time limit, no Rift access, lightweight tasks only
 """
 
-import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -19,11 +18,11 @@ from app.util.base_logging import logger
 
 # Cron expression field ranges (min, max)
 _CRON_FIELD_RANGES = [
-    (0, 59),   # minute
-    (0, 23),   # hour
-    (1, 31),   # day of month
-    (1, 12),   # month
-    (0, 7),    # day of week (0 and 7 both = Sunday)
+    (0, 59),  # minute
+    (0, 23),  # hour
+    (1, 31),  # day of month
+    (1, 12),  # month
+    (0, 7),  # day of week (0 and 7 both = Sunday)
 ]
 
 # Job runner constraints (Requirements 13.5, 13.6)
@@ -41,8 +40,8 @@ class JobConfig:
     """
 
     name: str
-    schedule: str          # Cron expression (e.g. "0 2 * * *")
-    runner_type: str       # Always "serverless" for job runners
+    schedule: str  # Cron expression (e.g. "0 2 * * *")
+    runner_type: str  # Always "serverless" for job runners
     runner_tags: List[str]
     script: str
     timeout_minutes: int = JOB_RUNNER_TIMEOUT_MINUTES
@@ -73,9 +72,7 @@ def is_valid_cron_expression(expression: str) -> bool:
     if len(parts) != 5:
         return False
 
-    for i, (field, (min_val, max_val)) in enumerate(
-        zip(parts, _CRON_FIELD_RANGES)
-    ):
+    for i, (field, (min_val, max_val)) in enumerate(zip(parts, _CRON_FIELD_RANGES)):
         if not _validate_cron_field(field, min_val, max_val):
             logger.debug(
                 "Invalid cron field %d ('%s'): out of range [%d, %d]",
@@ -101,46 +98,42 @@ def _validate_cron_field(field: str, min_val: int, max_val: int) -> bool:
     Returns:
         True if valid
     """
-    # Wildcard
     if field == "*":
         return True
 
-    # List (e.g. "1,2,3")
     if "," in field:
-        return all(
-            _validate_cron_field(part.strip(), min_val, max_val)
-            for part in field.split(",")
-        )
+        return all(_validate_cron_field(p.strip(), min_val, max_val) for p in field.split(","))
 
-    # Step (e.g. "*/5" or "1-5/2")
     if "/" in field:
-        parts = field.split("/", 1)
-        if len(parts) != 2:
-            return False
-        base, step_str = parts
-        if not step_str.isdigit() or int(step_str) < 1:
-            return False
-        # Base can be "*" or a range
-        if base != "*":
-            return _validate_cron_field(base, min_val, max_val)
-        return True
+        return _validate_step_field(field, min_val, max_val)
 
-    # Range (e.g. "1-5")
     if "-" in field:
-        parts = field.split("-", 1)
-        if len(parts) != 2:
-            return False
-        start_str, end_str = parts
-        if not start_str.isdigit() or not end_str.isdigit():
-            return False
-        start, end = int(start_str), int(end_str)
-        return min_val <= start <= end <= max_val
+        return _validate_range_field(field, min_val, max_val)
 
-    # Specific value
-    if not field.isdigit():
+    return field.isdigit() and min_val <= int(field) <= max_val
+
+
+def _validate_step_field(field: str, min_val: int, max_val: int) -> bool:
+    """Validate a step cron field (e.g. '*/5' or '1-5/2')."""
+    parts = field.split("/", 1)
+    if len(parts) != 2:
         return False
-    value = int(field)
-    return min_val <= value <= max_val
+    base, step_str = parts
+    if not step_str.isdigit() or int(step_str) < 1:
+        return False
+    return base == "*" or _validate_cron_field(base, min_val, max_val)
+
+
+def _validate_range_field(field: str, min_val: int, max_val: int) -> bool:
+    """Validate a range cron field (e.g. '1-5')."""
+    parts = field.split("-", 1)
+    if len(parts) != 2:
+        return False
+    start_str, end_str = parts
+    if not start_str.isdigit() or not end_str.isdigit():
+        return False
+    start, end = int(start_str), int(end_str)
+    return min_val <= start <= end <= max_val
 
 
 def parse_job_config(raw: Dict[str, Any]) -> JobConfig:
@@ -165,9 +158,7 @@ def parse_job_config(raw: Dict[str, Any]) -> JobConfig:
         raise ValueError(f"Job '{name}' missing required field: schedule")
 
     if not is_valid_cron_expression(schedule):
-        raise ValueError(
-            f"Job '{name}' has invalid cron expression: '{schedule}'"
-        )
+        raise ValueError(f"Job '{name}' has invalid cron expression: '{schedule}'")
 
     runner_cfg = raw.get("runner", {})
     runner_tags = runner_cfg.get("tags", [])

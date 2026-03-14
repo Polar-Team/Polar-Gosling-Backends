@@ -102,7 +102,9 @@ def _validate_cron_field(field: str, min_val: int, max_val: int) -> bool:
         return True
 
     if "," in field:
-        return all(_validate_cron_field(p.strip(), min_val, max_val) for p in field.split(","))
+        return all(
+            _validate_cron_field(p.strip(), min_val, max_val) for p in field.split(",")
+        )
 
     if "/" in field:
         return _validate_step_field(field, min_val, max_val)

@@ -11,7 +11,7 @@ by OpenTofuConfiguration.generate_cloud_init_script().
 
 import os
 from typing import Dict, Optional
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from hypothesis import HealthCheck, given, settings
@@ -78,6 +78,7 @@ def opentofu_config_fixture() -> OpenTofuConfiguration:
     Provide an OpenTofuConfiguration instance with mocked updater and settings.
 
     generate_cloud_init_script() only uses Jinja2 templates — no DB, no tofu binary.
+    Tofu() is patched to avoid FileNotFoundError when the binary is not installed.
     """
     updater = MagicMock()
     updater.c_version = ("dummy_id", "1.6.0")
@@ -87,11 +88,13 @@ def opentofu_config_fixture() -> OpenTofuConfiguration:
 
     artifact_cache = MagicMock()
 
-    return OpenTofuConfiguration(
-        updater=updater,
-        tofu_settings=tofu_settings,
-        artifact_cache=artifact_cache,
-    )
+    with patch("app.services.opentofu_configuration.Tofu") as mock_tofu_cls:
+        mock_tofu_cls.return_value = MagicMock()
+        return OpenTofuConfiguration(
+            updater=updater,
+            tofu_settings=tofu_settings,
+            artifact_cache=artifact_cache,
+        )
 
 
 def _render(

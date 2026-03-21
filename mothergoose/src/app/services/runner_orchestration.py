@@ -19,6 +19,7 @@ from app.model.runners_models import (
 from app.schema.dynamodb_schemas import DynamoDBSchema
 from app.schema.ydb_schemas import YDBSchema
 from app.services.egg_service import EggService
+from app.services.metrics_service import MetricsService, ProvisioningTimer
 from app.services.runner_service import RunnerService
 from app.services.s3fs_mount_manager import S3FSMountManager
 from app.services.serverless_runner_deployment import ServerlessRunnerDeploymentService
@@ -66,6 +67,7 @@ class RunnerOrchestrationService:
         self.serverless_deployment_service = serverless_deployment_service
         self.vm_pool_manager = vm_pool_manager
         self.version_resolver = VersionResolver(schema, s3fs_manager)  # Task 12.7
+        self.metrics_service = MetricsService()  # Task 30
 
     def determine_runner_type(
         self,
@@ -223,9 +225,20 @@ class RunnerOrchestrationService:
                 deployed_from_commit=deployed_from_commit,
                 job_requirements=job_requirements,
             )
-            return await self.serverless_deployment_service.deploy_serverless_runner(
-                **deployment_kwargs
+            with ProvisioningTimer() as timer:
+                result = (
+                    await self.serverless_deployment_service.deploy_serverless_runner(
+                        **deployment_kwargs
+                    )
+                )
+            self.metrics_service.record_runner_provisioned(
+                egg_name=egg_name,
+                runner_type=runner_type.value,
+                cloud_provider=cloud_provider.value,
+                status="success",
+                duration_seconds=timer.elapsed,
             )
+            return result
 
         # Task 18: VM runner deployment (Apex/Nadir)
         # Check pool capacity before creating runner
@@ -264,6 +277,15 @@ class RunnerOrchestrationService:
         # Task 16: OpenTofu config, plan, apply
         # Task 16: Update state to ACTIVE
         # Task 16: Register with GitLab
+
+        # Task 30: Record provisioning metric
+        self.metrics_service.record_runner_provisioned(
+            egg_name=egg_name,
+            runner_type=runner_type.value,
+            cloud_provider=cloud_provider.value,
+            status="success",
+            duration_seconds=0.0,  # Task 16: replace with real timer
+        )
 
         logger.info("Runner provisioned successfully: %s", runner.id)
         return runner
@@ -306,6 +328,13 @@ class RunnerOrchestrationService:
             runner_id=runner_id,
             new_state=RunnerState.TERMINATED,
             actor=actor,
+            reason=reason,
+        )
+
+        # Task 30: Record termination metric
+        self.metrics_service.record_runner_terminated(
+            egg_name=runner.egg_name,
+            runner_type=runner.type.value,
             reason=reason,
         )
 

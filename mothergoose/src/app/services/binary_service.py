@@ -185,6 +185,10 @@ class DownloadGithub(Binary):  # type: ignore[attr-defined]
         """Populate *_github_sha256_hash_of_bundle[ver]* from the GitHub releases API."""
         response = session.get(f"https://api.github.com/repos/{github_repo}/releases")
         data = response.json()
+        if not isinstance(data, list):
+            raise RuntimeError(
+                f"GitHub API returned unexpected response (possible rate limit): {data}"
+            )
         ext = "zip" if system == "windows" else "tar.gz"
         for release in data:
             if release["tag_name"] == f"v{ver}":

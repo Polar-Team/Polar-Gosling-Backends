@@ -261,13 +261,25 @@ async def setup_ydb_tables(test_ydb_schema):
     yield
 
 
-@pytest.fixture
-def egg_service(test_ydb_schema):
-    """Fixture providing a fresh EggService instance for each test."""
+@pytest_asyncio.fixture
+async def egg_service(test_ydb_schema):
+    """Fixture providing a fresh EggService instance for each test, with DB cleanup."""
     from app.services.egg_service import EggService
+    from ydb import aio as YDBAsync
 
     service = EggService(schema=test_ydb_schema)
-    return service
+    yield service
+
+    # Clean up egg_configs table after each test to prevent cross-test contamination
+    async with YDBAsync.Driver(
+        endpoint=test_ydb_schema.config.endpoint,
+        database=test_ydb_schema.config.database,
+        credentials=test_ydb_schema.config.credentials,
+    ) as driver:
+        await driver.wait(fail_fast=False, timeout=30)
+        pool = YDBAsync.QuerySessionPool(driver, size=1)
+        async with pool:
+            await pool.execute_with_retries("DELETE FROM `egg_configs`")
 
 
 @pytest.fixture(name="generated_examples", scope="module", autouse=True)

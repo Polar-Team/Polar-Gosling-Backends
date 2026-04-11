@@ -1,6 +1,8 @@
 name: Tests
 
-on: [pull_request]
+on:
+  pull_request:
+  workflow_dispatch:
 
 env:
   LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}

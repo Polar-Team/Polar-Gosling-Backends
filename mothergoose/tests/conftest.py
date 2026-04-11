@@ -85,7 +85,10 @@ def localstack_container() -> (  # type: ignore[no-any-unimported]
     Provides SQS and Secrets Manager services for testing Celery task queue
     and AWS secret management functionality.
     """
-    with LocalStackContainer(image="localstack/localstack:3.8.1") as localstack:
+    auth_token = os.environ.get("LOCALSTACK_AUTH_TOKEN", "")
+    with LocalStackContainer(image="localstack/localstack:latest").with_env(
+        "LOCALSTACK_AUTH_TOKEN", auth_token
+    ) as localstack:
         # Wait for LocalStack to be ready
         time.sleep(5)
         yield localstack

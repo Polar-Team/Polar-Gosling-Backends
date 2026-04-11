@@ -2,6 +2,9 @@ name: Tests
 
 on: [pull_request]
 
+env:
+  LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
+
 jobs:
   test:
     name: Run ${{ matrix.app }} Tests with Python ${{ matrix.env }} on ${{ matrix.os }}

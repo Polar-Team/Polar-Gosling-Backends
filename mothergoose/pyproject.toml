@@ -100,6 +100,9 @@ description = "Run tests under {base_python}"
 dependency_groups = [
     "test",
 ]
+pass_env = [
+    "LOCALSTACK_AUTH_TOKEN",
+]
 commands = [["pytest", "-v"]]
 
 [tool.tox.env.format]

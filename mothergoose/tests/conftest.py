@@ -85,7 +85,7 @@ def localstack_container() -> (  # type: ignore[no-any-unimported]
     Provides SQS and Secrets Manager services for testing Celery task queue
     and AWS secret management functionality.
     """
-    with LocalStackContainer(image="localstack/localstack:latest") as localstack:
+    with LocalStackContainer(image="localstack/localstack:3.8.1") as localstack:
         # Wait for LocalStack to be ready
         time.sleep(5)
         yield localstack

@@ -1,0 +1,13 @@
+egg "sample-egg" {
+  gitlab_server = "https://gitlab.example.com"
+  project_id    = 12345
+  cloud         = "aws"
+  region        = "us-east-1"
+  runner_type   = "serverless"
+  tags          = ["sample", "cloud-stack"]
+
+  secrets = {
+    gitlab_token = "aws-sm://pg-stack/gitlab_token"
+    webhook      = "aws-sm://pg-stack/webhook_secret"
+  }
+}

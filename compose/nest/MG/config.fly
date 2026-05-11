@@ -1,0 +1,6 @@
+mothergoose {
+  sync_interval_seconds = 300
+  api_gateway = {
+    path_prefix = "/api/v1"
+  }
+}

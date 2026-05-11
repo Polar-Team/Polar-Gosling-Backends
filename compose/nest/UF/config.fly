@@ -1,0 +1,8 @@
+uglyfox {
+  pruning {
+    failure_threshold = 3
+    max_age_hours     = 24
+  }
+  apex_pool  = { min = 0, max = 2 }
+  nadir_pool = { min = 0, max = 5 }
+}

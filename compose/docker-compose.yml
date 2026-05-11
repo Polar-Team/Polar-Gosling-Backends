@@ -93,3 +93,35 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 6
+  # --- nest-git -----------------------------------------------------------
+  # HTTP Git server that exposes a seeded bare `nest.git` repo on
+  # `http://nest-git/nest.git` inside `pg-stack-net`. The sample Nest tree
+  # under `compose/nest/` is baked into the image at build time.
+  #
+  # Build context deviation
+  # -----------------------
+  # Task 4.2 literally specifies `context: ./nest-git`, but the Dockerfile
+  # does `COPY nest /srv/nest-src`, which only resolves when the build
+  # context is the parent `compose/` directory. Dockerfile `COPY` cannot
+  # traverse `..`, so we must point the context at the parent and reference
+  # the Dockerfile by path. This deviation is pre-approved in the task
+  # prompt; see `nest-git/Dockerfile` header for the full rationale.
+  # Requirements: 1.2, 8.1, 8.3, 13.1, 13.4.
+  nest-git:
+    container_name: pg-stack-nest-git
+    build:
+      context: .
+      dockerfile: ./nest-git/Dockerfile
+    image: pg-stack/nest-git:${NEST_GIT_IMAGE_TAG:-0.1.0}
+    networks:
+      - pg-stack-net
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -fsS
+        - http://localhost/nest.git/info/refs?service=git-upload-pack
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 6

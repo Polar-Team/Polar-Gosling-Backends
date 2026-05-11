@@ -1,0 +1,95 @@
+# Docker Compose definition for the Polar-Gosling Cloud_Stack.
+#
+# All resources introduced by this stack are prefixed `pg-stack-` so that the
+# stack cannot collide with the existing `pytest` / testcontainers suite
+# (Requirements 13.1, 13.2, 13.3).
+#
+# Services are appended by subsequent sub-tasks of the implementation plan.
+
+name: pg-stack
+
+networks:
+  pg-stack-net:
+    name: pg-stack-net
+    driver: bridge
+
+volumes:
+  pg-stack-localstack-data:
+    name: pg-stack-localstack-data
+  pg-stack-celery-broker-data:
+    name: pg-stack-celery-broker-data
+
+services:
+  # --- ydb -----------------------------------------------------------------
+  # Local YDB database: runners, egg_configs, sync_history, deployment_plans,
+  # audit_logs, tofu_versions, gosling_version tables.
+  # Requirements: 1.2, 1.3, 2.1, 2.2, 2.3, 2.4, 13.1, 13.4.
+  ydb:
+    container_name: pg-stack-ydb
+    image: ydbplatform/local-ydb:${YDB_IMAGE_TAG:?set YDB_IMAGE_TAG in .env}
+    environment:
+      YDB_USE_IN_MEMORY_PDISKS: "true"
+    ports:
+      - "127.0.0.1:2136:2136"   # gRPC endpoint
+      - "127.0.0.1:8765:8765"   # YDB Embedded UI (console)
+    networks:
+      - pg-stack-net
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /ydb -e grpc://localhost:2136 -d /local discovery whoami || exit 1
+      interval: 10s
+      timeout: 5s
+      start_period: 120s
+      retries: 12
+  # --- localstack ---------------------------------------------------------
+  # LocalStack emulation of AWS services: S3 (polar-gosling-artifacts bucket),
+  # SQS (mothergoose / uglyfox queues), EventBridge (trigger rules), and
+  # Secrets Manager (aws-sm:// URI resolution).
+  # Requirements: 1.2, 3.1, 3.2, 3.3, 3.4, 13.4.
+  localstack:
+    container_name: pg-stack-localstack
+    image: localstack/localstack:${LOCALSTACK_IMAGE_TAG:?set LOCALSTACK_IMAGE_TAG in .env}
+    environment:
+      SERVICES: "s3,sqs,events,secretsmanager"
+      DEFAULT_REGION: "us-east-1"
+      LS_LOG: "warn"
+      PERSISTENCE: "0"
+    ports:
+      - "127.0.0.1:4566:4566"   # LocalStack edge port
+    volumes:
+      - pg-stack-localstack-data:/var/lib/localstack
+    networks:
+      - pg-stack-net
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -fsS
+        - http://localhost:4566/_localstack/health
+      interval: 5s
+      timeout: 5s
+      start_period: 60s
+      retries: 12
+  # --- celery-broker ------------------------------------------------------
+  # Redis serving as the Celery broker and result backend for MotherGoose
+  # and UglyFox task dispatch. Internal-only (no published host ports).
+  # The `/data` volume is preserved across `compose-down` so queued messages
+  # survive container recreation.
+  # Requirements: 1.2, 4.1, 4.2, 4.3, 13.1, 13.2, 13.4.
+  celery-broker:
+    container_name: pg-stack-celery-broker
+    image: redis:${CELERY_BROKER_IMAGE_TAG:?set CELERY_BROKER_IMAGE_TAG in .env}
+    volumes:
+      - pg-stack-celery-broker-data:/data
+    networks:
+      - pg-stack-net
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 6

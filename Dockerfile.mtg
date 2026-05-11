@@ -1,4 +1,4 @@
-# Dockerfile for UglyFox Backend
+# Dockerfile for MotherGoose Backend
 # Multi-stage UV-optimized build for production
 # Supports multi-platform: linux/amd64, linux/arm64
 
@@ -11,27 +11,27 @@ WORKDIR /app
 
 # Enable bytecode compilation for faster cold-start
 ENV UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+  UV_LINK_MODE=copy
 
-# Install system build dependencies (grpcio, etc.)
+# Install system build dependencies (grpcio, gitpython, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential=12.12 \
-    git=1:2.47.3-0+deb13u1 \
-    && rm -rf /var/lib/apt/lists/*
+  build-essential=12.12 \
+  git=1:2.47.3-0+deb13u1 \
+  && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifests first — maximises Docker layer cache hits
-COPY uglyfox/pyproject.toml uglyfox/uv.lock ./
+COPY mothergoose/pyproject.toml mothergoose/uv.lock ./
 
 # Install production dependencies only (no dev/test/format/style/type groups)
 # --no-install-project: skip installing the project itself (source not copied yet)
 # --frozen: respect the lockfile exactly
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev
+  uv sync --frozen --no-install-project --no-dev
 
 # Copy application source and install the project
-COPY uglyfox/src ./src
+COPY mothergoose/src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+  uv sync --frozen --no-dev
 
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime — minimal production image
@@ -42,42 +42,45 @@ WORKDIR /app
 
 # Install only the runtime system packages we need
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates=20250419 \
-    procps=2:4.0.4-9 \
-    tini=0.19.0-3+b6 \
-    && rm -rf /var/lib/apt/lists/*
+  ca-certificates=20250419 \
+  curl=8.14.1-2+deb13u2 \
+  git=1:2.47.3-0+deb13u1 \
+  tini=0.19.0-3+b6 \
+  && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN groupadd -g 1000 uglyfox && \
-    useradd -m -u 1000 -g uglyfox uglyfox && \
-    chown -R uglyfox:uglyfox /app
+RUN groupadd -g 1000 mothergoose && \
+  useradd -m -u 1000 -g mothergoose mothergoose && \
+  chown -R mothergoose:mothergoose /app
 
 # Copy the pre-built virtual environment from builder
-COPY --from=builder --chown=uglyfox:uglyfox /app/.venv /app/.venv
+COPY --from=builder --chown=mothergoose:mothergoose /app/.venv /app/.venv
 
 # Copy application source
-COPY --chown=uglyfox:uglyfox uglyfox/src /app/src
-COPY --chown=uglyfox:uglyfox uglyfox/pyproject.toml /app/
+COPY --chown=mothergoose:mothergoose mothergoose/src /app/src
+COPY --chown=mothergoose:mothergoose mothergoose/pyproject.toml /app/
 
-# Put the venv on PATH so `python`, `celery` resolve correctly
+# Put the venv on PATH so `python`, `uvicorn`, `celery` resolve correctly
 ENV PATH="/app/.venv/bin:$PATH" \
-    PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    UGLYFOX_ENVIRONMENT=production
+  PYTHONUNBUFFERED=1 \
+  PYTHONDONTWRITEBYTECODE=1 \
+  MOTHERGOOSE_ENVIRONMENT=production
 
 # Switch to non-root user
-USER uglyfox
+USER mothergoose
 
-# Health check — verify celery worker process is alive
+# Health check — FastAPI /health endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD pgrep -f "celery.*worker" || exit 1
+  CMD curl -f http://localhost:8000/health || exit 1
+
+EXPOSE 8000
 
 # Use tini as PID 1 for proper signal handling
 ENTRYPOINT ["tini", "--"]
 
-# Default: run the Celery worker
-CMD ["celery", "-A", "app.celery_worker", "worker", "--loglevel=info", "-Q", "uglyfox"]
+# Default: run the FastAPI application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # Override examples:
-#   Debug mode:     celery -A app.celery_worker worker --loglevel=debug -Q uglyfox
-#   Single worker:  celery -A app.celery_worker worker --loglevel=info -Q uglyfox --concurrency=1
+#   Celery worker:  celery -A app.celery_worker worker --loglevel=info -Q mothergoose
+#   Celery beat:    celery -A app.celery_worker beat --loglevel=info

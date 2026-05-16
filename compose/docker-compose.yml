@@ -125,3 +125,62 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 6
+  # --- seed ---------------------------------------------------------------
+  # One-shot Cloud_Stack initializer: creates the YDB schema, seeds
+  # LocalStack (S3 buckets, SQS queues, Secrets Manager entries, binary
+  # artifacts), upserts seed `egg_configs` rows, and — under the
+  # `with-triggers` Compose profile — creates EventBridge rules.
+  #
+  # Build context deviation
+  # -----------------------
+  # Task 5.6 literally specifies `context: ./seed`, but the Dockerfile in
+  # `seed/Dockerfile` (Task 5.2) `FROM pg-stack/mothergoose:${MG_IMAGE_TAG}`
+  # and `COPY compose/seed/seed.py /app/seed.py` etc., which only resolve
+  # when the build context is the backends repo root (`../`). Dockerfile
+  # `COPY` cannot traverse `..`, so we point the context at the repo root
+  # and reference the Dockerfile by path. This deviation is pre-approved in
+  # the task prompt; see `seed/Dockerfile` header for the full rationale.
+  #
+  # `restart: no` and the absence of a host-published port reflect the
+  # one-shot exit-code semantics (R9.1). The image inherits the MG runtime
+  # so `ydb`, `boto3`, and the MotherGoose `app` package are available.
+  # Requirements: 1.7, 9.1, 9.6, 13.1, 13.4.
+  seed:
+    container_name: pg-stack-seed
+    build:
+      context: ../
+      dockerfile: compose/seed/Dockerfile
+    image: pg-stack/seed:${MG_IMAGE_TAG:-dev}
+    restart: "no"
+    profiles:
+      - seed
+    depends_on:
+      ydb:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      nest-git:
+        condition: service_healthy
+    environment:
+      # MotherGoose YDB wiring — identical to mothergoose-api/-worker so the
+      # seed connects to the same cluster the app containers will consume.
+      MOTHERGOOSE_YDB_ENDPOINT: "grpc://ydb:2136"
+      MOTHERGOOSE_YDB_DATABASE: "/local"
+      # AWS / LocalStack wiring — every boto3 call from seed.py targets the
+      # in-stack LocalStack edge port with the conventional dummy creds.
+      AWS_ENDPOINT_URL: "http://localstack:4566"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      AWS_DEFAULT_REGION: "${AWS_DEFAULT_REGION:-us-east-1}"
+      # Seed-specific knobs.
+      SEED_DATA_DIR: "/app/fixtures"
+      # SEED_PROFILE mirrors COMPOSE_PROFILES so seed.py can detect whether
+      # the `with-triggers` profile is active and decide whether to create
+      # EventBridge rules (R9.3). COMPOSE_PROFILES is also forwarded so any
+      # downstream code that reads it directly continues to work.
+      SEED_PROFILE: "${COMPOSE_PROFILES:-}"
+      COMPOSE_PROFILES: "${COMPOSE_PROFILES:-}"
+    volumes:
+      - ./seed/fixtures:/app/fixtures:ro
+    networks:
+      - pg-stack-net

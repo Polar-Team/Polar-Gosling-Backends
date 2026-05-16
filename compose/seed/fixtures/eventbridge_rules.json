@@ -1,0 +1,10 @@
+[
+  {
+    "name": "pg-stack-sync-git",
+    "schedule": "rate(1 minute)",
+    "target": {
+      "type": "http",
+      "url": "http://mothergoose-api:8000/internal/sync-git"
+    }
+  }
+]

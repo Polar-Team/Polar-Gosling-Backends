@@ -3,7 +3,7 @@
 # pg-stack/nest-git
 #
 # A tiny Alpine image that serves a single bare Git repository (`nest.git`)
-# over HTTP on port 80 via `lighttpd` + `git-http-backend` (CGI). The sample
+# over HTTP on port 8080 via `lighttpd` + `git-http-backend` (CGI). The sample
 # Nest content under `../nest/` is baked into the image at build time so the
 # container has no runtime volume dependency.
 #
@@ -37,16 +37,15 @@ LABEL pg-stack="true" \
 #   git, git-daemon   provide `git-http-backend` at /usr/libexec/git-core/
 #   lighttpd          HTTP server with mod_cgi / mod_alias / mod_setenv
 #   curl              used by the compose healthcheck (task 4.2)
-#   libcap            provides `setcap` so lighttpd can bind :80 as non-root
 #   tini              minimal PID1 reaper for the `lighttpd -D` foreground
 # -----------------------------------------------------------------------------
+# hadolint ignore=DL3018
 RUN apk add --no-cache \
-        git \
-        git-daemon \
-        lighttpd \
-        curl \
-        libcap \
-        tini
+        git=2.45.4-r0 \
+        git-daemon=2.45.4-r0 \
+        lighttpd=1.4.82-r0 \
+        curl=8.14.1-r2 \
+        tini=0.19.0-r3
 
 # -----------------------------------------------------------------------------
 # Unprivileged user that will own the bare repo and run lighttpd
@@ -73,6 +72,7 @@ RUN mkdir -p /srv/git /srv/www /var/log/lighttpd /var/cache/lighttpd \
 # -----------------------------------------------------------------------------
 COPY nest /srv/nest-src
 
+# hadolint ignore=DL3003
 RUN set -eux; \
     git config --global user.email 'seed@pg-stack.local'; \
     git config --global user.name  'pg-stack-seed'; \
@@ -103,6 +103,7 @@ RUN set -eux; \
 # aliased target directly as CGI. `$HTTP["url"]` scopes the CGI handler to
 # the nest-git URL space so other (future) paths are unaffected.
 # -----------------------------------------------------------------------------
+# hadolint ignore=SC1088
 RUN <<'CONF' cat > /etc/lighttpd/lighttpd.conf
 server.modules = (
     "mod_alias",
@@ -111,7 +112,7 @@ server.modules = (
 )
 
 server.document-root = "/srv/www"
-server.port          = 80
+server.port          = 8080
 server.errorlog      = "/dev/stderr"
 server.pid-file      = "/tmp/lighttpd.pid"
 
@@ -129,14 +130,11 @@ $HTTP["url"] =~ "^/nest\.git" {
 }
 CONF
 
-# Allow the non-root `git` user to bind port 80.
-RUN setcap 'cap_net_bind_service=+ep' /usr/sbin/lighttpd
-
 # -----------------------------------------------------------------------------
 # Runtime
 # -----------------------------------------------------------------------------
 USER git
-EXPOSE 80
+EXPOSE 8080
 
 # tini reaps any short-lived CGI children spawned by lighttpd; `-D` keeps
 # lighttpd in the foreground so Docker can supervise it directly.

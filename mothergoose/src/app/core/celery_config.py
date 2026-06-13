@@ -5,6 +5,7 @@ Configuration for Celery task queue and task routing.
 Supports both YMQ (Yandex Message Queue) and SQS (AWS Simple Queue Service) as brokers.
 """
 
+import json
 import os
 
 from kombu import Exchange, Queue
@@ -63,13 +64,53 @@ elif CLOUD_PROVIDER == "test":
     # Test environment - use memory broker
     BROKER_URL = os.getenv("MOTHERGOOSE_BROKER_URL", "memory://")
     BROKER_TRANSPORT_OPTIONS = {}
+elif CLOUD_PROVIDER == "localstack":
+    # LocalStack (local dev): SQS broker pointed at the in-stack LocalStack
+    # edge port. Credentials are the conventional LocalStack dummies (test/test).
+    # CELERY_BROKER_URL / CELERY_BROKER_TRANSPORT_OPTIONS can be overridden
+    # via environment to point at a different LocalStack or real SQS endpoint.
+    BROKER_URL = os.getenv("CELERY_BROKER_URL", "sqs://test:test@")
+    _transport_opts_env = os.getenv("CELERY_BROKER_TRANSPORT_OPTIONS")
+    if _transport_opts_env:
+        BROKER_TRANSPORT_OPTIONS = json.loads(_transport_opts_env)
+    else:
+        BROKER_TRANSPORT_OPTIONS = {
+            "region": os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+            "endpoint_url": "http://localstack:4566",
+            "predefined_queues": {
+                "mothergoose": {
+                    "url": "http://localstack:4566/000000000000/mothergoose",
+                },
+                "uglyfox": {
+                    "url": "http://localstack:4566/000000000000/uglyfox",
+                },
+            },
+        }
 else:
     logger.warning(
-        "Unknown cloud provider '%s'. Falling back to Redis broker for development.",
+        "Unknown cloud provider '%s'. Defaulting to LocalStack SQS broker for development.",
         CLOUD_PROVIDER,
     )
-    BROKER_URL = os.getenv("MOTHERGOOSE_BROKER_URL", "redis://localhost:6379/0")
-    BROKER_TRANSPORT_OPTIONS = {}
+    # Fall back to LocalStack SQS — Redis is no longer a default dependency.
+    # Override CELERY_BROKER_URL / CELERY_BROKER_TRANSPORT_OPTIONS in the
+    # environment to point at a different broker.
+    BROKER_URL = os.getenv("CELERY_BROKER_URL", "sqs://test:test@")
+    _transport_opts_env = os.getenv("CELERY_BROKER_TRANSPORT_OPTIONS")
+    if _transport_opts_env:
+        BROKER_TRANSPORT_OPTIONS = json.loads(_transport_opts_env)
+    else:
+        BROKER_TRANSPORT_OPTIONS = {
+            "region": os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+            "endpoint_url": "http://localstack:4566",
+            "predefined_queues": {
+                "mothergoose": {
+                    "url": "http://localstack:4566/000000000000/mothergoose",
+                },
+                "uglyfox": {
+                    "url": "http://localstack:4566/000000000000/uglyfox",
+                },
+            },
+        }
 
 # Result Backend Configuration
 # For serverless deployments, use SQS/YMQ as result backend
@@ -90,10 +131,9 @@ if RESULT_BACKEND_TYPE == "sqs":
             "sqs://",  # SQS result queue
         )
     else:
-        # Development fallback
-        CELERY_RESULT_BACKEND = os.getenv(
-            "MOTHERGOOSE_REDIS_URL", "redis://localhost:6379/1"
-        )
+        # localstack / unknown provider: SQS is a poor result backend.
+        # Disable results entirely for local dev — tasks use task_ignore_result.
+        CELERY_RESULT_BACKEND = None  # type: ignore[assignment]
 elif RESULT_BACKEND_TYPE == "redis":
     # Redis backend for development/testing only
     CELERY_RESULT_BACKEND = os.getenv(

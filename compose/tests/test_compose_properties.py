@@ -594,12 +594,11 @@ def test_resource_name_prefixes(
         )
 
     # R13.2 — every top-level volume key and its resolved `name` use the prefix.
+    # NOTE: The current compose design uses no named volumes (LocalStack runs
+    # with PERSISTENCE="0" and the celery-broker was replaced by LocalStack
+    # SQS). The property still holds vacuously when no volumes are declared,
+    # and if volumes are added in the future they must carry the prefix.
     top_level_volumes: Dict[str, Any] = resolved.get("volumes", {})
-    assert top_level_volumes, (
-        "resolved compose file declares no top-level volumes; "
-        "expected at least `pg-stack-localstack-data` and "
-        "`pg-stack-celery-broker-data` (R13.2)"
-    )
     for volume_key, volume_cfg in top_level_volumes.items():
         assert volume_key.startswith(_PG_STACK_PREFIX), (
             f"top-level volume key `{volume_key}` does not begin with "
@@ -645,3 +644,641 @@ def test_resource_name_prefixes(
             f"top-level network `{network_key}` has `name={network_name!r}`, "
             f"which does not begin with `{_PG_STACK_PREFIX}` (R13.3)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Property 4: `depends_on` graph matches the expected dependency map
+# ---------------------------------------------------------------------------
+# Validates: Requirements 2.5, 2.6, 4.6, 7.5, 7.6, 9.6
+
+# The expected dependency edges derived from the actual docker-compose.yml.
+# Each tuple is (dependent, dependency, condition).
+_EXPECTED_DEPENDS_ON_EDGES: frozenset[tuple[str, str, str]] = frozenset(
+    {
+        # seed depends_on
+        ("seed", "ydb", "service_healthy"),
+        ("seed", "localstack", "service_healthy"),
+        ("seed", "nest-git", "service_healthy"),
+        # mothergoose-api depends_on
+        ("mothergoose-api", "ydb", "service_healthy"),
+        ("mothergoose-api", "localstack", "service_healthy"),
+        ("mothergoose-api", "nest-git", "service_healthy"),
+        ("mothergoose-api", "seed", "service_completed_successfully"),
+        # mothergoose-worker depends_on
+        ("mothergoose-worker", "ydb", "service_healthy"),
+        ("mothergoose-worker", "localstack", "service_healthy"),
+        ("mothergoose-worker", "nest-git", "service_healthy"),
+        ("mothergoose-worker", "seed", "service_completed_successfully"),
+        # uglyfox-worker depends_on
+        ("uglyfox-worker", "ydb", "service_healthy"),
+        ("uglyfox-worker", "localstack", "service_healthy"),
+        ("uglyfox-worker", "seed", "service_completed_successfully"),
+        # trigger-emulator depends_on
+        ("trigger-emulator", "mothergoose-api", "service_healthy"),
+        ("trigger-emulator", "seed", "service_completed_successfully"),
+    }
+)
+
+# The exact set of (dependency, condition) pairs for uglyfox-worker.
+_UGLYFOX_WORKER_EXACT_DEPENDS_ON: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("ydb", "service_healthy"),
+        ("localstack", "service_healthy"),
+        ("seed", "service_completed_successfully"),
+    }
+)
+
+
+def _extract_depends_on_edges(services: Dict[str, Any]) -> set[tuple[str, str, str]]:
+    """Extract all ``(dependent, dependency, condition)`` edges from resolved services.
+
+    ``docker compose config --format json`` normalises ``depends_on`` into a
+    mapping ``{dep_name: {"condition": "...", ...}}``. If a service has no
+    ``depends_on`` key the mapping is absent — treat as empty.
+    """
+    edges: set[tuple[str, str, str]] = set()
+    for service_name, service in services.items():
+        depends_on = service.get("depends_on")
+        if not depends_on or not isinstance(depends_on, dict):
+            continue
+        for dep_name, dep_cfg in depends_on.items():
+            condition = dep_cfg.get("condition", "service_started") if isinstance(dep_cfg, dict) else "service_started"
+            edges.add((service_name, dep_name, condition))
+    return edges
+
+
+def _extract_service_depends_on(service: Dict[str, Any]) -> set[tuple[str, str]]:
+    """Extract ``(dependency, condition)`` pairs from a single service's ``depends_on``."""
+    result: set[tuple[str, str]] = set()
+    depends_on = service.get("depends_on")
+    if not depends_on or not isinstance(depends_on, dict):
+        return result
+    for dep_name, dep_cfg in depends_on.items():
+        condition = dep_cfg.get("condition", "service_started") if isinstance(dep_cfg, dict) else "service_started"
+        result.add((dep_name, condition))
+    return result
+
+
+@settings(
+    max_examples=5,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture],
+)
+@given(env=_compose_env_strategy())
+def test_depends_on_graph(
+    env: Dict[str, str],
+    compose_file: Path,
+    docker_compose_available: bool,
+) -> None:
+    """The ``depends_on`` graph matches the expected dependency map.
+
+    **Validates: Requirements 2.5, 2.6, 4.6, 7.5, 7.6, 9.6**
+
+    For any permissible substitution of the documented env vars, the
+    resolved Compose config SHALL contain every expected
+    ``(dependent, dependency, condition)`` edge. Additionally,
+    ``uglyfox-worker.depends_on`` SHALL equal exactly the expected
+    three-edge set (no extra or missing edges).
+
+    The ``COMPOSE_PROFILES`` variable is forced to ``seed,with-triggers``
+    so that all profiled services (``seed``, ``trigger-emulator``) are
+    included in the resolved config and their dependency edges can be
+    validated.
+    """
+    if not docker_compose_available:
+        pytest.skip("`docker compose` plugin not available on PATH")
+
+    # Activate all profiles so every service (including profiled ones like
+    # `seed` and `trigger-emulator`) appears in the resolved config.
+    # Also provide LOCALSTACK_AUTH_TOKEN which is required by the compose file.
+    env_with_profiles = {
+        **env,
+        "COMPOSE_PROFILES": "seed,with-triggers",
+        "LOCALSTACK_AUTH_TOKEN": "test-token-for-property-test",
+    }
+    resolved = _resolve_compose(compose_file, env_with_profiles)
+
+    services: Dict[str, Any] = resolved.get("services", {})
+    assert services, "resolved compose file declares no services"
+
+    actual_edges = _extract_depends_on_edges(services)
+
+    # Assert every expected edge is present in the resolved config.
+    missing_edges = _EXPECTED_DEPENDS_ON_EDGES - actual_edges
+    assert not missing_edges, (
+        f"missing expected depends_on edges in resolved compose config: "
+        f"{sorted(missing_edges)!r}"
+    )
+
+    # Assert uglyfox-worker.depends_on equals EXACTLY the expected set.
+    uglyfox_worker = services.get("uglyfox-worker")
+    assert uglyfox_worker is not None, (
+        "service `uglyfox-worker` not found in resolved compose config"
+    )
+    actual_uglyfox_deps = _extract_service_depends_on(uglyfox_worker)
+    assert actual_uglyfox_deps == _UGLYFOX_WORKER_EXACT_DEPENDS_ON, (
+        f"uglyfox-worker.depends_on does not match the expected exact set.\n"
+        f"  Expected: {sorted(_UGLYFOX_WORKER_EXACT_DEPENDS_ON)!r}\n"
+        f"  Actual:   {sorted(actual_uglyfox_deps)!r}\n"
+        f"  Extra:    {sorted(actual_uglyfox_deps - _UGLYFOX_WORKER_EXACT_DEPENDS_ON)!r}\n"
+        f"  Missing:  {sorted(_UGLYFOX_WORKER_EXACT_DEPENDS_ON - actual_uglyfox_deps)!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Property 3: Non-happy-path services use only allowed Compose profiles
+# ---------------------------------------------------------------------------
+# Validates: Requirement 1.7
+#
+# Per R1.7, the happy-path pipeline (ydb, localstack, celery-broker,
+# nest-git, mothergoose-api, mothergoose-worker, uglyfox-worker) SHALL NOT
+# be assigned to any Compose profile (i.e. they start under the default
+# profile). Non-happy-path services SHALL be assigned to profiles drawn
+# exclusively from the closed set {seed, triggers, with-triggers, debug}.
+#
+# Specifically from the design and implementation:
+#   - `seed`             → profile `seed`
+#   - `trigger-emulator` → profile `with-triggers`
+#   - No service uses a profile outside the allowed closed set.
+#
+# This property is resolution-independent: profile assignments are static
+# YAML keys unaffected by env-var substitution. We still run under hypothesis
+# with a small max_examples to confirm the property holds across arbitrary
+# env-var substitutions (ensuring the file always resolves cleanly).
+
+# The closed set of allowed Compose profiles per R1.7.
+_ALLOWED_PROFILES: frozenset[str] = frozenset({"seed", "triggers", "with-triggers", "debug"})
+
+# Happy-path services: these MUST have no profiles assigned (they always start).
+_HAPPY_PATH_SERVICES: frozenset[str] = frozenset(
+    {
+        "ydb",
+        "localstack",
+        "celery-broker",
+        "nest-git",
+        "mothergoose-api",
+        "mothergoose-worker",
+        "uglyfox-worker",
+    }
+)
+
+# Expected profile assignments for non-happy-path services.
+# Each maps service name → expected set of profiles.
+_EXPECTED_PROFILE_ASSIGNMENTS: Dict[str, frozenset[str]] = {
+    "seed": frozenset({"seed"}),
+    "trigger-emulator": frozenset({"triggers", "with-triggers"}),
+}
+
+
+def _service_profiles(service: Dict[str, Any]) -> List[str]:
+    """Return the list of Compose profiles declared by ``service``.
+
+    ``docker compose config --format json`` normalises the ``profiles`` field
+    into a list of profile name strings. When a service declares no
+    ``profiles:`` key, the resolved config either omits the field or provides
+    an empty list — both are treated as "no profiles assigned" (happy-path).
+    """
+    raw = service.get("profiles")
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return list(raw)
+    # Defensive: treat unexpected shapes as empty to avoid test crashes on
+    # future Compose plugin output format changes.
+    return []  # pragma: no cover
+
+
+@settings(
+    max_examples=5,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture],
+)
+@given(env=_compose_env_strategy())
+def test_profile_assignment(
+    env: Dict[str, str],
+    compose_file: Path,
+    docker_compose_available: bool,
+) -> None:
+    """Non-happy-path services use only allowed Compose profiles.
+
+    **Validates: Requirement 1.7**
+
+    For any permissible substitution of the documented env vars, the
+    resolved Compose config SHALL satisfy:
+
+    * Happy-path services (``ydb``, ``localstack``, ``celery-broker``,
+      ``nest-git``, ``mothergoose-api``, ``mothergoose-worker``,
+      ``uglyfox-worker``) have no ``profiles:`` key or an empty list.
+    * ``seed`` is assigned to profile ``{seed}``.
+    * ``trigger-emulator`` is assigned to a subset of
+      ``{triggers, with-triggers}``.
+    * No service uses a profile outside the closed allowed set
+      ``{seed, triggers, with-triggers, debug}``.
+
+    The ``COMPOSE_PROFILES`` environment variable is set to
+    ``seed,with-triggers`` so that all profiled services are included in the
+    resolved config output (otherwise ``docker compose config`` omits them).
+    """
+    if not docker_compose_available:
+        pytest.skip("`docker compose` plugin not available on PATH")
+
+    # Activate all profiles so every service appears in the resolved output.
+    env_with_profiles = {
+        **env,
+        "COMPOSE_PROFILES": "seed,with-triggers",
+        "LOCALSTACK_AUTH_TOKEN": "test-token-for-property-test",
+    }
+    resolved = _resolve_compose(compose_file, env_with_profiles)
+
+    services: Dict[str, Any] = resolved.get("services", {})
+    assert services, "resolved compose file declares no services"
+
+    for service_name, service in services.items():
+        profiles = _service_profiles(service)
+        profile_set = frozenset(profiles)
+
+        # --- Happy-path services must not be profiled ---
+        if service_name in _HAPPY_PATH_SERVICES:
+            assert profile_set == frozenset(), (
+                f"happy-path service `{service_name}` must not declare any "
+                f"profiles (R1.7); got profiles={profiles!r}"
+            )
+            continue
+
+        # --- All declared profiles must be in the allowed closed set ---
+        disallowed = profile_set - _ALLOWED_PROFILES
+        assert not disallowed, (
+            f"service `{service_name}` uses profiles outside the allowed "
+            f"set {sorted(_ALLOWED_PROFILES)!r}: {sorted(disallowed)!r} "
+            f"(R1.7)"
+        )
+
+        # --- Check specific expected profile assignments ---
+        expected = _EXPECTED_PROFILE_ASSIGNMENTS.get(service_name)
+        if expected is not None:
+            # The service's profiles must be a non-empty subset of the
+            # expected set. We check subset rather than exact equality to
+            # allow the trigger-emulator to use either `triggers` or
+            # `with-triggers` or both — whatever the implementation chose.
+            assert profile_set, (
+                f"service `{service_name}` is expected to have profiles "
+                f"{sorted(expected)!r} but has none (R1.7)"
+            )
+            assert profile_set <= expected, (
+                f"service `{service_name}` has profiles={sorted(profile_set)!r} "
+                f"but expected a subset of {sorted(expected)!r} (R1.7)"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Property 6: App containers receive the expected environment values
+# ---------------------------------------------------------------------------
+# Validates: Requirements 3.10, 4.4, 4.5, 6.3, 6.4, 7.2
+#
+# Per the design's cross-service env map, the MotherGoose API, MotherGoose
+# worker, and UglyFox worker containers MUST have specific environment
+# variables set to exact static values. Additionally, env-driven variables
+# (those whose values derive from host env via ``${VAR:-default}`` syntax)
+# must resolve to the hypothesis-generated input value.
+#
+# This property ensures:
+#   R3.10 — LocalStack AWS env vars set on MG-api, MG-worker, UF-worker.
+#   R4.4  — MOTHERGOOSE_BROKER_URL and MOTHERGOOSE_RESULT_BACKEND_URL set
+#           on MG containers.
+#   R4.5  — UGLYFOX_BROKER_URL and UGLYFOX_RESULT_BACKEND_URL set on UF
+#           container.
+#   R6.3  — MOTHERGOOSE_DATABASE_TYPE, MOTHERGOOSE_YDB_ENDPOINT,
+#           MOTHERGOOSE_YDB_DATABASE identical on both MG containers.
+#   R6.4  — MOTHERGOOSE_NEST_REPO_URL set on both MG containers to the
+#           nest-git URL.
+#   R7.2  — UGLYFOX_DATABASE_TYPE, UGLYFOX_YDB_ENDPOINT,
+#           UGLYFOX_YDB_DATABASE set on UF.
+
+# Static (container, variable, expected_value) triples — these are literal
+# values baked into docker-compose.yml, not driven by host env vars.
+_EXPECTED_ENV_TRIPLES: List[tuple[str, str, str]] = [
+    # --- mothergoose-api: R3.10, R4.4, R6.3, R6.4 ---
+    ("mothergoose-api", "MOTHERGOOSE_DATABASE_TYPE", "ydb"),
+    ("mothergoose-api", "MOTHERGOOSE_YDB_ENDPOINT", "grpc://ydb:2136"),
+    ("mothergoose-api", "MOTHERGOOSE_YDB_DATABASE", "/local"),
+    ("mothergoose-api", "MOTHERGOOSE_BROKER_URL", "sqs://test:test@"),
+    ("mothergoose-api", "MOTHERGOOSE_RESULT_BACKEND_URL", "db+sqlite:///tmp/celery-results.db"),
+    ("mothergoose-api", "MOTHERGOOSE_NEST_REPO_URL", "http://nest-git/nest.git"),
+    ("mothergoose-api", "AWS_ENDPOINT_URL", "http://localstack:4566"),
+    ("mothergoose-api", "AWS_ACCESS_KEY_ID", "test"),
+    ("mothergoose-api", "AWS_SECRET_ACCESS_KEY", "test"),
+    # --- mothergoose-worker: R3.10, R4.4, R6.3, R6.4 ---
+    ("mothergoose-worker", "MOTHERGOOSE_DATABASE_TYPE", "ydb"),
+    ("mothergoose-worker", "MOTHERGOOSE_YDB_ENDPOINT", "grpc://ydb:2136"),
+    ("mothergoose-worker", "MOTHERGOOSE_YDB_DATABASE", "/local"),
+    ("mothergoose-worker", "MOTHERGOOSE_BROKER_URL", "sqs://test:test@"),
+    ("mothergoose-worker", "MOTHERGOOSE_RESULT_BACKEND_URL", "db+sqlite:///tmp/celery-results.db"),
+    ("mothergoose-worker", "MOTHERGOOSE_NEST_REPO_URL", "http://nest-git/nest.git"),
+    ("mothergoose-worker", "AWS_ENDPOINT_URL", "http://localstack:4566"),
+    ("mothergoose-worker", "AWS_ACCESS_KEY_ID", "test"),
+    ("mothergoose-worker", "AWS_SECRET_ACCESS_KEY", "test"),
+    # --- uglyfox-worker: R3.10, R4.5, R7.2 ---
+    ("uglyfox-worker", "UGLYFOX_DATABASE_TYPE", "ydb"),
+    ("uglyfox-worker", "UGLYFOX_YDB_ENDPOINT", "grpc://ydb:2136"),
+    ("uglyfox-worker", "UGLYFOX_YDB_DATABASE", "/local"),
+    ("uglyfox-worker", "UGLYFOX_BROKER_URL", "sqs://test:test@"),
+    ("uglyfox-worker", "UGLYFOX_RESULT_BACKEND_URL", "db+sqlite:///tmp/celery-results.db"),
+    ("uglyfox-worker", "AWS_ENDPOINT_URL", "http://localstack:4566"),
+    ("uglyfox-worker", "AWS_ACCESS_KEY_ID", "test"),
+    ("uglyfox-worker", "AWS_SECRET_ACCESS_KEY", "test"),
+]
+
+# Env-driven variables: these resolve to the hypothesis-generated env value.
+# Each tuple is (service_name, env_var_name, env_key_from_strategy).
+_ENV_DRIVEN_VARS: List[tuple[str, str, str]] = [
+    # AWS_DEFAULT_REGION is ${AWS_DEFAULT_REGION:-us-east-1} on all three app containers.
+    ("mothergoose-api", "AWS_DEFAULT_REGION", "AWS_DEFAULT_REGION"),
+    ("mothergoose-worker", "AWS_DEFAULT_REGION", "AWS_DEFAULT_REGION"),
+    ("uglyfox-worker", "AWS_DEFAULT_REGION", "AWS_DEFAULT_REGION"),
+]
+
+# Env-driven variables that must be present and non-empty (value depends on
+# hypothesis-generated INTERNAL_SYNC_TOKEN).
+_TOKEN_DRIVEN_VARS: List[tuple[str, str, str]] = [
+    ("mothergoose-api", "MOTHERGOOSE_INTERNAL_SYNC_TOKEN", "INTERNAL_SYNC_TOKEN"),
+    ("mothergoose-worker", "MOTHERGOOSE_INTERNAL_SYNC_TOKEN", "INTERNAL_SYNC_TOKEN"),
+]
+
+# BROKER_TRANSPORT_OPTIONS contain the region — verify they include the
+# generated AWS_DEFAULT_REGION value.
+_TRANSPORT_OPTIONS_VARS: List[tuple[str, str]] = [
+    ("mothergoose-api", "MOTHERGOOSE_BROKER_TRANSPORT_OPTIONS"),
+    ("mothergoose-worker", "MOTHERGOOSE_BROKER_TRANSPORT_OPTIONS"),
+    ("uglyfox-worker", "UGLYFOX_BROKER_TRANSPORT_OPTIONS"),
+]
+
+
+@settings(
+    max_examples=5,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture],
+)
+@given(env=_compose_env_strategy())
+def test_service_env_vars(
+    env: Dict[str, str],
+    compose_file: Path,
+    docker_compose_available: bool,
+) -> None:
+    """App containers receive the expected environment values.
+
+    **Validates: Requirements 3.10, 4.4, 4.5, 6.3, 6.4, 7.2**
+
+    For any permissible substitution of the documented env vars, the
+    resolved Compose config SHALL contain, for each app container
+    (``mothergoose-api``, ``mothergoose-worker``, ``uglyfox-worker``):
+
+    * Every static env var listed in the cross-service env map resolves to
+      its exact expected value.
+    * Every env-driven variable (``AWS_DEFAULT_REGION``) resolves to the
+      hypothesis-generated input.
+    * ``MOTHERGOOSE_INTERNAL_SYNC_TOKEN`` on MG containers equals the
+      generated ``INTERNAL_SYNC_TOKEN``.
+    * ``*_BROKER_TRANSPORT_OPTIONS`` contains the generated
+      ``AWS_DEFAULT_REGION`` value.
+    """
+    if not docker_compose_available:
+        pytest.skip("`docker compose` plugin not available on PATH")
+
+    # Activate all profiles so every service appears in the resolved output.
+    env_with_profiles = {
+        **env,
+        "COMPOSE_PROFILES": "seed,with-triggers",
+        "LOCALSTACK_AUTH_TOKEN": "test-token-for-property-test",
+    }
+    resolved = _resolve_compose(compose_file, env_with_profiles)
+
+    services: Dict[str, Any] = resolved.get("services", {})
+    assert services, "resolved compose file declares no services"
+
+    # --- Static env vars: exact value match ---
+    for service_name, var_name, expected_value in _EXPECTED_ENV_TRIPLES:
+        service = services.get(service_name)
+        assert service is not None, (
+            f"service `{service_name}` not found in resolved compose config"
+        )
+        service_env = service.get("environment", {})
+        actual_value = service_env.get(var_name)
+        assert actual_value == expected_value, (
+            f"service `{service_name}` env var `{var_name}` expected "
+            f"`{expected_value}`, got `{actual_value!r}`"
+        )
+
+    # --- Env-driven vars: value must match the hypothesis-generated input ---
+    for service_name, var_name, env_key in _ENV_DRIVEN_VARS:
+        service = services.get(service_name)
+        assert service is not None, (
+            f"service `{service_name}` not found in resolved compose config"
+        )
+        service_env = service.get("environment", {})
+        actual_value = service_env.get(var_name)
+        expected_value = env[env_key]
+        assert actual_value == expected_value, (
+            f"service `{service_name}` env var `{var_name}` expected "
+            f"hypothesis-generated value `{expected_value}`, got "
+            f"`{actual_value!r}`"
+        )
+
+    # --- Token-driven vars: must equal the generated INTERNAL_SYNC_TOKEN ---
+    for service_name, var_name, env_key in _TOKEN_DRIVEN_VARS:
+        service = services.get(service_name)
+        assert service is not None, (
+            f"service `{service_name}` not found in resolved compose config"
+        )
+        service_env = service.get("environment", {})
+        actual_value = service_env.get(var_name)
+        expected_value = env[env_key]
+        assert actual_value is not None and actual_value != "", (
+            f"service `{service_name}` env var `{var_name}` must be "
+            f"present and non-empty; got `{actual_value!r}`"
+        )
+        assert actual_value == expected_value, (
+            f"service `{service_name}` env var `{var_name}` expected "
+            f"token `{expected_value}`, got `{actual_value!r}`"
+        )
+
+    # --- BROKER_TRANSPORT_OPTIONS: must contain the generated region ---
+    expected_region = env["AWS_DEFAULT_REGION"]
+    for service_name, var_name in _TRANSPORT_OPTIONS_VARS:
+        service = services.get(service_name)
+        assert service is not None, (
+            f"service `{service_name}` not found in resolved compose config"
+        )
+        service_env = service.get("environment", {})
+        actual_value = service_env.get(var_name)
+        assert actual_value is not None, (
+            f"service `{service_name}` env var `{var_name}` must be present; "
+            f"got None"
+        )
+        assert expected_region in actual_value, (
+            f"service `{service_name}` env var `{var_name}` expected to "
+            f"contain region `{expected_region}`, but got `{actual_value!r}`"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Property 11: UglyFox container env vars are a subset of the allow-list
+# ---------------------------------------------------------------------------
+
+_UGLYFOX_ENV_ALLOWLIST = {
+    "UGLYFOX_DATABASE_TYPE",
+    "UGLYFOX_YDB_ENDPOINT",
+    "UGLYFOX_YDB_DATABASE",
+    "UGLYFOX_BROKER_URL",
+    "UGLYFOX_BROKER_TRANSPORT_OPTIONS",
+    "UGLYFOX_RESULT_BACKEND_URL",
+}
+
+
+@settings(
+    max_examples=5,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture],
+)
+@given(env=_compose_env_strategy())
+def test_uglyfox_env_allowlist(
+    env: Dict[str, str],
+    compose_file: Path,
+    docker_compose_available: bool,
+) -> None:
+    """UglyFox container env vars starting with ``UGLYFOX_`` are in the allow-list.
+
+    **Validates: Requirement 7.2**
+
+    For any permissible substitution of the documented env vars, the
+    resolved Compose config SHALL contain, for the ``uglyfox-worker``
+    service, only ``UGLYFOX_*`` environment variables that belong to the
+    defined allow-list:
+
+    * ``UGLYFOX_DATABASE_TYPE``
+    * ``UGLYFOX_YDB_ENDPOINT``
+    * ``UGLYFOX_YDB_DATABASE``
+    * ``UGLYFOX_BROKER_URL``
+    * ``UGLYFOX_BROKER_TRANSPORT_OPTIONS``
+    * ``UGLYFOX_RESULT_BACKEND_URL``
+
+    Any additional ``UGLYFOX_*`` key is a violation — it may indicate an
+    unintended secret or config leak.
+    """
+    if not docker_compose_available:
+        pytest.skip("`docker compose` plugin not available on PATH")
+
+    # Activate all profiles so every service appears in the resolved output.
+    env_with_profiles = {
+        **env,
+        "COMPOSE_PROFILES": "seed,with-triggers",
+        "LOCALSTACK_AUTH_TOKEN": "test-token-for-property-test",
+    }
+    resolved = _resolve_compose(compose_file, env_with_profiles)
+
+    services: Dict[str, Any] = resolved.get("services", {})
+    assert services, "resolved compose file declares no services"
+
+    uf_service = services.get("uglyfox-worker")
+    assert uf_service is not None, (
+        "service `uglyfox-worker` not found in resolved compose config"
+    )
+
+    service_env = uf_service.get("environment", {})
+    uglyfox_keys = {k for k in service_env if k.startswith("UGLYFOX_")}
+    offending = uglyfox_keys - _UGLYFOX_ENV_ALLOWLIST
+
+    assert not offending, (
+        f"uglyfox-worker declares UGLYFOX_* env vars outside the "
+        f"allow-list: {sorted(offending)!r}; only "
+        f"{sorted(_UGLYFOX_ENV_ALLOWLIST)!r} are permitted (R7.2)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Property 10: Internal sync token is shared and well-formed
+# ---------------------------------------------------------------------------
+# Validates: Requirement 6.5
+
+
+@settings(
+    max_examples=10,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture],
+)
+@given(env=_compose_env_strategy())
+def test_internal_sync_token_shared(
+    env: Dict[str, str],
+    compose_file: Path,
+    docker_compose_available: bool,
+) -> None:
+    """``MOTHERGOOSE_INTERNAL_SYNC_TOKEN`` equals ``INTERNAL_SYNC_TOKEN`` on the trigger.
+
+    **Validates: Requirement 6.5**
+
+    Hypothesis generates arbitrary 16–128 character tokens (the valid range
+    per R6.5). The test asserts that:
+
+    1. ``mothergoose-api.MOTHERGOOSE_INTERNAL_SYNC_TOKEN`` is byte-for-byte
+       identical to ``trigger-emulator.INTERNAL_SYNC_TOKEN``.
+    2. The resolved token satisfies the length constraint (16 ≤ len ≤ 128).
+
+    Both services reference the single ``${INTERNAL_SYNC_TOKEN:?…}``
+    substitution variable, so any arbitrary value generated by hypothesis
+    must flow identically into both containers.
+    """
+    if not docker_compose_available:
+        pytest.skip("`docker compose` plugin not available on PATH")
+
+    # Activate the `with-triggers` profile so the trigger-emulator service
+    # is present in the resolved output.
+    env_with_profiles = {
+        **env,
+        "COMPOSE_PROFILES": "seed,with-triggers",
+        "LOCALSTACK_AUTH_TOKEN": "test-token-for-property-test",
+    }
+    resolved = _resolve_compose(compose_file, env_with_profiles)
+
+    services: Dict[str, Any] = resolved.get("services", {})
+    assert services, "resolved compose file declares no services"
+
+    # --- Locate the two services ------------------------------------------
+    mg_api = services.get("mothergoose-api")
+    assert mg_api is not None, (
+        "service `mothergoose-api` not found in resolved compose config"
+    )
+
+    trigger = services.get("trigger-emulator")
+    assert trigger is not None, (
+        "service `trigger-emulator` not found in resolved compose config; "
+        "ensure `with-triggers` profile is active"
+    )
+
+    # --- Extract the token values -----------------------------------------
+    mg_env = mg_api.get("environment", {})
+    trigger_env = trigger.get("environment", {})
+
+    mg_token = mg_env.get("MOTHERGOOSE_INTERNAL_SYNC_TOKEN")
+    assert mg_token is not None, (
+        "mothergoose-api does not declare MOTHERGOOSE_INTERNAL_SYNC_TOKEN "
+        "in its environment (R6.5)"
+    )
+
+    trigger_token = trigger_env.get("INTERNAL_SYNC_TOKEN")
+    assert trigger_token is not None, (
+        "trigger-emulator does not declare INTERNAL_SYNC_TOKEN "
+        "in its environment (R5.4)"
+    )
+
+    # --- Property assertion: byte-for-byte equality -----------------------
+    assert mg_token == trigger_token, (
+        f"Token mismatch (R6.5): "
+        f"mothergoose-api.MOTHERGOOSE_INTERNAL_SYNC_TOKEN={mg_token!r} != "
+        f"trigger-emulator.INTERNAL_SYNC_TOKEN={trigger_token!r}"
+    )
+
+    # --- Property assertion: length constraint ----------------------------
+    token_len = len(mg_token)
+    assert 16 <= token_len <= 128, (
+        f"Resolved token length {token_len} outside the valid range "
+        f"[16, 128] (R6.5); token={mg_token!r}"
+    )

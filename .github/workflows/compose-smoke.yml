@@ -1,4 +1,61 @@
 name: compose-smoke
-# TODO: implement in task 12.1 of the docker-compose-cloud-stack-testing spec.
-# Replace this placeholder with the full workflow that runs `make compose-up`,
-# `make compose-smoke`, and `make compose-down` against the Cloud_Stack.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [dev-new-features]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: dev-new-features
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up Python
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.13"
+
+      - name: Render CI .env
+        run: |
+          cp compose/.env.example compose/.env
+          sed -i 's/^YDB_IMAGE_TAG=.*/YDB_IMAGE_TAG=24.1.4/' compose/.env
+          sed -i 's/^LOCALSTACK_IMAGE_TAG=.*/LOCALSTACK_IMAGE_TAG=3.8.1/' compose/.env
+          sed -i 's/^LOCALSTACK_AUTH_TOKEN=.*/LOCALSTACK_AUTH_TOKEN=ci-test-token/' compose/.env
+          sed -i 's/^INTERNAL_SYNC_TOKEN=.*/INTERNAL_SYNC_TOKEN=ci-smoke-test-token-12345678/' compose/.env
+
+      - name: Validate compose file
+        run: make compose-check
+
+      - name: Start Cloud Stack
+        id: up
+        run: make compose-up
+
+      - name: Run smoke tests
+        id: smoke
+        run: make compose-smoke
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose -f compose/docker-compose.yml logs --no-color > compose-logs.txt 2>&1
+
+      - name: Upload compose logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-logs
+          path: dev-new-features/compose-logs.txt
+          retention-days: 7
+
+      - name: Tear down Cloud Stack
+        if: always()
+        run: make compose-down

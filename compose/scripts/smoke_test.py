@@ -26,10 +26,25 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
+
+from dotenv import load_dotenv
 
 import httpx
 import ydb  # type: ignore[import-untyped]
+
+# Load .env from the compose directory (one level up from scripts/).
+# This provides INTERNAL_SYNC_TOKEN and other vars without requiring the user
+# to export them manually.
+_env_file = Path(__file__).resolve().parent.parent / ".env"
+if _env_file.exists():
+    load_dotenv(_env_file, override=False)
+
+# Set sensible defaults for the local Cloud_Stack when not already in env.
+os.environ.setdefault("MOTHERGOOSE_API_URL", "http://127.0.0.1:8000")
+os.environ.setdefault("MOTHERGOOSE_YDB_ENDPOINT", "grpc://127.0.0.1:2136")
+os.environ.setdefault("MOTHERGOOSE_YDB_DATABASE", "/local")
 
 
 # --- Dataclasses --------------------------------------------------------------
@@ -181,7 +196,14 @@ def _ydb_query(env: SmokeEnv, query: str) -> list:
     step functions stateless and avoids long-lived connections across polling
     intervals.
     """
-    driver_config = ydb.DriverConfig(endpoint=env.ydb_endpoint, database=env.ydb_database)
+    driver_config = ydb.DriverConfig(
+        endpoint=env.ydb_endpoint,
+        database=env.ydb_database,
+        # Force the SDK to use our endpoint directly instead of the internal
+        # container hostname returned by YDB discovery (which isn't reachable
+        # from the host).
+        disable_discovery=True,
+    )
     with ydb.Driver(driver_config) as driver:
         driver.wait(timeout=10.0, fail_fast=True)
         with ydb.QuerySessionPool(driver, size=2) as pool:
@@ -203,7 +225,7 @@ def _step_b(env: SmokeEnv) -> None:
     with httpx.Client(timeout=10) as client:
         resp = client.post(
             f"{env.mothergoose_api_url}/internal/sync-git",
-            headers={"X-Internal-Token": env.internal_sync_token},
+            headers={"X-Trigger-Auth": env.internal_sync_token},
         )
     assert resp.status_code == 202, f"expected 202, got {resp.status_code}"
 

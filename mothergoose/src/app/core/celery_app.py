@@ -6,6 +6,7 @@ This module provides the main Celery app instance used throughout the applicatio
 """
 
 from celery import Celery
+from celery.signals import worker_init
 
 from app.core import celery_config
 from app.util.base_logging import logger
@@ -51,3 +52,12 @@ def create_celery_app() -> Celery:
 
 # Create the Celery application instance
 celery_app = create_celery_app()
+
+
+@worker_init.connect
+def init_worker(**kwargs):  # type: ignore[no-untyped-def]
+    """Initialize YDB schema when the Celery worker process starts."""
+    from app.core.config import initialize_ydb_schema  # pylint: disable=import-outside-toplevel
+
+    logger.info("Celery worker starting — initializing YDB schema")
+    initialize_ydb_schema()

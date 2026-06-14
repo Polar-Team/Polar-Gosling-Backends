@@ -4,6 +4,7 @@ Git Sync Service
 Handles Git operations for syncing Nest repository to database cache.
 """
 
+import os
 import shutil
 import tempfile
 import uuid
@@ -55,13 +56,23 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
 
         try:
             # Step 1: Retrieve deploy key and repo URL from secret storage
-            logger.info("Retrieving deploy key from secret storage")
-            deploy_key = await secret_manager.get_secret(
-                "yc-lockbox://deploy-keys/mothergoose-private"
-            )
-            nest_repo_url = await secret_manager.get_secret(
-                "yc-lockbox://nest/repo-url"
-            )
+            # In local/dev mode (HTTP nest-git), skip the deploy key and use
+            # the MOTHERGOOSE_NEST_REPO_URL env var directly.
+            nest_repo_url_env = os.getenv("MOTHERGOOSE_NEST_REPO_URL", "")
+            if nest_repo_url_env.startswith("http://") or nest_repo_url_env.startswith("https://"):
+                # Local Cloud_Stack: HTTP access to nest-git, no SSH key needed
+                logger.info("Using MOTHERGOOSE_NEST_REPO_URL (HTTP, no deploy key): %s", nest_repo_url_env)
+                nest_repo_url = nest_repo_url_env
+                deploy_key = ""
+            else:
+                # Production: retrieve deploy key and repo URL from secret storage
+                logger.info("Retrieving deploy key from secret storage")
+                deploy_key = await secret_manager.get_secret(
+                    "yc-lockbox://deploy-keys/mothergoose-private"
+                )
+                nest_repo_url = await secret_manager.get_secret(
+                    "yc-lockbox://nest/repo-url"
+                )
 
             # Step 2: Clone/Pull Nest repository
             logger.info("Cloning/pulling Nest repository")

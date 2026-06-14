@@ -229,15 +229,17 @@ services:
       - "127.0.0.1:${MOTHERGOOSE_API_HOST_PORT:-8000}:8000"
     environment:
       MOTHERGOOSE_ENVIRONMENT: "development"
+      MOTHERGOOSE_CLOUD_PROVIDER: "localstack"
       MOTHERGOOSE_DATABASE_TYPE: "ydb"
       MOTHERGOOSE_YDB_ENDPOINT: "grpc://ydb:2136"
       MOTHERGOOSE_YDB_DATABASE: "/local"
       # Celery broker: SQS via LocalStack (no separate Redis container).
-      MOTHERGOOSE_BROKER_URL: "sqs://test:test@"
-      MOTHERGOOSE_BROKER_TRANSPORT_OPTIONS: '{"region":"${AWS_DEFAULT_REGION:-us-east-1}","endpoint_url":"http://localstack:4566"}'
-      MOTHERGOOSE_RESULT_BACKEND_URL: "db+sqlite:///tmp/celery-results.db"
-      MOTHERGOOSE_NEST_REPO_URL: "http://nest-git/nest.git"
+      CELERY_BROKER_URL: "sqs://test:test@"
+      CELERY_BROKER_TRANSPORT_OPTIONS: '{"region":"${AWS_DEFAULT_REGION:-us-east-1}","endpoint_url":"http://localstack:4566"}'
+      MOTHERGOOSE_RESULT_BACKEND: "disabled"
+      MOTHERGOOSE_NEST_REPO_URL: "http://nest-git:8080/nest.git"
       MOTHERGOOSE_INTERNAL_SYNC_TOKEN: "${INTERNAL_SYNC_TOKEN:?set INTERNAL_SYNC_TOKEN in .env (16-128 chars)}"
+      MOTHERGOOSE_TRIGGER_AUTH_TOKEN: "${INTERNAL_SYNC_TOKEN:?set INTERNAL_SYNC_TOKEN in .env (16-128 chars)}"
       # AWS / LocalStack wiring — every boto3 call targets the in-stack
       # LocalStack edge port with conventional dummy credentials.
       AWS_ENDPOINT_URL: "http://localstack:4566"
@@ -283,15 +285,17 @@ services:
     command: celery -A app.celery_worker worker --loglevel=info -Q mothergoose
     environment:
       MOTHERGOOSE_ENVIRONMENT: "development"
+      MOTHERGOOSE_CLOUD_PROVIDER: "localstack"
       MOTHERGOOSE_DATABASE_TYPE: "ydb"
       MOTHERGOOSE_YDB_ENDPOINT: "grpc://ydb:2136"
       MOTHERGOOSE_YDB_DATABASE: "/local"
       # Celery broker: SQS via LocalStack (no separate Redis container).
-      MOTHERGOOSE_BROKER_URL: "sqs://test:test@"
-      MOTHERGOOSE_BROKER_TRANSPORT_OPTIONS: '{"region":"${AWS_DEFAULT_REGION:-us-east-1}","endpoint_url":"http://localstack:4566"}'
-      MOTHERGOOSE_RESULT_BACKEND_URL: "db+sqlite:///tmp/celery-results.db"
-      MOTHERGOOSE_NEST_REPO_URL: "http://nest-git/nest.git"
+      CELERY_BROKER_URL: "sqs://test:test@"
+      CELERY_BROKER_TRANSPORT_OPTIONS: '{"region":"${AWS_DEFAULT_REGION:-us-east-1}","endpoint_url":"http://localstack:4566"}'
+      MOTHERGOOSE_RESULT_BACKEND: "disabled"
+      MOTHERGOOSE_NEST_REPO_URL: "http://nest-git:8080/nest.git"
       MOTHERGOOSE_INTERNAL_SYNC_TOKEN: "${INTERNAL_SYNC_TOKEN:?set INTERNAL_SYNC_TOKEN in .env (16-128 chars)}"
+      MOTHERGOOSE_TRIGGER_AUTH_TOKEN: "${INTERNAL_SYNC_TOKEN:?set INTERNAL_SYNC_TOKEN in .env (16-128 chars)}"
       # AWS / LocalStack wiring — every boto3 call targets the in-stack
       # LocalStack edge port with conventional dummy credentials.
       AWS_ENDPOINT_URL: "http://localstack:4566"
@@ -303,7 +307,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - celery -A app.celery_worker inspect ping -d celery@$$(hostname) || exit 1
+        - pgrep -af 'celery.*worker' >/dev/null || exit 1
       interval: 15s
       timeout: 10s
       start_period: 45s
@@ -338,9 +342,8 @@ services:
       UGLYFOX_YDB_ENDPOINT: "grpc://ydb:2136"
       UGLYFOX_YDB_DATABASE: "/local"
       # Celery broker: SQS via LocalStack (no separate Redis container).
-      UGLYFOX_BROKER_URL: "sqs://test:test@"
-      UGLYFOX_BROKER_TRANSPORT_OPTIONS: '{"region":"${AWS_DEFAULT_REGION:-us-east-1}","endpoint_url":"http://localstack:4566"}'
-      UGLYFOX_RESULT_BACKEND_URL: "db+sqlite:///tmp/celery-results.db"
+      CELERY_BROKER_URL: "sqs://test:test@"
+      CELERY_BROKER_TRANSPORT_OPTIONS: '{"region":"${AWS_DEFAULT_REGION:-us-east-1}","endpoint_url":"http://localstack:4566"}'
       # AWS / LocalStack wiring — every boto3 call targets the in-stack
       # LocalStack edge port with conventional dummy credentials.
       AWS_ENDPOINT_URL: "http://localstack:4566"

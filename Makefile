@@ -206,3 +206,105 @@ uf-bump-version-minor:
 uf-bump-version-major:
 	cd uglyfox && uv version --bump major
 
+
+# ==============================================================================
+# Cloud Stack (Docker Compose) Targets
+# ==============================================================================
+
+COMPOSE := docker compose -f compose/docker-compose.yml
+PROFILES_UP := --profile seed
+
+# _preflight — guard that docker and docker compose are available on PATH.
+# Exits 1 with an error naming the missing dependency. Checks complete well
+# within the 5-second budget required by Requirement 10.9.
+define _preflight
+	@command -v docker >/dev/null 2>&1 || \
+		{ echo "ERROR: 'docker' not found on PATH"; exit 1; }
+	@docker compose version >/dev/null 2>&1 || \
+		{ echo "ERROR: 'docker compose' plugin not found"; exit 1; }
+endef
+
+.PHONY: compose-up compose-down compose-reset compose-logs compose-ps compose-smoke compose-clean compose-seed compose-config compose-check
+
+# ------------------------------------------------------------------------------
+# compose-up: Start Cloud_Stack in detached mode, wait for healthy (180s max).
+# On failure, reports mothergoose-api's last observed health status.
+# Requirements: 10.1, 10.2, 14.1, 14.2
+# ------------------------------------------------------------------------------
+compose-up:
+	$(_preflight)
+	@echo "Starting Cloud Stack (detached, waiting up to 180s for healthy)..."
+	$(COMPOSE) $(PROFILES_UP) up -d --wait --wait-timeout 180 || \
+		{ \
+			echo "ERROR: compose-up failed. mothergoose-api last health: $$(docker inspect --format='{{.State.Health.Status}}' pg-stack-mothergoose-api 2>/dev/null || echo 'unknown')"; \
+			exit 1; \
+		}
+
+# ------------------------------------------------------------------------------
+# compose-down: Stop and remove containers, preserve volumes.
+# Requirements: 10.3, 14.3
+# ------------------------------------------------------------------------------
+compose-down:
+	$(_preflight)
+	@echo "Stopping Cloud Stack (preserving volumes)..."
+	$(COMPOSE) down
+
+# ------------------------------------------------------------------------------
+# compose-reset: Full reset — remove containers + volumes, then start fresh.
+# Requirements: 10.4
+# ------------------------------------------------------------------------------
+compose-reset:
+	$(_preflight)
+	@echo "Resetting Cloud Stack (removing volumes)..."
+	$(COMPOSE) down -v
+	$(MAKE) compose-up
+
+# ------------------------------------------------------------------------------
+# compose-logs: Stream combined logs until interrupted.
+# Requirements: 10.5
+# ------------------------------------------------------------------------------
+compose-logs:
+	$(_preflight)
+	$(COMPOSE) logs -f
+
+# ------------------------------------------------------------------------------
+# compose-smoke: Run Pipeline_Smoke_Test against a running Cloud Stack.
+# Exits non-zero if the stack is not running or if the smoke test fails.
+# Requirements: 10.6, 10.7
+# ------------------------------------------------------------------------------
+compose-smoke:
+	$(_preflight)
+	@RUNNING_SERVICES=$$($(COMPOSE) ps --services --filter status=running); \
+	if [ -z "$$RUNNING_SERVICES" ]; then \
+		echo "ERROR: Cloud Stack is not running"; \
+		exit 1; \
+	fi
+	cd compose && \
+	uv run python scripts/smoke_test.py
+
+# ------------------------------------------------------------------------------
+# compose-clean: Remove all containers, volumes, and dangling pg-stack images.
+# Requirements: 10.8
+# ------------------------------------------------------------------------------
+compose-clean:
+	$(_preflight)
+	$(COMPOSE) down -v
+	docker image prune --filter "label=pg-stack=true" -f
+
+# ------------------------------------------------------------------------------
+# compose-config: Validate the Compose file syntax (quiet mode).
+# Requirements: 14.7
+# ------------------------------------------------------------------------------
+compose-config:
+	$(_preflight)
+	$(COMPOSE) config -q
+
+# ------------------------------------------------------------------------------
+# compose-check: Run static validation scripts and compose config check.
+# Requirements: 14.8
+# ------------------------------------------------------------------------------
+compose-check:
+	$(_preflight)
+	uv run python compose/scripts/check_compose.py
+	uv run python compose/scripts/check_env.py
+	$(COMPOSE) config -q

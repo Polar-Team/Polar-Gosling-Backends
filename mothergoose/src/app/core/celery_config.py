@@ -191,83 +191,97 @@ CELERY_TASK_DEFAULT_QUEUE = "default"
 CELERY_TASK_DEFAULT_EXCHANGE = "mothergoose"
 CELERY_TASK_DEFAULT_ROUTING_KEY = "default"
 
-# Define exchanges
-default_exchange = Exchange("mothergoose", type="topic", durable=True)
+# SQS does not support AMQP exchanges, routing keys, or queue priorities.
+# Only declare kombu Exchange/Queue objects when using an AMQP-compatible broker.
+if BROKER_URL.startswith("sqs://"):
+    # SQS: queues are plain names, no exchanges or routing keys needed.
+    # Celery/kombu creates SQS queues automatically by name.
+    CELERY_TASK_QUEUES = None  # type: ignore[assignment]
+    CELERY_TASK_ROUTES = {
+        "app.tasks.git_sync.sync_nest_config": {"queue": "mothergoose"},
+        "app.tasks.webhooks.process_webhook": {"queue": "mothergoose"},
+        "app.tasks.runners.deploy_runner": {"queue": "mothergoose"},
+        "app.tasks.runners.terminate_runner": {"queue": "mothergoose"},
+        "app.tasks.maintenance.cleanup_old_results": {"queue": "mothergoose"},
+        "app.tasks.maintenance.update_metrics": {"queue": "mothergoose"},
+    }
+else:
+    # AMQP-compatible broker (RabbitMQ, etc.) — full exchange/routing support
+    default_exchange = Exchange("mothergoose", type="topic", durable=True)
 
-# Define queues with priorities
-CELERY_TASK_QUEUES = (
-    # Default queue for general tasks
-    Queue(
-        "default",
-        exchange=default_exchange,
-        routing_key="task.default",
-        priority=5,
-        queue_arguments={"x-max-priority": 10},
-    ),
-    # High priority queue for urgent tasks (webhook processing, runner deployment)
-    Queue(
-        "high-priority",
-        exchange=default_exchange,
-        routing_key="task.high",
-        priority=10,
-        queue_arguments={"x-max-priority": 10},
-    ),
-    # Git sync queue for periodic repository synchronization
-    Queue(
-        "git-sync",
-        exchange=default_exchange,
-        routing_key="task.git-sync",
-        priority=7,
-        queue_arguments={"x-max-priority": 10},
-    ),
-    # Low priority queue for background maintenance tasks
-    Queue(
-        "low-priority",
-        exchange=default_exchange,
-        routing_key="task.low",
-        priority=3,
-        queue_arguments={"x-max-priority": 10},
-    ),
-)
+    CELERY_TASK_QUEUES = (
+        # Default queue for general tasks
+        Queue(
+            "default",
+            exchange=default_exchange,
+            routing_key="task.default",
+            priority=5,
+            queue_arguments={"x-max-priority": 10},
+        ),
+        # High priority queue for urgent tasks (webhook processing, runner deployment)
+        Queue(
+            "high-priority",
+            exchange=default_exchange,
+            routing_key="task.high",
+            priority=10,
+            queue_arguments={"x-max-priority": 10},
+        ),
+        # Git sync queue for periodic repository synchronization
+        Queue(
+            "git-sync",
+            exchange=default_exchange,
+            routing_key="task.git-sync",
+            priority=7,
+            queue_arguments={"x-max-priority": 10},
+        ),
+        # Low priority queue for background maintenance tasks
+        Queue(
+            "low-priority",
+            exchange=default_exchange,
+            routing_key="task.low",
+            priority=3,
+            queue_arguments={"x-max-priority": 10},
+        ),
+    )
 
-# Task routing rules
-# Maps task names to queues and routing keys
-CELERY_TASK_ROUTES = {
-    # Webhook processing - high priority
-    "app.tasks.webhooks.process_webhook": {
-        "queue": "high-priority",
-        "routing_key": "task.high",
-        "priority": 10,
-    },
-    # Runner deployment - high priority
-    "app.tasks.runners.deploy_runner": {
-        "queue": "high-priority",
-        "routing_key": "task.high",
-        "priority": 10,
-    },
-    "app.tasks.runners.terminate_runner": {
-        "queue": "high-priority",
-        "routing_key": "task.high",
-        "priority": 9,
-    },
-    # Git sync - dedicated queue
-    "app.tasks.git_sync.sync_nest_config": {
-        "queue": "git-sync",
-        "routing_key": "task.git-sync",
-        "priority": 7,
-    },
-    # Background maintenance - low priority
-    "app.tasks.maintenance.cleanup_old_results": {
-        "queue": "low-priority",
-        "routing_key": "task.low",
-        "priority": 3,
-    },
-    "app.tasks.maintenance.update_metrics": {
-        "queue": "low-priority",
-        "routing_key": "task.low",
-        "priority": 3,
-    },
-}
+    # Task routing rules
+    # Maps task names to queues and routing keys
+    CELERY_TASK_ROUTES = {
+        # Webhook processing - high priority
+        "app.tasks.webhooks.process_webhook": {
+            "queue": "high-priority",
+            "routing_key": "task.high",
+            "priority": 10,
+        },
+        # Runner deployment - high priority
+        "app.tasks.runners.deploy_runner": {
+            "queue": "high-priority",
+            "routing_key": "task.high",
+            "priority": 10,
+        },
+        "app.tasks.runners.terminate_runner": {
+            "queue": "high-priority",
+            "routing_key": "task.high",
+            "priority": 9,
+        },
+        # Git sync - dedicated queue
+        "app.tasks.git_sync.sync_nest_config": {
+            "queue": "git-sync",
+            "routing_key": "task.git-sync",
+            "priority": 7,
+        },
+        # Background maintenance - low priority
+        "app.tasks.maintenance.cleanup_old_results": {
+            "queue": "low-priority",
+            "routing_key": "task.low",
+            "priority": 3,
+        },
+        "app.tasks.maintenance.update_metrics": {
+            "queue": "low-priority",
+            "routing_key": "task.low",
+            "priority": 3,
+        },
+    }
 
 # Worker Configuration
 CELERY_WORKER_MAX_TASKS_PER_CHILD = int(
@@ -283,7 +297,7 @@ CELERY_WORKER_TASK_LOG_FORMAT = (
 # Monitoring and Logging
 CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_TASK_SEND_SENT_EVENT = True
-CELERY_TASK_IGNORE_RESULT = False
+CELERY_TASK_IGNORE_RESULT = True
 
 # Security
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
@@ -301,3 +315,14 @@ logger.info(
     "Broker URL: %s", BROKER_URL.split("@")[0] if "@" in BROKER_URL else BROKER_URL
 )
 logger.info("Result backend: %s", RESULT_BACKEND_TYPE)
+
+# ---------------------------------------------------------------------------
+# Celery namespace-compatible aliases
+#
+# `celery_app.config_from_object(celery_config, namespace="CELERY")` strips
+# the `CELERY_` prefix and lowercases the remainder to build Celery settings.
+# The variables above (BROKER_URL, BROKER_TRANSPORT_OPTIONS) do not carry the
+# prefix, so Celery never sees them. These aliases bridge the gap.
+# ---------------------------------------------------------------------------
+CELERY_BROKER_URL = BROKER_URL
+CELERY_BROKER_TRANSPORT_OPTIONS = BROKER_TRANSPORT_OPTIONS

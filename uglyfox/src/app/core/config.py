@@ -18,6 +18,8 @@ class UglyFoxSettings(BaseSettings):
     Configuration is loaded from environment variables with the prefix UGLYFOX_.
     """
 
+    # pylint: disable=no-member
+
     model_config = SettingsConfigDict(
         env_prefix="UGLYFOX_",
         env_file=".env",

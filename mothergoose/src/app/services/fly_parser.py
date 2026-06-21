@@ -57,7 +57,6 @@ class FlyParser:
             RuntimeError,
             ImportError,
             AttributeError,
-            Exception,
         ):  # pylint: disable=broad-except
             # Manager not initialized or not available, fall back to env var
             pass

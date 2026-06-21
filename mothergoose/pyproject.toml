@@ -102,7 +102,7 @@ dependency_groups = [
     "test",
 ]
 pass_env = [
-  "LOCALSTACK_AUTH_TOKEN"
+    "LOCALSTACK_AUTH_TOKEN",
 ]
 commands = [["pytest", "-v"]]
 

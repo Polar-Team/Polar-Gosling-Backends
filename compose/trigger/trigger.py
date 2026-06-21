@@ -60,7 +60,7 @@ def main() -> None:
             start = time.monotonic()
             ts = dt.datetime.now(dt.timezone.utc).isoformat()
             try:
-                resp = client.post(url, headers={"X-Internal-Token": token})
+                resp = client.post(url, headers={"X-Trigger-Auth": token})
                 elapsed_ms = int((time.monotonic() - start) * 1000)
                 if resp.is_success:
                     LOG.info("ts=%s status=%d duration_ms=%d", ts, resp.status_code, elapsed_ms)

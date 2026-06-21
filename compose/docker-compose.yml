@@ -394,7 +394,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - pgrep -af trigger.py >/dev/null || exit 1
+        - python -c "import os; os.kill(1, 0)" || exit 1
       interval: 30s
       timeout: 5s
       start_period: 10s

@@ -171,8 +171,8 @@ STEPS: list[SmokeStep] = [
 # Extended steps for trigger + UglyFox testing (SMOKE_TEST_TRIGGERS=1)
 TRIGGER_STEPS: list[SmokeStep] = [
     SmokeStep(id="g", description="trigger-emulator is running", timeout_s=10, poll_interval_s=0),
-    SmokeStep(id="h", description="trigger fires auto sync (poll sync_history count > 1)", timeout_s=90, poll_interval_s=5),
-    SmokeStep(id="i", description="uglyfox-worker is healthy", timeout_s=10, poll_interval_s=0),
+    SmokeStep(id="h", description="send health-check task to uglyfox queue and verify execution", timeout_s=60, poll_interval_s=0),
+    SmokeStep(id="i", description="trigger-emulator fires periodic sync (sync_history count > 1)", timeout_s=90, poll_interval_s=5),
 ]
 
 
@@ -311,10 +311,73 @@ def _step_g(env: SmokeEnv) -> None:
 
 
 def _step_h(env: SmokeEnv) -> None:
-    """Wait for trigger emulator to fire at least one auto-sync (sync_history count > 1).
+    """Send a health-check task to the uglyfox queue and verify it executes.
 
-    The base smoke test (step c) already verified one sync from the manual trigger.
-    This step waits for the trigger-emulator's periodic POST to produce a second row.
+    Dispatches `app.tasks.health.check_runner_health` via the MotherGoose API's
+    Celery app (which shares the SQS broker). The UglyFox worker should pick it
+    up, execute it, and we verify by checking container logs for the completion
+    message.
+    """
+    import subprocess  # pylint: disable=import-outside-toplevel
+
+    # Send the task to uglyfox queue by exec'ing into the MG API container
+    # (which has Celery configured with the same broker).
+    send_result = subprocess.run(
+        [
+            "docker", "exec", "pg-stack-mothergoose-api",
+            "python", "-c",
+            (
+                "from app.core.celery_app import celery_app; "
+                "r = celery_app.send_task("
+                "'app.tasks.health.check_runner_health', "
+                "queue='uglyfox', "
+                "kwargs={'uf_config_dict': None}); "
+                "print(f'task_id={r.id}')"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert send_result.returncode == 0, (
+        f"Failed to send task to uglyfox queue: {send_result.stderr}"
+    )
+    task_id = ""
+    for line in send_result.stdout.strip().splitlines():
+        if line.startswith("task_id="):
+            task_id = line.split("=", 1)[1]
+            break
+    assert task_id, f"Could not extract task_id from output: {send_result.stdout}"
+
+    # Poll uglyfox-worker logs for the task completion (up to 60s)
+    deadline = time.monotonic() + 60
+    while True:
+        log_result = subprocess.run(
+            ["docker", "logs", "--tail", "50", "pg-stack-uglyfox-worker"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if "Health check completed" in log_result.stdout or "Health check completed" in log_result.stderr:
+            return
+        if task_id in log_result.stdout or task_id in log_result.stderr:
+            # Task was received/processed
+            if "succeeded" in log_result.stdout or "succeeded" in log_result.stderr:
+                return
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(3)
+    assert False, (  # noqa: B011
+        f"uglyfox-worker did not process health check task {task_id} within 60s"
+    )
+
+
+def _step_i(env: SmokeEnv) -> None:
+    """Verify trigger-emulator fired at least one periodic sync (sync_history count > 1).
+
+    The base smoke test (step c) verified one sync from the manual POST.
+    This step waits for the trigger-emulator's periodic POST to produce
+    an additional sync_history row, proving the trigger loop works end-to-end.
     """
     deadline = time.monotonic() + 90
     while True:
@@ -329,20 +392,6 @@ def _step_h(env: SmokeEnv) -> None:
             break
         time.sleep(5)
     assert False, "trigger-emulator did not produce a second sync_history row within 90s"  # noqa: B011
-
-
-def _step_i(env: SmokeEnv) -> None:
-    """Verify uglyfox-worker container is healthy."""
-    import subprocess  # pylint: disable=import-outside-toplevel
-
-    result = subprocess.run(
-        ["docker", "inspect", "--format", "{{.State.Health.Status}}", "pg-stack-uglyfox-worker"],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    status = result.stdout.strip()
-    assert status == "healthy", f"uglyfox-worker health: {status} (expected 'healthy')"
 
 
 # Dispatch table mapping step id → implementation function.

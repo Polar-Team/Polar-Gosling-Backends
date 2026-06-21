@@ -247,7 +247,20 @@ compose-up:
 compose-down:
 	$(_preflight)
 	@echo "Stopping Cloud Stack (preserving volumes)..."
-	$(COMPOSE) down
+	$(COMPOSE) --profile seed --profile with-triggers down
+
+# ------------------------------------------------------------------------------
+# compose-up-all: Start Cloud_Stack with all profiles (seed + with-triggers).
+# Includes the trigger-emulator and full pipeline.
+# ------------------------------------------------------------------------------
+compose-up-all:
+	$(_preflight)
+	@echo "Starting Cloud Stack with all profiles (seed + with-triggers)..."
+	$(COMPOSE) --profile seed --profile with-triggers up -d --wait --wait-timeout 180 || \
+		{ \
+			echo "ERROR: compose-up-all failed. mothergoose-api last health: $$(docker inspect --format='{{.State.Health.Status}}' pg-stack-mothergoose-api 2>/dev/null || echo 'unknown')"; \
+			exit 1; \
+		}
 
 # ------------------------------------------------------------------------------
 # compose-reset: Full reset — remove containers + volumes, then start fresh.
@@ -289,7 +302,7 @@ compose-smoke:
 # ------------------------------------------------------------------------------
 compose-smoke-triggers:
 	$(_preflight)
-	@RUNNING_SERVICES=$$($(COMPOSE) --profile with-triggers ps --services --filter status=running); \
+	@RUNNING_SERVICES=$$($(COMPOSE) --profile seed --profile with-triggers ps --services --filter status=running); \
 	if [ -z "$$RUNNING_SERVICES" ]; then \
 		echo "ERROR: Cloud Stack (with-triggers) is not running. Start with:"; \
 		echo "  COMPOSE_PROFILES=seed,with-triggers make compose-up"; \

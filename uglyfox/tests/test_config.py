@@ -11,7 +11,7 @@ def test_uglyfox_settings_defaults():
     assert settings.environment == "development"
     assert settings.log_level == "INFO"
     assert settings.database_type == "ydb"
-    assert settings.message_queue_type == "redis"
+    assert settings.message_queue_type == "sqs"
     assert settings.cloud_provider == "yandex"
     assert settings.secret_backend == "yc-lockbox"
     assert settings.health_check_interval == 60
@@ -101,3 +101,17 @@ def test_get_celery_config():
     assert config["worker_max_tasks_per_child"] == 1000
     assert config["task_acks_late"] is True
     assert config["task_reject_on_worker_lost"] is True
+
+
+def test_get_celery_config_sqs_no_result_backend():
+    """Test Celery configuration with SQS broker omits result_backend."""
+    settings = UglyFoxSettings(
+        celery_broker_url="sqs://test:test@",
+        uglyfox_queue_name="uglyfox",
+    )
+
+    config = settings.get_celery_config()
+
+    assert config["broker_url"] == "sqs://test:test@"
+    assert "result_backend" not in config
+    assert "broker_transport_options" in config

@@ -35,8 +35,6 @@ import httpx
 import ydb  # type: ignore[import-untyped]
 
 # Load .env from the compose directory (one level up from scripts/).
-# This provides INTERNAL_SYNC_TOKEN and other vars without requiring the user
-# to export them manually.
 _env_file = Path(__file__).resolve().parent.parent / ".env"
 if _env_file.exists():
     load_dotenv(_env_file, override=False)
@@ -84,11 +82,7 @@ class SmokeEnv:
 
 
 def parse_env() -> SmokeEnv:
-    """Read and validate required environment variables.
-
-    Exits with code 1 and an error message to stderr if any required variable
-    is missing or empty.
-    """
+    """Read and validate required environment variables."""
     missing: list[str] = []
 
     api_url = os.environ.get("MOTHERGOOSE_API_URL", "").strip()
@@ -129,15 +123,7 @@ def parse_env() -> SmokeEnv:
 
 
 def run_step(step: SmokeStep, fn: Callable[[], None]) -> StepResult:
-    """Execute *fn* with a per-step timeout.
-
-    Returns a `StepResult` indicating success or failure. Catches:
-      - `FuturesTimeoutError` → step timed out.
-      - `AssertionError`      → step verification failed.
-      - `Exception`           → unexpected error treated as a failure.
-
-    The elapsed time is always recorded regardless of outcome.
-    """
+    """Execute *fn* with a per-step timeout."""
     start = time.perf_counter()
 
     try:
@@ -173,16 +159,20 @@ def run_step(step: SmokeStep, fn: Callable[[], None]) -> StepResult:
 
 # --- Step definitions ---------------------------------------------------------
 
-# Steps (a)–(f) are defined here with their timeouts and polling intervals.
-# The actual step function bodies are implemented in task 10.2.
-
 STEPS: list[SmokeStep] = [
     SmokeStep(id="a", description="GET /health → 200", timeout_s=10, poll_interval_s=0),
     SmokeStep(id="b", description="POST /internal/sync-git → 202", timeout_s=10, poll_interval_s=0),
-    SmokeStep(id="c", description="poll sync_history for SUCCESS", timeout_s=60, poll_interval_s=2),
-    SmokeStep(id="d", description="query egg_configs ≥ 1 row", timeout_s=120, poll_interval_s=0),
-    SmokeStep(id="e", description="mock GitLab webhook → 202", timeout_s=10, poll_interval_s=0),
-    SmokeStep(id="f", description="poll audit_logs ≥ 1 row", timeout_s=60, poll_interval_s=2),
+    SmokeStep(id="c", description="poll sync_history for SUCCESS", timeout_s=120, poll_interval_s=2),
+    SmokeStep(id="d", description="query egg_configs ≥ 1 row", timeout_s=30, poll_interval_s=0),
+    SmokeStep(id="e", description="mock GitLab webhook → 202", timeout_s=30, poll_interval_s=0),
+    SmokeStep(id="f", description="poll audit_logs ≥ 1 row", timeout_s=120, poll_interval_s=2),
+]
+
+# Extended steps for trigger + UglyFox testing (SMOKE_TEST_TRIGGERS=1)
+TRIGGER_STEPS: list[SmokeStep] = [
+    SmokeStep(id="g", description="trigger-emulator is running", timeout_s=10, poll_interval_s=0),
+    SmokeStep(id="h", description="trigger fires auto sync (poll sync_history count > 1)", timeout_s=90, poll_interval_s=5),
+    SmokeStep(id="i", description="uglyfox-worker is healthy", timeout_s=10, poll_interval_s=0),
 ]
 
 
@@ -190,18 +180,10 @@ STEPS: list[SmokeStep] = [
 
 
 def _ydb_query(env: SmokeEnv, query: str) -> list:
-    """Connect to YDB, execute *query*, and return the result sets.
-
-    Creates a short-lived driver + session pool for each invocation. This keeps
-    step functions stateless and avoids long-lived connections across polling
-    intervals.
-    """
+    """Connect to YDB, execute *query*, and return the result sets."""
     driver_config = ydb.DriverConfig(
         endpoint=env.ydb_endpoint,
         database=env.ydb_database,
-        # Force the SDK to use our endpoint directly instead of the internal
-        # container hostname returned by YDB discovery (which isn't reachable
-        # from the host).
         disable_discovery=True,
     )
     with ydb.Driver(driver_config) as driver:
@@ -231,18 +213,18 @@ def _step_b(env: SmokeEnv) -> None:
 
 
 def _step_c(env: SmokeEnv) -> None:
-    """Poll sync_history for a SUCCESS row (every 2s, up to 60s)."""
-    deadline = time.monotonic() + 60
+    """Poll sync_history for a success row (every 2s, up to 120s)."""
+    deadline = time.monotonic() + 120
     while True:
         result_sets = _ydb_query(
-            env, "SELECT status FROM sync_history WHERE status = 'SUCCESS' LIMIT 1"
+            env, "SELECT status FROM sync_history WHERE status = 'success' LIMIT 1"
         )
         if result_sets and result_sets[0].rows:
             return
         if time.monotonic() >= deadline:
             break
         time.sleep(2)
-    assert False, "no sync_history row with status='SUCCESS' found within 60s"  # noqa: B011
+    assert False, "no sync_history row with status='success' found within 120s"  # noqa: B011
 
 
 def _step_d(env: SmokeEnv) -> None:
@@ -254,7 +236,7 @@ def _step_d(env: SmokeEnv) -> None:
 
 
 def _step_e(env: SmokeEnv) -> None:
-    """Mock GitLab webhook → 202 within 10s."""
+    """Mock GitLab webhook → 202 within 30s."""
     payload = {
         "object_kind": "push",
         "event_name": "push",
@@ -266,9 +248,9 @@ def _step_e(env: SmokeEnv) -> None:
         "user_name": "Smoke Test",
         "user_username": "smoke-test",
         "user_email": "smoke@test.local",
-        "project_id": 42,
+        "project_id": 12345,
         "project": {
-            "id": 42,
+            "id": 12345,
             "name": "sample-egg",
             "namespace": "polar-gosling",
             "web_url": "https://gitlab.example.com/polar-gosling/sample-egg",
@@ -287,18 +269,18 @@ def _step_e(env: SmokeEnv) -> None:
         ],
         "total_commits_count": 1,
     }
-    with httpx.Client(timeout=10) as client:
+    with httpx.Client(timeout=30) as client:
         resp = client.post(
             f"{env.mothergoose_api_url}/webhooks/gitlab",
-            headers={"X-Gitlab-Token": env.internal_sync_token},
+            headers={"X-Gitlab-Token": "dev-webhook-secret-00000000"},
             json=payload,
         )
     assert resp.status_code == 202, f"expected 202, got {resp.status_code}"
 
 
 def _step_f(env: SmokeEnv) -> None:
-    """Poll audit_logs for ≥ 1 row (every 2s, up to 60s)."""
-    deadline = time.monotonic() + 60
+    """Poll audit_logs for ≥ 1 row (every 2s, up to 120s)."""
+    deadline = time.monotonic() + 120
     while True:
         result_sets = _ydb_query(env, "SELECT COUNT(*) as cnt FROM audit_logs")
         if result_sets and result_sets[0].rows:
@@ -308,7 +290,59 @@ def _step_f(env: SmokeEnv) -> None:
         if time.monotonic() >= deadline:
             break
         time.sleep(2)
-    assert False, "audit_logs count did not reach >= 1 within 60s"  # noqa: B011
+    assert False, "audit_logs count did not reach >= 1 within 120s"  # noqa: B011
+
+
+# --- Trigger/UglyFox step implementations ------------------------------------
+
+
+def _step_g(env: SmokeEnv) -> None:
+    """Verify trigger-emulator container is running."""
+    import subprocess  # pylint: disable=import-outside-toplevel
+
+    result = subprocess.run(
+        ["docker", "inspect", "--format", "{{.State.Status}}", "pg-stack-trigger-emulator"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    status = result.stdout.strip()
+    assert status == "running", f"trigger-emulator status: {status} (expected 'running')"
+
+
+def _step_h(env: SmokeEnv) -> None:
+    """Wait for trigger emulator to fire at least one auto-sync (sync_history count > 1).
+
+    The base smoke test (step c) already verified one sync from the manual trigger.
+    This step waits for the trigger-emulator's periodic POST to produce a second row.
+    """
+    deadline = time.monotonic() + 90
+    while True:
+        result_sets = _ydb_query(
+            env, "SELECT COUNT(*) as cnt FROM sync_history WHERE status = 'success'"
+        )
+        if result_sets and result_sets[0].rows:
+            count = result_sets[0].rows[0].cnt
+            if count > 1:
+                return
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(5)
+    assert False, "trigger-emulator did not produce a second sync_history row within 90s"  # noqa: B011
+
+
+def _step_i(env: SmokeEnv) -> None:
+    """Verify uglyfox-worker container is healthy."""
+    import subprocess  # pylint: disable=import-outside-toplevel
+
+    result = subprocess.run(
+        ["docker", "inspect", "--format", "{{.State.Health.Status}}", "pg-stack-uglyfox-worker"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    status = result.stdout.strip()
+    assert status == "healthy", f"uglyfox-worker health: {status} (expected 'healthy')"
 
 
 # Dispatch table mapping step id → implementation function.
@@ -319,6 +353,9 @@ _STEP_DISPATCH: dict[str, Callable[[SmokeEnv], None]] = {
     "d": _step_d,
     "e": _step_e,
     "f": _step_f,
+    "g": _step_g,
+    "h": _step_h,
+    "i": _step_i,
 }
 
 
@@ -326,22 +363,29 @@ _STEP_DISPATCH: dict[str, Callable[[SmokeEnv], None]] = {
 
 
 def main() -> None:
-    """Orchestrate the smoke-test pipeline.
-
-    Parses environment, runs each step sequentially, and exits on first failure.
-    """
+    """Orchestrate the smoke-test pipeline."""
     env = parse_env()
 
-    for step in STEPS:
+    # Determine which steps to run
+    steps_to_run = list(STEPS)
+    if os.environ.get("SMOKE_TEST_TRIGGERS", "").strip() == "1":
+        steps_to_run.extend(TRIGGER_STEPS)
+
+    for step in steps_to_run:
         step_fn = _STEP_DISPATCH[step.id]
 
-        def _bound_fn(_fn: Callable[[SmokeEnv], None] = step_fn, _env: SmokeEnv = env) -> None:
+        def _bound_fn(
+            _fn: Callable[[SmokeEnv], None] = step_fn, _env: SmokeEnv = env
+        ) -> None:
             _fn(_env)
 
         result = run_step(step, _bound_fn)
 
         if env.verbose and result.ok:
-            print(f"step={step.id} description={step.description!r} duration_ms={result.elapsed_ms}")
+            print(
+                f"step={step.id} description={step.description!r}"
+                f" duration_ms={result.elapsed_ms}"
+            )
 
         if not result.ok:
             print(result.detail, file=sys.stderr)

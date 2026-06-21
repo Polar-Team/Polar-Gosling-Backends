@@ -69,8 +69,8 @@ class EggService:
         """
         Get Egg configuration by GitLab project ID and store in instance variable.
 
-        Note: This requires a Global Secondary Index (GSI) on gitlab_project_id.
-        For now, we'll scan all eggs and filter in memory.
+        Checks the top-level project_id column first (seeded/direct data),
+        then falls back to config.gitlab.project_id (parsed .fly data).
 
         Result is stored in self.__egg_query_result and accessed via egg_query_result property.
         Returns None - use egg_query_result property to access result.
@@ -84,11 +84,17 @@ class EggService:
         all_eggs = self.eggs_list or []
 
         for egg in all_eggs:
+            # Check top-level project_id column first
+            if egg.project_id == project_id:
+                self.debug("Egg found by project_id %s: %s", project_id, egg.name)
+                self.__egg_query_result = egg
+                return
+            # Fall back to nested config.gitlab.project_id
             config = egg.config
             if isinstance(config, dict):
                 gitlab_config = config.get("gitlab", {})
                 if gitlab_config.get("project_id") == project_id:
-                    self.debug("Egg found by project_id %s: %s", project_id, egg.name)
+                    self.debug("Egg found by config.gitlab.project_id %s: %s", project_id, egg.name)
                     self.__egg_query_result = egg
                     return
 

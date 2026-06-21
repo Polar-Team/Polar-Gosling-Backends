@@ -97,8 +97,8 @@ logger.info("Gosling CLI path configured: %s", GOSLING_CLI_PATH)
 
 DEFAULT_DATABASE_SCHEMA = YDBSchema(
     config=YDBConfig(
-        endpoint="grpc://localhost:2136",
-        database="/local",
+        endpoint=os.getenv("MOTHERGOOSE_YDB_ENDPOINT", "grpc://localhost:2136"),
+        database=os.getenv("MOTHERGOOSE_YDB_DATABASE", "/local"),
         credentials=AnonymousCredentials(),
         pool_size=10,
         root_certificates=None,

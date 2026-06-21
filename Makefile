@@ -283,6 +283,22 @@ compose-smoke:
 	uv run python scripts/smoke_test.py
 
 # ------------------------------------------------------------------------------
+# compose-smoke-triggers: Extended smoke test with trigger emulator + UglyFox.
+# Starts the stack with the `with-triggers` profile, waits for the trigger
+# emulator to fire at least one sync, and verifies UglyFox task processing.
+# ------------------------------------------------------------------------------
+compose-smoke-triggers:
+	$(_preflight)
+	@RUNNING_SERVICES=$$($(COMPOSE) --profile with-triggers ps --services --filter status=running); \
+	if [ -z "$$RUNNING_SERVICES" ]; then \
+		echo "ERROR: Cloud Stack (with-triggers) is not running. Start with:"; \
+		echo "  COMPOSE_PROFILES=seed,with-triggers make compose-up"; \
+		exit 1; \
+	fi
+	cd compose && \
+	SMOKE_TEST_TRIGGERS=1 uv run python scripts/smoke_test.py
+
+# ------------------------------------------------------------------------------
 # compose-clean: Remove all containers, volumes, and dangling pg-stack images.
 # Requirements: 10.8
 # ------------------------------------------------------------------------------

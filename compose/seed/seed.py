@@ -231,12 +231,14 @@ def _table_already_exists(exc: BaseException) -> bool:
     * ``ydb.issues.SchemeError`` with a message that includes
       ``"path exist"`` / ``"already exists"`` — what real YDB clusters
       tend to return in practice.
+    * ``ydb.issues.GenericError`` with ``"path exist"`` — observed in
+      local-ydb containers (v25.x+).
 
     Both are treated as success per R14.4 / R14.5 (idempotent seed).
     """
     if isinstance(exc, ydb.issues.AlreadyExists):
         return True
-    if isinstance(exc, ydb.issues.SchemeError):
+    if isinstance(exc, (ydb.issues.SchemeError, ydb.issues.GenericError)):
         message = str(exc).lower()
         return "already exists" in message or "path exist" in message
     return False
@@ -258,11 +260,11 @@ def _create_single_table(
     query = PreparedYDBQueries.create_query(table)
     try:
         pool.execute_with_retries(query)
-    except (ydb.issues.AlreadyExists, ydb.issues.SchemeError) as exc:
+    except (ydb.issues.AlreadyExists, ydb.issues.SchemeError, ydb.issues.GenericError) as exc:
         if _table_already_exists(exc):
             LOG.info("%s exists, skipping", table_name)
             return
-        # SchemeError that is NOT an "already exists" — surface it.
+        # SchemeError/GenericError that is NOT an "already exists" — surface it.
         raise
 
 

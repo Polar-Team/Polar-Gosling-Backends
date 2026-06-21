@@ -52,7 +52,7 @@ def utc_now() -> datetime.datetime:
 @pytest.fixture(scope="session", name="mock_server_url")
 def mock_download_url() -> Generator[tuple[str, str], None, None]:
     """Fixture providing mock server URL for OpenTofu download tests."""
-    url = "https://mockserver.com/1.10.4/tofu.zip"
+    url = "https://mockserver.com/1.11.4/tofu.zip"
     token = "testtoken"
     yield url, token
 

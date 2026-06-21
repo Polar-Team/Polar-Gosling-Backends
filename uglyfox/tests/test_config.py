@@ -8,9 +8,10 @@ def test_uglyfox_settings_defaults(monkeypatch):
     # Clear env vars so defaults are used
     monkeypatch.delenv("CELERY_BROKER_URL", raising=False)
     monkeypatch.delenv("UGLYFOX_CELERY_BROKER_URL", raising=False)
+    monkeypatch.delenv("UGLYFOX_BROKER_URL", raising=False)
     monkeypatch.delenv("CELERY_BROKER_TRANSPORT_OPTIONS", raising=False)
 
-    settings = UglyFoxSettings()
+    settings = UglyFoxSettings(_env_file=None)
 
     assert settings.app_name == "UglyFox"
     assert settings.environment == "development"
@@ -86,9 +87,11 @@ def test_get_celery_config(monkeypatch):
     # Clear env vars that would override explicit constructor values
     monkeypatch.delenv("CELERY_BROKER_URL", raising=False)
     monkeypatch.delenv("UGLYFOX_CELERY_BROKER_URL", raising=False)
+    monkeypatch.delenv("UGLYFOX_BROKER_URL", raising=False)
     monkeypatch.delenv("CELERY_BROKER_TRANSPORT_OPTIONS", raising=False)
 
     settings = UglyFoxSettings(
+        _env_file=None,
         celery_broker_url="redis://localhost:6379/0",
         celery_result_backend="redis://localhost:6379/1",
         uglyfox_queue_name="uglyfox-test",

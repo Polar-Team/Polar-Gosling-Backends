@@ -21,9 +21,7 @@ from app.util.base_logging import logger
     priority=7,
     ignore_result=True,
 )
-def sync_nest_config(
-    self: BaseTask, sync_type: str = "periodic"
-) -> dict[str, Any]:
+def sync_nest_config(self: BaseTask, sync_type: str = "periodic") -> dict[str, Any]:
     """
     Synchronize Nest repository configuration to database cache.
 

@@ -94,7 +94,11 @@ class EggService:
             if isinstance(config, dict):
                 gitlab_config = config.get("gitlab", {})
                 if gitlab_config.get("project_id") == project_id:
-                    self.debug("Egg found by config.gitlab.project_id %s: %s", project_id, egg.name)
+                    self.debug(
+                        "Egg found by config.gitlab.project_id %s: %s",
+                        project_id,
+                        egg.name,
+                    )
                     self.__egg_query_result = egg
                     return
 

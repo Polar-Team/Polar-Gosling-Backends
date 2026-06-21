@@ -211,9 +211,9 @@ def deploy_runner(  # pylint: disable=too-many-locals
         try:
             schema = get_ydb_schema()
             driver_config = _ydb.DriverConfig(
-                endpoint=schema.config.endpoint,
-                database=schema.config.database,
-                credentials=schema.config.credentials,
+                endpoint=schema.config.endpoint,  # pylint: disable=no-member
+                database=schema.config.database,  # pylint: disable=no-member
+                credentials=schema.config.credentials,  # pylint: disable=no-member
                 disable_discovery=True,
             )
             with _ydb.Driver(driver_config) as driver:

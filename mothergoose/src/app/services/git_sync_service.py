@@ -60,9 +60,14 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
             # In local/dev mode (HTTP nest-git), skip the deploy key and use
             # the MOTHERGOOSE_NEST_REPO_URL env var directly.
             nest_repo_url_env = os.getenv("MOTHERGOOSE_NEST_REPO_URL", "")
-            if nest_repo_url_env.startswith("http://") or nest_repo_url_env.startswith("https://"):
+            if nest_repo_url_env.startswith("http://") or nest_repo_url_env.startswith(
+                "https://"
+            ):
                 # Local Cloud_Stack: HTTP access to nest-git, no SSH key needed
-                logger.info("Using MOTHERGOOSE_NEST_REPO_URL (HTTP, no deploy key): %s", nest_repo_url_env)
+                logger.info(
+                    "Using MOTHERGOOSE_NEST_REPO_URL (HTTP, no deploy key): %s",
+                    nest_repo_url_env,
+                )
                 nest_repo_url = nest_repo_url_env
                 deploy_key = ""
             else:
@@ -320,7 +325,8 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
         changes = len(eggs) + len(jobs) + (1 if uf_config else 0)
         return changes
 
-    async def _create_sync_history(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+    async def _create_sync_history(
         self,
         sync_id: str,
         git_commit: str,
@@ -361,9 +367,9 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
         try:
             schema = get_ydb_schema()
             driver_config = ydb.DriverConfig(
-                endpoint=schema.config.endpoint,
-                database=schema.config.database,
-                credentials=schema.config.credentials,
+                endpoint=schema.config.endpoint,  # pylint: disable=no-member
+                database=schema.config.database,  # pylint: disable=no-member
+                credentials=schema.config.credentials,  # pylint: disable=no-member
                 disable_discovery=True,
             )
             with ydb.Driver(driver_config) as driver:

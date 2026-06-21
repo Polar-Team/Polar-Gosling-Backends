@@ -55,9 +55,11 @@ celery_app = create_celery_app()
 
 
 @worker_process_init.connect
-def init_worker(**kwargs):  # type: ignore[no-untyped-def]
+def init_worker(**kwargs):  # type: ignore[no-untyped-def] # pylint: disable=unused-argument
     """Initialize YDB schema when the Celery worker process starts."""
-    from app.core.config import initialize_ydb_schema  # pylint: disable=import-outside-toplevel
+    from app.core.config import (  # pylint: disable=import-outside-toplevel
+        initialize_ydb_schema,
+    )
 
     logger.info("Celery worker starting — initializing YDB schema")
     initialize_ydb_schema()

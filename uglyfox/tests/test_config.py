@@ -1,5 +1,6 @@
 """Tests for UglyFox configuration."""
 
+import os
 from app.core.config import UglyFoxSettings
 
 
@@ -110,6 +111,8 @@ def test_get_celery_config(monkeypatch):
 
 def test_get_celery_config_sqs_no_result_backend():
     """Test Celery configuration with SQS broker omits result_backend."""
+
+    os.environ.setdefault("CELERY_BROKER_URL", "sqs://test:test@")
     settings = UglyFoxSettings(
         celery_broker_url="sqs://test:test@",
         uglyfox_queue_name="uglyfox",

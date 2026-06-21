@@ -1,6 +1,9 @@
 """Pytest configuration and fixtures for UglyFox tests."""
 
 import pytest
+import os
+
+os.setenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 
 
 @pytest.fixture

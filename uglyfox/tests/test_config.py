@@ -6,10 +6,6 @@ from app.core.config import UglyFoxSettings
 def test_uglyfox_settings_defaults(monkeypatch):
     """Test UglyFox settings with default values."""
     # Clear env vars so defaults are used
-    monkeypatch.delenv("CELERY_BROKER_URL", raising=False)
-    monkeypatch.delenv("UGLYFOX_CELERY_BROKER_URL", raising=False)
-    monkeypatch.delenv("UGLYFOX_BROKER_URL", raising=False)
-    monkeypatch.delenv("CELERY_BROKER_TRANSPORT_OPTIONS", raising=False)
 
     settings = UglyFoxSettings(_env_file=None)
 
@@ -85,10 +81,6 @@ def test_get_database_config_dynamodb():
 def test_get_celery_config(monkeypatch):
     """Test Celery configuration."""
     # Clear env vars that would override explicit constructor values
-    monkeypatch.delenv("CELERY_BROKER_URL", raising=False)
-    monkeypatch.delenv("UGLYFOX_CELERY_BROKER_URL", raising=False)
-    monkeypatch.delenv("UGLYFOX_BROKER_URL", raising=False)
-    monkeypatch.delenv("CELERY_BROKER_TRANSPORT_OPTIONS", raising=False)
 
     settings = UglyFoxSettings(
         _env_file=None,

@@ -189,10 +189,23 @@ def deploy_runner(  # pylint: disable=too-many-locals
         Exception: If runner deployment fails after retries
     """
     import asyncio  # pylint: disable=import-outside-toplevel
+    import json as _json  # pylint: disable=import-outside-toplevel
     import uuid as _uuid  # pylint: disable=import-outside-toplevel
     from datetime import datetime, timezone  # pylint: disable=import-outside-toplevel
 
-    import ydb as _ydb  # pylint: disable=import-outside-toplevel
+    from app.db.manage_db import (  # pylint: disable=import-outside-toplevel
+        AsyncYDBFunctionsCollections,
+    )
+    from app.db.ydb_connection import (  # pylint: disable=import-outside-toplevel
+        AsyncYDBOperations,
+    )
+    from app.model.audit_models import (  # pylint: disable=import-outside-toplevel
+        AuditLogsTableYDB,
+        AuditModelYDB,
+    )
+    from app.schema.ydb_schemas import (  # pylint: disable=import-outside-toplevel
+        YDBSchema,
+    )
 
     task_id = self.request.id or "unknown"
     logger.info("Deploying runner for Egg '%s' in task %s", egg_name, task_id)
@@ -209,29 +222,39 @@ def deploy_runner(  # pylint: disable=too-many-locals
         )
         # Write audit_log entry to YDB
         try:
-            schema = get_ydb_schema()
-            driver_config = _ydb.DriverConfig(
-                endpoint=schema.config.endpoint,  # pylint: disable=no-member
-                database=schema.config.database,  # pylint: disable=no-member
-                credentials=schema.config.credentials,  # pylint: disable=no-member
-                disable_discovery=True,
+            base_schema = get_ydb_schema()
+            audit_id = str(_uuid.uuid4())
+            now_iso = datetime.now(timezone.utc).isoformat()
+            details = _json.dumps(
+                {"task_id": task_id, "mode": "stub", "egg": egg_name}
+            ).encode("utf-8")
+
+            table = AuditLogsTableYDB(
+                values_for_operate=(
+                    audit_id,
+                    now_iso,
+                    "mothergoose-worker",
+                    "deploy_runner",
+                    "runner",
+                    egg_name,
+                    details,
+                ),
             )
-            with _ydb.Driver(driver_config) as driver:
-                driver.wait(timeout=10, fail_fast=True)
-                with _ydb.QuerySessionPool(driver, size=1) as pool:
-                    audit_id = str(_uuid.uuid4())
-                    now_iso = datetime.now(timezone.utc).isoformat()
-                    query = f"""
-                        UPSERT INTO audit_logs (id, timestamp, actor, action,
-                            resource_type, resource_id, details)
-                        VALUES (
-                            '{audit_id}', '{now_iso}', 'mothergoose-worker',
-                            'deploy_runner', 'runner', '{egg_name}',
-                            '{{"task_id": "{task_id}", "mode": "stub", "egg": "{egg_name}"}}'
-                        );
-                    """
-                    pool.execute_with_retries(query)
-                    logger.info("Audit log written: %s", audit_id)
+
+            model = AuditModelYDB(tables=[table])
+            schema = YDBSchema(
+                config=base_schema.config,
+                model=model,
+                default_table=None,
+                version=base_schema.version,
+            )
+
+            connection = AsyncYDBOperations(
+                schema=schema,
+                operations_function=AsyncYDBFunctionsCollections.upsert_query,
+            )
+            asyncio.run(connection.process(table_name="audit_logs"))
+            logger.info("Audit log written: %s", audit_id)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logger.error("Failed to write audit_log: %s", exc)
 

@@ -13,10 +13,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import git
-import ydb
 
 from app.core.config import get_ydb_schema
-from app.model.runners_models import SyncStatus, generate_new_eggconfig
+from app.db.manage_db import AsyncYDBFunctionsCollections
+from app.db.ydb_connection import AsyncYDBOperations
+from app.model.runners_models import (
+    RunnerModelYDB,
+    SyncHistoryTableYDB,
+    SyncStatus,
+    generate_new_eggconfig,
+)
+from app.schema.ydb_schemas import YDBSchema
 from app.services.egg_service import EggService
 from app.services.fly_parser import fly_parser
 from app.services.secret_manager import secret_manager
@@ -365,30 +372,38 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
         )
 
         try:
-            schema = get_ydb_schema()
-            driver_config = ydb.DriverConfig(
-                endpoint=schema.config.endpoint,  # pylint: disable=no-member
-                database=schema.config.database,  # pylint: disable=no-member
-                credentials=schema.config.credentials,  # pylint: disable=no-member
-                disable_discovery=True,
+            base_schema = get_ydb_schema()
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            table = SyncHistoryTableYDB(
+                values_for_operate=(
+                    sync_id,
+                    git_commit,
+                    sync_type,
+                    status.value,
+                    changes_detected,
+                    eggs_synced,
+                    jobs_synced,
+                    str(uf_config_synced).lower(),
+                    error_message or "",
+                    now_iso,
+                    duration_ms,
+                ),
             )
-            with ydb.Driver(driver_config) as driver:
-                driver.wait(timeout=10, fail_fast=True)
-                with ydb.QuerySessionPool(driver, size=1) as pool:
-                    now_iso = datetime.now(timezone.utc).isoformat()
-                    query = f"""
-                        UPSERT INTO sync_history (id, git_commit, sync_type, status,
-                            changes_detected, eggs_synced, jobs_synced, uf_config_synced,
-                            error_message, synced_at, duration_ms)
-                        VALUES (
-                            '{sync_id}', '{git_commit}', '{sync_type}', '{status.value}',
-                            {changes_detected}, {eggs_synced}, {jobs_synced},
-                            '{str(uf_config_synced).lower()}',
-                            '{error_message or ""}', '{now_iso}', {duration_ms}
-                        );
-                    """
-                    pool.execute_with_retries(query)
-                    logger.info("Sync history row written to YDB: %s", sync_id)
+
+            model = RunnerModelYDB(tables=[table])
+            schema = YDBSchema(
+                config=base_schema.config,
+                model=model,
+                default_table=None,
+            )
+
+            connection = AsyncYDBOperations(
+                schema=schema,
+                operations_function=AsyncYDBFunctionsCollections.upsert_query,
+            )
+            await connection.process(table_name="sync_history")
+            logger.info("Sync history row written to YDB: %s", sync_id)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logger.error("Failed to write sync_history to YDB: %s", exc)
 

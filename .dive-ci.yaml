@@ -1,0 +1,7 @@
+rules:
+  # Image efficiency must exceed 96%
+  lowestEfficiency: 0.96
+  # Maximum 25MB of wasted space across all layers
+  highestWastedBytes: 26214400
+  # No single layer should waste more than allowed total
+  highestUserWastedPercent: 0.04

@@ -4,7 +4,7 @@
     "schedule": "rate(1 minute)",
     "target": {
       "type": "http",
-      "url": "http://mothergoose-api:8000/internal/sync-git"
+      "url": "arn:aws:lambda:us-east-1:000000000000:function:pg-stack-sync-git-trigger"
     }
   }
 ]

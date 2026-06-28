@@ -18,8 +18,17 @@ PLATFORMS    ?= linux/amd64,linux/arm64
 # Docker — MotherGoose
 # ---------------------------------------------------------------------------
 
+.PHONY: docker-login
+docker-login: ## Login to GitHub Container Registry
+	@echo "Logging in to $(REGISTRY)..."
+ifeq ($(OS),Windows_NT)
+	@powershell -Command 'echo "$$env:GITHUB_TOKEN" | docker login $(REGISTRY) -u "$$env:GITHUB_ACTOR" --password-stdin'
+else
+	@echo "$$GITHUB_TOKEN" | docker login $(REGISTRY) -u "$$GITHUB_ACTOR" --password-stdin
+endif
+
 .PHONY: mg-docker-local
-mg-docker-local: ## Build MotherGoose image locally (plain docker build, no buildx)
+mg-docker-local:  ## Build MotherGoose image locally (plain docker build, no buildx)
 	docker build \
 		-f Dockerfile.mtg \
 		-t $(MG_IMAGE):$(MG_VERSION) \
@@ -36,7 +45,7 @@ mg-docker-build: ## Build MotherGoose image for the local platform (buildx)
 		.
 
 .PHONY: mg-docker-push
-mg-docker-push: ## Build & push MotherGoose multi-arch image
+mg-docker-push: docker-login ## Build & push MotherGoose multi-arch image
 	docker buildx build \
 		-f Dockerfile.mtg \
 		--platform $(PLATFORMS) \
@@ -67,7 +76,7 @@ uf-docker-build: ## Build UglyFox image for the local platform (buildx)
 		.
 
 .PHONY: uf-docker-push
-uf-docker-push: ## Build & push UglyFox multi-arch image
+uf-docker-push: docker-login ## Build & push UglyFox multi-arch image
 	docker buildx build \
 		-f Dockerfile.uf \
 		--platform $(PLATFORMS) \

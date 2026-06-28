@@ -14,7 +14,7 @@
 # locally by Compose (`build: ../`, `image: pg-stack/mothergoose:${MG_IMAGE_TAG}`)
 # rather than fetched from a registry; the tag is therefore parameterised.
 ARG MG_IMAGE_TAG=dev
-FROM pg-stack/mothergoose:${MG_IMAGE_TAG}
+FROM ghcr.io/polar-team/mothergoose:${MG_IMAGE_TAG}
 
 # Identifies every stack-owned image for the `compose-clean` prune rule
 # (Makefile target uses `docker image prune --filter label=pg-stack=true`).

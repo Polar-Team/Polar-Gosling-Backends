@@ -100,40 +100,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Render CI .env
         run: |
+          MG_VERSION=$(grep -m1 '^version' mothergoose/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
+          UF_VERSION=$(grep -m1 '^version' uglyfox/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
           cp compose/.env.example compose/.env
           sed -i 's/^YDB_IMAGE_TAG=.*/YDB_IMAGE_TAG=25.4.1/' compose/.env
           sed -i 's/^LOCALSTACK_IMAGE_TAG=.*/LOCALSTACK_IMAGE_TAG=3.8.1/' compose/.env
           sed -i 's/^LOCALSTACK_AUTH_TOKEN=.*/LOCALSTACK_AUTH_TOKEN=${{ secrets.LOCALSTACK_AUTH_TOKEN }}/' compose/.env
           sed -i 's/^INTERNAL_SYNC_TOKEN=.*/INTERNAL_SYNC_TOKEN=ci-smoke-test-token-12345678/' compose/.env
+          sed -i "s/^MG_IMAGE_TAG=.*/MG_IMAGE_TAG=${MG_VERSION}/" compose/.env
+          sed -i "s/^UF_IMAGE_TAG=.*/UF_IMAGE_TAG=${UF_VERSION}/" compose/.env
 
-      - name: Build mothergoose image (GHA-cached)
-        uses: docker/build-push-action@v6
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          context: .
-          file: Dockerfile.mtg
-          tags: pg-stack/mothergoose:dev
-          load: true
-          cache-from: type=gha,scope=mothergoose
-          cache-to: type=gha,mode=max,scope=mothergoose
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build uglyfox image (GHA-cached)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.uf
-          tags: pg-stack/uglyfox:dev
-          load: true
-          cache-from: type=gha,scope=uglyfox
-          cache-to: type=gha,mode=max,scope=uglyfox
+      - name: Pull service images
+        run: |
+          MG_VERSION=$(grep -m1 '^version' mothergoose/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
+          UF_VERSION=$(grep -m1 '^version' uglyfox/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
+          docker pull ghcr.io/polar-team/mothergoose:${MG_VERSION}
+          docker pull ghcr.io/polar-team/uglyfox:${UF_VERSION}
 
       - name: Build remaining compose images
         run: |
-          docker buildx use default
           docker compose -f compose/docker-compose.yml build nest-git
           docker compose -f compose/docker-compose.yml build seed
           docker compose -f compose/docker-compose.yml build trigger-emulator

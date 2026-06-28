@@ -409,6 +409,8 @@ def _build_boto3_client(service: str) -> Any:  # noqa: ANN401 - boto3 untyped
         service,
         endpoint_url=_aws_endpoint_url(),
         region_name=LOCALSTACK_REGION,
+        aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID", "test"),
+        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", "test"),
     )
 
 

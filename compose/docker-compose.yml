@@ -87,7 +87,7 @@ services:
     environment:
       SERVICES: "s3,sqs,events,secretsmanager"
       # Fix 6: allow override via AWS_DEFAULT_REGION; fall back to us-east-1.
-      DEFAULT_REGION: "${AWS_DEFAULT_REGION:-us-east-1}"
+      # DEFAULT_REGION: "${AWS_DEFAULT_REGION:-us-east-1}" - Deprecated
       LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:? set LOCALSTACK_AUTH_TOKEN in .env}
       LS_LOG: "warn"
       PERSISTENCE: "0"
@@ -179,6 +179,8 @@ services:
     build:
       context: ../
       dockerfile: compose/seed/Dockerfile
+      args:
+        MG_IMAGE_TAG: ${MG_IMAGE_TAG:-dev}
     image: pg-stack/seed:${MG_IMAGE_TAG:-dev}
     restart: "no"
     profiles:
@@ -222,10 +224,7 @@ services:
   # Requirements: 1.2, 1.6, 3.10, 4.4, 4.6, 6.1, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 9.6.
   mothergoose-api:
     container_name: pg-stack-mothergoose-api
-    build:
-      context: ../
-      dockerfile: Dockerfile.mtg
-    image: pg-stack/mothergoose:${MG_IMAGE_TAG:-dev}
+    image: ghcr.io/polar-team/mothergoose:${MG_IMAGE_TAG:-latest}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     ports:
       - "127.0.0.1:${MOTHERGOOSE_API_HOST_PORT:-8000}:8000"
@@ -280,11 +279,8 @@ services:
   # Requirements: 1.2, 1.6, 3.10, 4.4, 4.6, 6.2, 6.3, 6.4, 9.6, 13.4.
   mothergoose-worker:
     container_name: pg-stack-mothergoose-worker
-    build:
-      context: ../
-      dockerfile: Dockerfile.mtg
-    image: pg-stack/mothergoose:${MG_IMAGE_TAG:-dev}
-    command: celery -A app.celery_worker worker --loglevel=info -Q mothergoose
+    image: ghcr.io/polar-team/mothergoose:${MG_IMAGE_TAG:-latest}
+    command: celery -A app.celery_worker worker --loglevel=info -Q mothergoose,git-sync,high-priority,default,low-priority
     environment:
       MOTHERGOOSE_ENVIRONMENT: "development"
       MOTHERGOOSE_CLOUD_PROVIDER: "localstack"
@@ -334,10 +330,7 @@ services:
   # Requirements: 1.2, 1.6, 3.10, 4.5, 4.6, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 9.6, 13.4.
   uglyfox-worker:
     container_name: pg-stack-uglyfox-worker
-    build:
-      context: ../
-      dockerfile: Dockerfile.uf
-    image: pg-stack/uglyfox:${UF_IMAGE_TAG:-dev}
+    image: ghcr.io/polar-team/uglyfox:${UF_IMAGE_TAG:-latest}
     command: celery -A app.celery_worker worker --loglevel=info -Q uglyfox
     environment:
       UGLYFOX_DATABASE_TYPE: "ydb"
@@ -383,7 +376,7 @@ services:
     build:
       context: ./trigger
       dockerfile: Dockerfile
-    image: pg-stack/trigger-emulator:${MG_IMAGE_TAG:-dev}
+    image: pg-stack/trigger-emulator:${MG_IMAGE_TAG:-latest}
     restart: "no"
     environment:
       TRIGGER_SYNC_INTERVAL_SECONDS: "${TRIGGER_SYNC_INTERVAL_SECONDS:-60}"

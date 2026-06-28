@@ -193,10 +193,19 @@ def deploy_runner(  # pylint: disable=too-many-locals
     import uuid as _uuid  # pylint: disable=import-outside-toplevel
     from datetime import datetime, timezone  # pylint: disable=import-outside-toplevel
 
-    from app.db.manage_db import AsyncYDBFunctionsCollections  # pylint: disable=import-outside-toplevel
-    from app.db.ydb_connection import AsyncYDBOperations  # pylint: disable=import-outside-toplevel
-    from app.model.audit_models import AuditLogsTableYDB, AuditModelYDB  # pylint: disable=import-outside-toplevel
-    from app.schema.ydb_schemas import YDBSchema  # pylint: disable=import-outside-toplevel
+    from app.db.manage_db import (  # pylint: disable=import-outside-toplevel
+        AsyncYDBFunctionsCollections,
+    )
+    from app.db.ydb_connection import (  # pylint: disable=import-outside-toplevel
+        AsyncYDBOperations,
+    )
+    from app.model.audit_models import (  # pylint: disable=import-outside-toplevel
+        AuditLogsTableYDB,
+        AuditModelYDB,
+    )
+    from app.schema.ydb_schemas import (  # pylint: disable=import-outside-toplevel
+        YDBSchema,
+    )
 
     task_id = self.request.id or "unknown"
     logger.info("Deploying runner for Egg '%s' in task %s", egg_name, task_id)

@@ -93,6 +93,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test, style]
     timeout-minutes: 15
+    env:
+      COMPOSE_PROFILES: seed,with-triggers
 
     steps:
       - name: Checkout code
@@ -132,7 +134,7 @@ jobs:
       - name: Build remaining compose images
         env:
           BUILDX_BUILDER: default
-        run: docker compose -f compose/docker-compose.yml --profile seed --profile with-triggers build
+        run: docker compose -f compose/docker-compose.yml build
 
       - name: Start all services
         run: make compose-up-all

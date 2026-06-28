@@ -15,7 +15,7 @@ resource "local_file" "public_key" {
 
 module "worker" {
 {% if tofu_worker_module_source.type == "git" %}
-  source = "git::{{ tofu_worker_module_source.url }}.git?ref={{ tofu_worker_module_source.version }}"
+  source = "git::{{ tofu_worker_module_source.url }}.git//modules/{{ tofu_cloud_provider }}?ref={{ tofu_worker_module_source.version }}"
 {% else %}
   source  = "{{ tofu_worker_module_source.url }}"
   version = "{{ tofu_worker_module_source.version }}"

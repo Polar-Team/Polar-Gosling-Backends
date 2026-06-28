@@ -134,7 +134,9 @@ jobs:
       - name: Build remaining compose images
         run: |
           docker buildx use default
-          docker compose -f compose/docker-compose.yml build
+          docker compose -f compose/docker-compose.yml build nest-git
+          docker compose -f compose/docker-compose.yml build seed
+          docker compose -f compose/docker-compose.yml build trigger-emulator
 
       - name: Start all services
         run: make compose-up-all
@@ -144,6 +146,10 @@ jobs:
 
       - name: Run smoke trigger tests
         run: make compose-smoke-triggers
+
+      - name: Dump seed logs on failure
+        if: failure()
+        run: docker logs pg-stack-seed 2>&1 || true
 
       - name: Dump service logs on failure
         if: failure()

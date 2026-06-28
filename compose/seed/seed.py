@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING, Any, Final, TypeVar
 
 import boto3  # type: ignore[import-untyped]
 import ydb  # type: ignore[import-untyped]
+from ydb import AnonymousCredentials  # type: ignore[import-untyped]
 from botocore.exceptions import (  # type: ignore[import-untyped]
     BotoCoreError,
     ClientError,
@@ -298,7 +299,9 @@ def seed_ydb_schema(report: SeedReport) -> None:
         endpoint,
         database,
     )
-    driver_config = ydb.DriverConfig(endpoint=endpoint, database=database)
+    driver_config = ydb.DriverConfig(
+        endpoint=endpoint, database=database, credentials=AnonymousCredentials()
+    )
 
     try:
         with ydb.Driver(driver_config) as driver:
@@ -1152,7 +1155,9 @@ def seed_egg_configs(report: SeedReport) -> None:
         endpoint,
         database,
     )
-    driver_config = ydb.DriverConfig(endpoint=endpoint, database=database)
+    driver_config = ydb.DriverConfig(
+        endpoint=endpoint, database=database, credentials=AnonymousCredentials()
+    )
 
     try:
         with ydb.Driver(driver_config) as driver:

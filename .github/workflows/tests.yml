@@ -111,7 +111,7 @@ jobs:
           sed -i 's/^LOCALSTACK_AUTH_TOKEN=.*/LOCALSTACK_AUTH_TOKEN=${{ secrets.LOCALSTACK_AUTH_TOKEN }}/' compose/.env
           sed -i 's/^INTERNAL_SYNC_TOKEN=.*/INTERNAL_SYNC_TOKEN=ci-smoke-test-token-12345678/' compose/.env
 
-      - name: Pre-build mothergoose image (GHA-cached)
+      - name: Build mothergoose image (GHA-cached)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -121,7 +121,7 @@ jobs:
           cache-from: type=gha,scope=mothergoose
           cache-to: type=gha,mode=max,scope=mothergoose
 
-      - name: Pre-build uglyfox image (GHA-cached)
+      - name: Build uglyfox image (GHA-cached)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -132,9 +132,9 @@ jobs:
           cache-to: type=gha,mode=max,scope=uglyfox
 
       - name: Build remaining compose images
-        env:
-          BUILDX_BUILDER: default
-        run: docker compose -f compose/docker-compose.yml build
+        run: |
+          docker buildx use default
+          docker compose -f compose/docker-compose.yml build
 
       - name: Start all services
         run: make compose-up-all

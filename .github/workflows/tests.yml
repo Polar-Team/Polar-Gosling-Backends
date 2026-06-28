@@ -130,7 +130,9 @@ jobs:
           cache-to: type=gha,mode=max,scope=uglyfox
 
       - name: Build remaining compose images
-        run: docker compose -f compose/docker-compose.yml --profile seed --profile with-triggers build nest-git seed trigger-emulator
+        env:
+          BUILDX_BUILDER: default
+        run: docker compose -f compose/docker-compose.yml --profile seed --profile with-triggers build
 
       - name: Start all services
         run: make compose-up-all

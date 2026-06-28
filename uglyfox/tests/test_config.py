@@ -1,17 +1,20 @@
 """Tests for UglyFox configuration."""
 
+import os
 from app.core.config import UglyFoxSettings
 
 
-def test_uglyfox_settings_defaults():
+def test_uglyfox_settings_defaults(monkeypatch):
     """Test UglyFox settings with default values."""
-    settings = UglyFoxSettings()
+    # Clear env vars so defaults are used
+
+    settings = UglyFoxSettings(_env_file=None)
 
     assert settings.app_name == "UglyFox"
     assert settings.environment == "development"
     assert settings.log_level == "INFO"
     assert settings.database_type == "ydb"
-    assert settings.message_queue_type == "redis"
+    assert settings.message_queue_type == "sqs"
     assert settings.cloud_provider == "yandex"
     assert settings.secret_backend == "yc-lockbox"
     assert settings.health_check_interval == 60
@@ -76,9 +79,12 @@ def test_get_database_config_dynamodb():
     assert config["endpoint"] == "http://localhost:8000"
 
 
-def test_get_celery_config():
+def test_get_celery_config(monkeypatch):
     """Test Celery configuration."""
+    # Clear env vars that would override explicit constructor values
+
     settings = UglyFoxSettings(
+        _env_file=None,
         celery_broker_url="redis://localhost:6379/0",
         celery_result_backend="redis://localhost:6379/1",
         uglyfox_queue_name="uglyfox-test",
@@ -101,3 +107,19 @@ def test_get_celery_config():
     assert config["worker_max_tasks_per_child"] == 1000
     assert config["task_acks_late"] is True
     assert config["task_reject_on_worker_lost"] is True
+
+
+def test_get_celery_config_sqs_no_result_backend():
+    """Test Celery configuration with SQS broker omits result_backend."""
+
+    os.environ.pop("CELERY_BROKER_URL", None)
+    settings = UglyFoxSettings(
+        celery_broker_url="sqs://test:test@",
+        uglyfox_queue_name="uglyfox",
+    )
+
+    config = settings.get_celery_config()
+
+    assert config["broker_url"] == "sqs://test:test@"
+    assert "result_backend" not in config
+    assert "broker_transport_options" in config

@@ -5,6 +5,7 @@ Celery tasks for synchronizing Nest repository configuration to database cache.
 These tasks run periodically (every 5 minutes) and on-demand (webhook triggers).
 """
 
+import asyncio
 from typing import Any
 
 from app.core.celery_app import celery_app
@@ -18,10 +19,9 @@ from app.util.base_logging import logger
     name="app.tasks.git_sync.sync_nest_config",
     bind=True,
     priority=7,
+    ignore_result=True,
 )
-async def sync_nest_config(
-    self: BaseTask, sync_type: str = "periodic"
-) -> dict[str, Any]:
+def sync_nest_config(self: BaseTask, sync_type: str = "periodic") -> dict[str, Any]:
     """
     Synchronize Nest repository configuration to database cache.
 
@@ -49,8 +49,8 @@ async def sync_nest_config(
     logger.info("Starting Nest config sync in task %s (type: %s)", task_id, sync_type)
 
     try:
-        # Execute Git sync
-        result = await git_sync_service.sync_nest_repository(sync_type=sync_type)
+        # Execute Git sync (async service, run in event loop)
+        result = asyncio.run(git_sync_service.sync_nest_repository(sync_type=sync_type))
         result["task_id"] = task_id
 
         logger.info("Nest config sync completed: %s", result)

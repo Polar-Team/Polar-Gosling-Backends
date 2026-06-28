@@ -4,6 +4,7 @@ Git Sync Service
 Handles Git operations for syncing Nest repository to database cache.
 """
 
+import os
 import shutil
 import tempfile
 import uuid
@@ -14,7 +15,15 @@ from typing import Any, Dict, List, Optional, Tuple
 import git
 
 from app.core.config import get_ydb_schema
-from app.model.runners_models import SyncStatus, generate_new_eggconfig
+from app.db.manage_db import AsyncYDBFunctionsCollections
+from app.db.ydb_connection import AsyncYDBOperations
+from app.model.runners_models import (
+    RunnerModelYDB,
+    SyncHistoryTableYDB,
+    SyncStatus,
+    generate_new_eggconfig,
+)
+from app.schema.ydb_schemas import YDBSchema
 from app.services.egg_service import EggService
 from app.services.fly_parser import fly_parser
 from app.services.secret_manager import secret_manager
@@ -55,13 +64,28 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
 
         try:
             # Step 1: Retrieve deploy key and repo URL from secret storage
-            logger.info("Retrieving deploy key from secret storage")
-            deploy_key = await secret_manager.get_secret(
-                "yc-lockbox://deploy-keys/mothergoose-private"
-            )
-            nest_repo_url = await secret_manager.get_secret(
-                "yc-lockbox://nest/repo-url"
-            )
+            # In local/dev mode (HTTP nest-git), skip the deploy key and use
+            # the MOTHERGOOSE_NEST_REPO_URL env var directly.
+            nest_repo_url_env = os.getenv("MOTHERGOOSE_NEST_REPO_URL", "")
+            if nest_repo_url_env.startswith("http://") or nest_repo_url_env.startswith(
+                "https://"
+            ):
+                # Local Cloud_Stack: HTTP access to nest-git, no SSH key needed
+                logger.info(
+                    "Using MOTHERGOOSE_NEST_REPO_URL (HTTP, no deploy key): %s",
+                    nest_repo_url_env,
+                )
+                nest_repo_url = nest_repo_url_env
+                deploy_key = ""
+            else:
+                # Production: retrieve deploy key and repo URL from secret storage
+                logger.info("Retrieving deploy key from secret storage")
+                deploy_key = await secret_manager.get_secret(
+                    "yc-lockbox://deploy-keys/mothergoose-private"
+                )
+                nest_repo_url = await secret_manager.get_secret(
+                    "yc-lockbox://nest/repo-url"
+                )
 
             # Step 2: Clone/Pull Nest repository
             logger.info("Cloning/pulling Nest repository")
@@ -140,7 +164,7 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
 
         Args:
             repo_url: Git repository URL
-            deploy_key: SSH private key for authentication
+            deploy_key: SSH private key for authentication (empty for HTTP URLs)
 
         Returns:
             Git commit hash (SHA)
@@ -152,18 +176,23 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
         self.temp_dir = Path(tempfile.mkdtemp(prefix="nest_sync_"))
         logger.info("Created temporary directory: %s", self.temp_dir)
 
-        # Write deploy key to temporary file
-        key_file = self.temp_dir / "deploy_key"
-        key_file.write_text(deploy_key)
-        key_file.chmod(0o600)
-
-        # Set up SSH command with deploy key
-        ssh_cmd = f"ssh -i {key_file} -o StrictHostKeyChecking=no"
-
         try:
             # Clone repository
             logger.info("Cloning repository: %s", repo_url)
-            with git.Git().custom_environment(GIT_SSH_COMMAND=ssh_cmd):
+
+            if deploy_key and not repo_url.startswith("http"):
+                # SSH clone with deploy key
+                key_file = self.temp_dir / "deploy_key"
+                key_file.write_text(deploy_key)
+                key_file.chmod(0o600)
+                ssh_cmd = f"ssh -i {key_file} -o StrictHostKeyChecking=no"
+
+                with git.Git().custom_environment(GIT_SSH_COMMAND=ssh_cmd):
+                    self.repo = git.Repo.clone_from(
+                        repo_url, self.temp_dir / "nest", depth=1
+                    )
+            else:
+                # HTTP clone — no SSH key needed
                 self.repo = git.Repo.clone_from(
                     repo_url, self.temp_dir / "nest", depth=1
                 )
@@ -261,14 +290,23 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
             project_id = gitlab_config.get("project_id")
             group_id = gitlab_config.get("group_id")
 
-            # Build secret URIs (following the pattern from design doc)
-            gitlab_server = gitlab_config.get("server", "gitlab.com")
-            token_secret = (
-                f"yc-lockbox://gitlab/{gitlab_server}/{egg_name}/runner-token"
-            )
-            webhook_secret = (
-                f"yc-lockbox://gitlab/{gitlab_server}/{egg_name}/webhook-secret"
-            )
+            # Extract secret URIs from parsed config. These come from the .fly
+            # file's `secrets { ... }` block when gosling is available, or are absent
+            # in placeholder data. When absent, preserve whatever the seed wrote.
+            secrets_config = egg_dict.get("secrets", {})
+            token_secret = secrets_config.get("gitlab_token", "")
+            webhook_secret = secrets_config.get("webhook", "")
+            repo_url_secret = egg_dict.get("git_repo_url_secret", "")
+
+            # If secrets are empty (placeholder/no-gosling mode), skip the upsert
+            # to preserve the seed-written row which has the correct URIs.
+            if not token_secret and not webhook_secret:
+                logger.info(
+                    "Skipping upsert for %s (no secrets in parsed data; "
+                    "preserving seed row)",
+                    egg_name,
+                )
+                continue
 
             # Create EggConfig model
             egg = generate_new_eggconfig(
@@ -277,7 +315,7 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
                 group_id=group_id,
                 config=egg_dict,
                 git_commit=git_commit,
-                git_repo_url_secret="yc-lockbox://nest/repo-url",
+                git_repo_url_secret=repo_url_secret,
                 gitlab_token_secret_uri=token_secret,
                 gitlab_webhook_secret_uri=webhook_secret,
                 synced_at=now,
@@ -294,25 +332,22 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
         changes = len(eggs) + len(jobs) + (1 if uf_config else 0)
         return changes
 
-    async def _create_sync_history(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+    async def _create_sync_history(
         self,
         sync_id: str,
         git_commit: str,
         sync_type: str,
         status: SyncStatus,
         changes_detected: int,
-        eggs_synced: int,  # pylint: disable=unused-argument
-        jobs_synced: int,  # pylint: disable=unused-argument
-        uf_config_synced: bool,  # pylint: disable=unused-argument
+        eggs_synced: int,
+        jobs_synced: int,
+        uf_config_synced: bool,
         duration_ms: int,
-        error_message: Optional[str] = None,  # pylint: disable=unused-argument
+        error_message: Optional[str] = None,
     ) -> None:
         """
-        Create sync history audit trail.
-
-        This is a placeholder implementation. In production, this should:
-        1. Connect to YDB/DynamoDB
-        2. Insert into sync_history table
+        Create sync history audit trail in YDB.
 
         Args:
             sync_id: Unique sync operation ID
@@ -326,7 +361,6 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
             duration_ms: Sync duration in milliseconds
             error_message: Error message if sync failed
         """
-        # Placeholder: Log sync history
         logger.info(
             "Sync history: id=%s, commit=%s, type=%s, status=%s, changes=%d, duration=%dms",
             sync_id,
@@ -337,20 +371,42 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
             duration_ms,
         )
 
-        # In production, this should:
-        # await db.create_sync_history(
-        #     id=sync_id,
-        #     git_commit=git_commit,
-        #     sync_type=sync_type,
-        #     status=status,
-        #     changes_detected=changes_detected,
-        #     eggs_synced=eggs_synced,
-        #     jobs_synced=jobs_synced,
-        #     uf_config_synced=uf_config_synced,
-        #     error_message=error_message,
-        #     synced_at=datetime.utcnow(),
-        #     duration_ms=duration_ms
-        # )
+        try:
+            base_schema = get_ydb_schema()
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            table = SyncHistoryTableYDB(
+                values_for_operate=(
+                    sync_id,
+                    git_commit,
+                    sync_type,
+                    status.value,
+                    changes_detected,
+                    eggs_synced,
+                    jobs_synced,
+                    str(uf_config_synced).lower(),
+                    error_message or "",
+                    now_iso,
+                    duration_ms,
+                ),
+            )
+
+            model = RunnerModelYDB(tables=[table])
+            schema = YDBSchema(
+                config=base_schema.config,
+                model=model,
+                default_table=None,
+                version=get_ydb_schema().version,
+            )
+
+            connection = AsyncYDBOperations(
+                schema=schema,
+                operations_function=AsyncYDBFunctionsCollections.upsert_query,
+            )
+            await connection.process(table_name="sync_history")
+            logger.info("Sync history row written to YDB: %s", sync_id)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.error("Failed to write sync_history to YDB: %s", exc)
 
     def _cleanup_temp_dir(self) -> None:
         """Clean up temporary directory."""

@@ -1,0 +1,18 @@
+{
+	# caddy-cgi's init() already registers itself before respond; we confirm
+	# the order here to make the configuration intent explicit.
+	order cgi before respond
+}
+
+:8080 {
+	# Read-only matcher: all git smart/dumb HTTP read endpoints except push.
+	# git-receive-pack is intentionally excluded — this is a read-only seed repo.
+	@git_ro {
+		path     /nest.git/*
+		not path /nest.git/git-receive-pack
+	}
+
+	cgi @git_ro /usr/libexec/git-core/git-http-backend {
+		env GIT_PROJECT_ROOT=/git-repos GIT_HTTP_EXPORT_ALL=1
+	}
+}

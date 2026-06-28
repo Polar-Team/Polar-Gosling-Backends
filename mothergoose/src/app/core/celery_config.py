@@ -5,6 +5,7 @@ Configuration for Celery task queue and task routing.
 Supports both YMQ (Yandex Message Queue) and SQS (AWS Simple Queue Service) as brokers.
 """
 
+import json
 import os
 
 from kombu import Exchange, Queue
@@ -63,13 +64,53 @@ elif CLOUD_PROVIDER == "test":
     # Test environment - use memory broker
     BROKER_URL = os.getenv("MOTHERGOOSE_BROKER_URL", "memory://")
     BROKER_TRANSPORT_OPTIONS = {}
+elif CLOUD_PROVIDER == "localstack":
+    # LocalStack (local dev): SQS broker pointed at the in-stack LocalStack
+    # edge port. Credentials are the conventional LocalStack dummies (test/test).
+    # CELERY_BROKER_URL / CELERY_BROKER_TRANSPORT_OPTIONS can be overridden
+    # via environment to point at a different LocalStack or real SQS endpoint.
+    BROKER_URL = os.getenv("CELERY_BROKER_URL", "sqs://test:test@")
+    _transport_opts_env = os.getenv("CELERY_BROKER_TRANSPORT_OPTIONS")
+    if _transport_opts_env:
+        BROKER_TRANSPORT_OPTIONS = json.loads(_transport_opts_env)
+    else:
+        BROKER_TRANSPORT_OPTIONS = {
+            "region": os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+            "endpoint_url": "http://localstack:4566",
+            "predefined_queues": {
+                "mothergoose": {
+                    "url": "http://localstack:4566/000000000000/mothergoose",
+                },
+                "uglyfox": {
+                    "url": "http://localstack:4566/000000000000/uglyfox",
+                },
+            },
+        }
 else:
     logger.warning(
-        "Unknown cloud provider '%s'. Falling back to Redis broker for development.",
+        "Unknown cloud provider '%s'. Defaulting to LocalStack SQS broker for development.",
         CLOUD_PROVIDER,
     )
-    BROKER_URL = os.getenv("MOTHERGOOSE_BROKER_URL", "redis://localhost:6379/0")
-    BROKER_TRANSPORT_OPTIONS = {}
+    # Fall back to LocalStack SQS — Redis is no longer a default dependency.
+    # Override CELERY_BROKER_URL / CELERY_BROKER_TRANSPORT_OPTIONS in the
+    # environment to point at a different broker.
+    BROKER_URL = os.getenv("CELERY_BROKER_URL", "sqs://test:test@")
+    _transport_opts_env = os.getenv("CELERY_BROKER_TRANSPORT_OPTIONS")
+    if _transport_opts_env:
+        BROKER_TRANSPORT_OPTIONS = json.loads(_transport_opts_env)
+    else:
+        BROKER_TRANSPORT_OPTIONS = {
+            "region": os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+            "endpoint_url": "http://localstack:4566",
+            "predefined_queues": {
+                "mothergoose": {
+                    "url": "http://localstack:4566/000000000000/mothergoose",
+                },
+                "uglyfox": {
+                    "url": "http://localstack:4566/000000000000/uglyfox",
+                },
+            },
+        }
 
 # Result Backend Configuration
 # For serverless deployments, use SQS/YMQ as result backend
@@ -90,10 +131,9 @@ if RESULT_BACKEND_TYPE == "sqs":
             "sqs://",  # SQS result queue
         )
     else:
-        # Development fallback
-        CELERY_RESULT_BACKEND = os.getenv(
-            "MOTHERGOOSE_REDIS_URL", "redis://localhost:6379/1"
-        )
+        # localstack / unknown provider: SQS is a poor result backend.
+        # Disable results entirely for local dev — tasks use task_ignore_result.
+        CELERY_RESULT_BACKEND = None  # type: ignore[assignment]
 elif RESULT_BACKEND_TYPE == "redis":
     # Redis backend for development/testing only
     CELERY_RESULT_BACKEND = os.getenv(
@@ -151,12 +191,13 @@ CELERY_TASK_DEFAULT_QUEUE = "default"
 CELERY_TASK_DEFAULT_EXCHANGE = "mothergoose"
 CELERY_TASK_DEFAULT_ROUTING_KEY = "default"
 
-# Define exchanges
-default_exchange = Exchange("mothergoose", type="topic", durable=True)
+# Use 'direct' exchange type — compatible with both AMQP and SQS brokers.
+# SQS ignores exchange semantics but doesn't error on 'direct' declarations.
+default_exchange = Exchange("mothergoose", type="direct", durable=True)
 
-# Define queues with priorities
+# Define queues with priorities (SQS ignores priority/routing_key but Celery
+# still uses queue names for routing, which SQS maps to actual SQS queues).
 CELERY_TASK_QUEUES = (
-    # Default queue for general tasks
     Queue(
         "default",
         exchange=default_exchange,
@@ -164,7 +205,6 @@ CELERY_TASK_QUEUES = (
         priority=5,
         queue_arguments={"x-max-priority": 10},
     ),
-    # High priority queue for urgent tasks (webhook processing, runner deployment)
     Queue(
         "high-priority",
         exchange=default_exchange,
@@ -172,7 +212,6 @@ CELERY_TASK_QUEUES = (
         priority=10,
         queue_arguments={"x-max-priority": 10},
     ),
-    # Git sync queue for periodic repository synchronization
     Queue(
         "git-sync",
         exchange=default_exchange,
@@ -180,7 +219,6 @@ CELERY_TASK_QUEUES = (
         priority=7,
         queue_arguments={"x-max-priority": 10},
     ),
-    # Low priority queue for background maintenance tasks
     Queue(
         "low-priority",
         exchange=default_exchange,
@@ -188,18 +226,27 @@ CELERY_TASK_QUEUES = (
         priority=3,
         queue_arguments={"x-max-priority": 10},
     ),
+    Queue(
+        "mothergoose",
+        exchange=default_exchange,
+        routing_key="task.mothergoose",
+        priority=5,
+    ),
+    Queue(
+        "uglyfox",
+        exchange=default_exchange,
+        routing_key="task.uglyfox",
+        priority=5,
+    ),
 )
 
 # Task routing rules
-# Maps task names to queues and routing keys
 CELERY_TASK_ROUTES = {
-    # Webhook processing - high priority
     "app.tasks.webhooks.process_webhook": {
         "queue": "high-priority",
         "routing_key": "task.high",
         "priority": 10,
     },
-    # Runner deployment - high priority
     "app.tasks.runners.deploy_runner": {
         "queue": "high-priority",
         "routing_key": "task.high",
@@ -210,13 +257,11 @@ CELERY_TASK_ROUTES = {
         "routing_key": "task.high",
         "priority": 9,
     },
-    # Git sync - dedicated queue
     "app.tasks.git_sync.sync_nest_config": {
         "queue": "git-sync",
         "routing_key": "task.git-sync",
         "priority": 7,
     },
-    # Background maintenance - low priority
     "app.tasks.maintenance.cleanup_old_results": {
         "queue": "low-priority",
         "routing_key": "task.low",
@@ -243,7 +288,7 @@ CELERY_WORKER_TASK_LOG_FORMAT = (
 # Monitoring and Logging
 CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_TASK_SEND_SENT_EVENT = True
-CELERY_TASK_IGNORE_RESULT = False
+CELERY_TASK_IGNORE_RESULT = True
 
 # Security
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
@@ -261,3 +306,14 @@ logger.info(
     "Broker URL: %s", BROKER_URL.split("@")[0] if "@" in BROKER_URL else BROKER_URL
 )
 logger.info("Result backend: %s", RESULT_BACKEND_TYPE)
+
+# ---------------------------------------------------------------------------
+# Celery namespace-compatible aliases
+#
+# `celery_app.config_from_object(celery_config, namespace="CELERY")` strips
+# the `CELERY_` prefix and lowercases the remainder to build Celery settings.
+# The variables above (BROKER_URL, BROKER_TRANSPORT_OPTIONS) do not carry the
+# prefix, so Celery never sees them. These aliases bridge the gap.
+# ---------------------------------------------------------------------------
+CELERY_BROKER_URL = BROKER_URL
+CELERY_BROKER_TRANSPORT_OPTIONS = BROKER_TRANSPORT_OPTIONS

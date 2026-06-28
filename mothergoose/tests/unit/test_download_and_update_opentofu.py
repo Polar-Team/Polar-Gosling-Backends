@@ -161,7 +161,7 @@ def ydb_schema(ydb_container) -> YDBSchema:
 
 @pytest.fixture(scope="module", name="inst_download")
 def inst_download():
-    client = TestOpenTofuDownloadGithub(version="1.10.3")
+    client = TestOpenTofuDownloadGithub(version="1.11.3")
     yield client
 
 
@@ -171,7 +171,7 @@ def test_tofu_get_download_get_downlload_url(inst_download):
     if download_url := inst_download.tests_get_download_url():
         assert isinstance(download_url, str)
         assert download_url.startswith(
-            "https://github.com/opentofu/opentofu/releases/download/v1.10.3/"
+            "https://github.com/opentofu/opentofu/releases/download/v1.11.3/"
         )
     else:
         assert False, "Download URL is not generated correctly."
@@ -179,21 +179,23 @@ def test_tofu_get_download_get_downlload_url(inst_download):
 
 @pytest.mark.dependency(depends=["test_tofu_get_download_get_downlload_url"])
 def test_tofu_get_download_and_extract(inst_download):
-    if files := inst_download.tests_download_and_extract():
-        assert isinstance(files, list)
-        assert len(files) > 0
+    if file := inst_download.tests_download_and_extract():
+        assert isinstance(file, list)
+        assert len(file) > 0
     else:
-        pytest.skip("GitHub API unavailable (rate limit or network error) — skipping download test.")
+        raise AssertionError(
+            "Github API rate limit or network error — skipping test gracefully."
+        )
 
 
 @pytest.mark.dependency(depends=["test_tofu_get_download_and_extract"])
 def test_tofu_download_different_version_and_check_property(inst_download):
-    new_instance = TestOpenTofuDownloadGithub(version="1.10.4")
+    new_instance = TestOpenTofuDownloadGithub(version="1.11.4")
 
     if files := new_instance.tests_download_and_extract():
         assert inst_download._github_sha256_hash_of_bundle == {
-            "1.10.3": inst_download._github_sha256_hash_of_bundle["1.10.3"],
-            "1.10.4": inst_download._github_sha256_hash_of_bundle["1.10.4"],
+            "1.11.3": inst_download._github_sha256_hash_of_bundle["1.11.3"],
+            "1.11.4": inst_download._github_sha256_hash_of_bundle["1.11.4"],
         }
         assert (
             new_instance.get_packages_sha256_hash
@@ -212,7 +214,7 @@ def test_store_downloaded_bin(inst_download):
     inst_download.install_dir = tempfile.mkdtemp(prefix="opentofu_test_")
     inst_download.tests_store_downloaded_bin()
 
-    inst2_download = TestOpenTofuDownloadGithub(version="1.10.4")
+    inst2_download = TestOpenTofuDownloadGithub(version="1.11.4")
     inst2_download.install_dir = inst_download.install_dir
     inst2_download.tests_store_downloaded_bin()
 
@@ -223,27 +225,27 @@ def test_store_downloaded_bin(inst_download):
     assert isinstance(binaries_list[1], OpenTofuBinFileInfo), (
         "Second item in binaries list is not instance of OpenTofuBinFileInfo."
     )
-    assert binaries_list[0].bin_version == "1.10.3", (
+    assert binaries_list[0].bin_version == "1.11.3", (
         "Version of first binary is not correct."
     )
-    assert binaries_list[1].bin_version == "1.10.4", (
+    assert binaries_list[1].bin_version == "1.11.4", (
         "Version of second binary is not correct."
     )
 
-    hash_10_3 = inst_download.get_packages_sha256_hash["1.10.3"]
-    hash_10_4 = inst_download.get_packages_sha256_hash["1.10.4"]
+    hash_10_3 = inst_download.get_packages_sha256_hash["1.11.3"]
+    hash_10_4 = inst_download.get_packages_sha256_hash["1.11.4"]
     assert binaries_list[0].bin_sha256 == hash_10_3, (
-        "SHA256 hash of version 1.10.3 is not correct."
+        "SHA256 hash of version 1.11.3 is not correct."
     )
     assert binaries_list[1].bin_sha256 == hash_10_4, (
-        "SHA256 hash of version 1.10.4 is not correct."
+        "SHA256 hash of version 1.11.4 is not correct."
     )
     assert binaries_list[0].bin_url.startswith(
-        "https://github.com/opentofu/opentofu/releases/download/v1.10.3"
-    ), "Url of version v1.10.3 is not correct."
+        "https://github.com/opentofu/opentofu/releases/download/v1.11.3"
+    ), "Url of version v1.11.3 is not correct."
     assert binaries_list[1].bin_url.startswith(
-        "https://github.com/opentofu/opentofu/releases/download/v1.10.4"
-    ), "Url of version v1.10.4 is not correct."
+        "https://github.com/opentofu/opentofu/releases/download/v1.11.4"
+    ), "Url of version v1.11.4 is not correct."
 
 
 @pytest.fixture(scope="module", name="inst_other")
@@ -252,7 +254,7 @@ def test_tofu_get_download_and_extract_from_other_source(mock_server_url):
 
     url, token = mock_server_url
     client = TestOpenTofuDownloadFromOtherSource(
-        version="1.10.4",
+        version="1.11.4",
         url=url,
         hash_sha256=binaries_list[1].bin_sha256,
     )
@@ -266,10 +268,10 @@ def test_tofu_get_download_and_extract_from_other_source(mock_server_url):
 def test_tofu_download_and_extract_other(inst_other, mock_server_url):
     if (system := platform.system().lower()) == "linux":
         arch = "amd64" if platform.machine().lower() in ("x86_64", "amd64") else "arm64"
-        dpath = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
+        dpath = f"v1.11.4/tofu_1.11.4_{system}_{arch}.tar.gz"
     else:
         arch = "amd64"
-        dpath = f"v1.10.4/tofu_1.10.4_{system}_{arch}.zip"
+        dpath = f"v1.11.4/tofu_1.11.4_{system}_{arch}.zip"
 
     response = requests.get(
         f"https://github.com/opentofu/opentofu/releases/download/{dpath}"
@@ -296,28 +298,28 @@ def test_tofu_download_and_extract_other(inst_other, mock_server_url):
         assert isinstance(blist[0], OpenTofuBinFileInfo), (
             "First item in binaries list is not inst of OpenTofuBinFileInfo."
         )
-        assert blist[0].bin_version == "1.10.4", (
+        assert blist[0].bin_version == "1.11.4", (
             "Version of first binary is not correct."
         )
         hash_10_4 = binaries_list[1].bin_sha256
         assert blist[0].bin_sha256 == hash_10_4, (
-            "SHA256 hash of version 1.10.4 is not correct."
+            "SHA256 hash of version 1.11.4 is not correct."
         )
-        assert blist[0].bin_url == url, "Url of version 1.10.4 is not correct."
+        assert blist[0].bin_url == url, "Url of version 1.11.4 is not correct."
 
 
 @pytest.mark.dependency(depends=["test_tofu_download_and_extract_other"])
 def test_tofu_store_downloaded_bin_other(inst_other, mock_server_url):
     if (system := platform.system().lower()) == "linux":
         arch = "amd64" if platform.machine().lower() in ("x86_64", "amd64") else "arm64"
-        dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
-        url_new = "https://mockserver.com/1.10.6/tofu.tar.gz"
-        binhash = "b6b46b4fd8dd0b96e624f2a2d5fbc4efae2fc0174529b37292775c847c2e7d2c"
+        dpath = f"v1.11.6/tofu_1.11.6_{system}_{arch}.tar.gz"
+        url_new = "https://mockserver.com/1.11.6/tofu.tar.gz"
+        binhash = "02800fafa2753a9f50c38483e2fdf5bc353fd62895eb9e25eec9a5145df3a69e"
     else:
         arch = "amd64"
-        dpath = f"v1.10.6/tofu_1.10.6_{system}_{arch}.zip"
-        url_new = "https://mockserver.com/1.10.6/tofu.zip"
-        binhash = "e8c475a6b13ac7a01ff53f1d2f55b103f2086e8454133580404f338b5a1ebaed"
+        dpath = f"v1.11.6/tofu_1.11.6_{system}_{arch}.zip"
+        url_new = "https://mockserver.com/1.11.6/tofu.zip"
+        binhash = "78cc3a836fbaeaee829850c16988739225a7e620827e4d33da7353525276583b"
 
     response = requests.get(
         f"https://github.com/opentofu/opentofu/releases/download/{dpath}"
@@ -325,9 +327,9 @@ def test_tofu_store_downloaded_bin_other(inst_other, mock_server_url):
     _, token = mock_server_url
 
     inst_other.url = url_new
-    inst_other.version = "1.10.6"
+    inst_other.version = "1.11.6"
     inst_other._bin_files_info.append(
-        OpenTofuBinFileInfo(bin_version="1.10.6", bin_url=url_new, bin_sha256=binhash)
+        OpenTofuBinFileInfo(bin_version="1.11.6", bin_url=url_new, bin_sha256=binhash)
     )
     with requests_mock.Mocker() as m:
         m.get(
@@ -342,7 +344,7 @@ def test_tofu_store_downloaded_bin_other(inst_other, mock_server_url):
         assert isinstance(blist[2], OpenTofuBinFileInfo), (
             "First item in binaries list is not inst of OpenTofuBinFileInfo."
         )
-        assert blist[2].bin_version == "1.10.6", (
+        assert blist[2].bin_version == "1.11.6", (
             "Version of first binary is not correct."
         )
 
@@ -440,26 +442,26 @@ def test_auth_types_invalid(token, bearer, auth_header):
 async def test_opentofu_update_other(ydb_schema):
     if (system := platform.system().lower()) == "linux":
         arch = "amd64" if platform.machine().lower() in ("x86_64", "amd64") else "arm64"
-        dpath_1 = f"v1.10.6/tofu_1.10.6_{system}_{arch}.tar.gz"
-        dpath_2 = f"v1.10.5/tofu_1.10.5_{system}_{arch}.tar.gz"
-        dpath_3 = f"v1.10.4/tofu_1.10.4_{system}_{arch}.tar.gz"
-        url_first = "https://mockserver.com/1.10.4/tofu.tar.gz"
-        hashsum1 = "d9c4e4486d16b7d584494c2f9e926b00be9be60796705f40b6262effa5a83db3"
-        url_second = "https://mockserver.com/1.10.5/tofu.tar.gz"
-        hashsum2 = "b06f7eda97d297cce03bef3697ebb0dc5786a10dd2188bde1cad6f8fe7e1e2f6"
-        url_third = "https://mockserver.com/1.10.6/tofu.tar.gz"
-        hashsum3 = "b6b46b4fd8dd0b96e624f2a2d5fbc4efae2fc0174529b37292775c847c2e7d2c"
+        dpath_1 = f"v1.11.6/tofu_1.11.6_{system}_{arch}.tar.gz"
+        dpath_2 = f"v1.11.5/tofu_1.11.5_{system}_{arch}.tar.gz"
+        dpath_3 = f"v1.11.4/tofu_1.11.4_{system}_{arch}.tar.gz"
+        url_first = "https://mockserver.com/1.11.4/tofu.tar.gz"
+        hashsum1 = "0d744081951095c3e54fd4f0af5c48491ec03116ab02f1ad5ca4ed60d3b60efd"
+        url_second = "https://mockserver.com/1.11.5/tofu.tar.gz"
+        hashsum2 = "e73868ab8abaca15d3c974dcf6a5e878860d6f2212867433aa3d8f2b43a492d9"
+        url_third = "https://mockserver.com/1.11.6/tofu.tar.gz"
+        hashsum3 = "02800fafa2753a9f50c38483e2fdf5bc353fd62895eb9e25eec9a5145df3a69e"
     else:
         arch = "amd64"
-        dpath_1 = f"v1.10.6/tofu_1.10.6_{system}_{arch}.zip"
-        dpath_2 = f"v1.10.5/tofu_1.10.5_{system}_{arch}.zip"
-        dpath_3 = f"v1.10.4/tofu_1.10.4_{system}_{arch}.zip"
-        url_first = "https://mockserver.com/1.10.4/tofu.zip"
-        hashsum1 = "88d0ab0a240039816d487625bde4152e64b8dcc3ba53b985fbdf9458cbee7fe2"
-        url_second = "https://mockserver.com/1.10.5/tofu.zip"
-        hashsum2 = "54dfe6b4b2d4d4d4c2f56870b6e02a433b2f059b3408177092610aa8fd0dcdf0"
-        url_third = "https://mockserver.com/1.10.6/tofu.zip"
-        hashsum3 = "e8c475a6b13ac7a01ff53f1d2f55b103f2086e8454133580404f338b5a1ebaed"
+        dpath_1 = f"v1.11.6/tofu_1.11.6_{system}_{arch}.zip"
+        dpath_2 = f"v1.11.5/tofu_1.11.5_{system}_{arch}.zip"
+        dpath_3 = f"v1.11.4/tofu_1.11.4_{system}_{arch}.zip"
+        url_first = "https://mockserver.com/1.11.4/tofu.zip"
+        hashsum1 = "7a2fe84de33edd4fe326b25a39c5d25886f7a94336c0148499c95f188b84872a"
+        url_second = "https://mockserver.com/1.11.5/tofu.zip"
+        hashsum2 = "74a99d9681a7d55e72e14a57621d857190e2b642fd552b5c914c609b79e27d05"
+        url_third = "https://mockserver.com/1.11.6/tofu.zip"
+        hashsum3 = "78cc3a836fbaeaee829850c16988739225a7e620827e4d33da7353525276583b"
 
     response_first = requests.get(
         f"https://github.com/opentofu/opentofu/releases/download/{dpath_3}"
@@ -472,10 +474,10 @@ async def test_opentofu_update_other(ydb_schema):
         ydb_schema,
         files=[
             OpenTofuBinFileInfo(
-                bin_version="1.10.4", bin_url=url_first, bin_sha256=hashsum1
+                bin_version="1.11.4", bin_url=url_first, bin_sha256=hashsum1
             ),
             OpenTofuBinFileInfo(
-                bin_version="1.10.5", bin_url=url_second, bin_sha256=hashsum2
+                bin_version="1.11.5", bin_url=url_second, bin_sha256=hashsum2
             ),
         ],
         install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
@@ -488,7 +490,7 @@ async def test_opentofu_update_other(ydb_schema):
         await updater_1.start_update()
         await updater_1.sync_version()
 
-    assert updater_1.c_version[1] == "1.10.5", (
+    assert updater_1.c_version[1] == "1.11.5", (
         "Rollback to previous version did not work."
     )
 
@@ -500,7 +502,7 @@ async def test_opentofu_update_other(ydb_schema):
         ydb_schema,
         files=[
             OpenTofuBinFileInfo(
-                bin_version="1.10.6", bin_url=url_third, bin_sha256=hashsum3
+                bin_version="1.11.6", bin_url=url_third, bin_sha256=hashsum3
             )
         ],
         install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),
@@ -515,21 +517,21 @@ async def test_opentofu_update_other(ydb_schema):
         )
         await updater_2.sync_version()
 
-    assert updater_2.c_version[1] == "1.10.6", (
-        f"updater_2 should have updated to 1.10.6, but got {updater_2.c_version[1]}"
+    assert updater_2.c_version[1] == "1.11.6", (
+        f"updater_2 should have updated to 1.11.6, but got {updater_2.c_version[1]}"
     )
 
     checker = OpenTofuUpdateOtherSource(
         ydb_schema,
         files=[
             OpenTofuBinFileInfo(
-                bin_version="1.10.6", bin_url=url_third, bin_sha256=hashsum3
+                bin_version="1.11.6", bin_url=url_third, bin_sha256=hashsum3
             ),
             OpenTofuBinFileInfo(
-                bin_version="1.10.5", bin_url=url_second, bin_sha256=hashsum2
+                bin_version="1.11.5", bin_url=url_second, bin_sha256=hashsum2
             ),
             OpenTofuBinFileInfo(
-                bin_version="1.10.4", bin_url=url_first, bin_sha256=hashsum1
+                bin_version="1.11.4", bin_url=url_first, bin_sha256=hashsum1
             ),
         ],
         install_dir=tempfile.mkdtemp(prefix="opentofu_test_"),

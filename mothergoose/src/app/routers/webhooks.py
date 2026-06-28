@@ -84,7 +84,7 @@ async def handle_gitlab_webhook(
             logger.info("Test endpoint url for localstack.")
             endpoint_url = os.getenv("LOCALSTACK_URL")
         else:
-            endpoint_url = None
+            endpoint_url = os.getenv("AWS_ENDPOINT_URL")
 
         # Determine if this is a Nest repository webhook
         is_nest_webhook = await _is_nest_repository_webhook(webhook)

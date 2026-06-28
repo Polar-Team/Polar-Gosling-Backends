@@ -1,0 +1,87 @@
+# Dockerfile for MotherGoose Backend
+# Multi-stage UV-optimized build for production
+# Supports multi-platform: linux/amd64, linux/arm64
+
+# ---------------------------------------------------------------------------
+# Stage 1: Build — install dependencies in an isolated venv using uv
+# ---------------------------------------------------------------------------
+FROM ghcr.io/astral-sh/uv:0.11-python3.13-trixie-slim AS builder
+
+WORKDIR /app
+
+# Enable bytecode compilation for faster cold-start
+ENV UV_COMPILE_BYTECODE=1 \
+  UV_LINK_MODE=copy
+
+# Install system build dependencies (grpcio, gitpython, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  build-essential \
+  git \
+  && rm -rf /var/lib/apt/lists/*
+
+# Copy dependency manifests first — maximises Docker layer cache hits
+COPY mothergoose/pyproject.toml mothergoose/uv.lock ./
+
+# Install production dependencies only (no dev/test/format/style/type groups)
+# --no-install-project: skip installing the project itself (source not copied yet)
+# --frozen: respect the lockfile exactly
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv sync --frozen --no-install-project --no-dev
+
+# Copy application source and install the project
+COPY mothergoose/src ./src
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv sync --frozen --no-dev
+
+# ---------------------------------------------------------------------------
+# Stage 2: Runtime — minimal production image
+# ---------------------------------------------------------------------------
+FROM python:3.13-slim-trixie AS runtime
+
+WORKDIR /app
+
+# Install only the runtime system packages we need
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates \
+  curl \
+  git \
+  procps \
+  tini \
+  && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -g 1000 mothergoose && \
+  useradd -m -u 1000 -g mothergoose mothergoose && \
+  chown -R mothergoose:mothergoose /app
+
+# Copy the pre-built virtual environment from builder
+COPY --from=builder --chown=mothergoose:mothergoose /app/.venv /app/.venv
+
+# Copy application source
+COPY --chown=mothergoose:mothergoose mothergoose/src /app/src
+COPY --chown=mothergoose:mothergoose mothergoose/pyproject.toml /app/
+
+# Put the venv on PATH so `python`, `uvicorn`, `celery` resolve correctly
+ENV PATH="/app/.venv/bin:$PATH" \
+  PYTHONUNBUFFERED=1 \
+  PYTHONDONTWRITEBYTECODE=1 \
+  MOTHERGOOSE_ENVIRONMENT=production
+
+# Switch to non-root user
+USER mothergoose
+
+# Health check — FastAPI /health endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
+
+EXPOSE 8000
+
+# Use tini as PID 1 for proper signal handling
+ENTRYPOINT ["tini", "--"]
+
+# Default: run the FastAPI application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# Override examples:
+#   Celery worker:  celery -A app.celery_worker worker --loglevel=info -Q mothergoose
+#   Celery beat:    celery -A app.celery_worker beat --loglevel=info

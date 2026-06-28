@@ -1,0 +1,18 @@
+[
+  {
+    "id": "sample-egg",
+    "name": "sample-egg",
+    "project_id": 12345,
+    "group_id": 0,
+    "config": {
+      "cloud": "aws",
+      "region": "us-east-1",
+      "runner_type": "serverless",
+      "tags": ["sample", "cloud-stack"]
+    },
+    "git_commit": "0000000000000000000000000000000000000000",
+    "git_repo_url_secret": "aws-sm://pg-stack/nest_git_url",
+    "gitlab_token_secret_uri": "aws-sm://pg-stack/gitlab_token",
+    "gitlab_webhook_secret_uri": "aws-sm://pg-stack/webhook_secret"
+  }
+]

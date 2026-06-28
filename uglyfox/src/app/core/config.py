@@ -4,10 +4,11 @@ This module handles environment-based configuration for UglyFox,
 including database connections, message queue settings, and cloud provider configuration.
 """
 
+import json
 import os
 from typing import Literal, Optional
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +17,8 @@ class UglyFoxSettings(BaseSettings):
 
     Configuration is loaded from environment variables with the prefix UGLYFOX_.
     """
+
+    # pylint: disable=no-member
 
     model_config = SettingsConfigDict(
         env_prefix="UGLYFOX_",
@@ -47,14 +50,34 @@ class UglyFoxSettings(BaseSettings):
 
     # Message queue configuration
     message_queue_type: Literal["ymq", "sqs", "redis"] = Field(
-        default="redis", description="Message queue backend type"
+        default="sqs", description="Message queue backend type"
     )
     celery_broker_url: str = Field(
-        default="redis://localhost:6379/0",
-        description="Celery broker URL (YMQ/SQS/Redis)",
+        default="sqs://test:test@",
+        # Also accept the unprefixed CELERY_BROKER_URL set by compose so that
+        # the same env var works for both MG and UF without a service-specific prefix.
+        validation_alias=AliasChoices("CELERY_BROKER_URL", "UGLYFOX_CELERY_BROKER_URL"),
+        description="Celery broker URL (YMQ/SQS/LocalStack). "
+        "Set CELERY_BROKER_URL=sqs://test:test@ for LocalStack dev.",
     )
     celery_result_backend: Optional[str] = Field(
-        default=None, description="Celery result backend URL"
+        default=None,
+        description=(
+            "Celery result backend URL. Defaults to None (results disabled) "
+            "since SQS is not a suitable result backend."
+        ),
+    )
+    # JSON-encoded broker transport options forwarded directly to Celery/kombu.
+    # For LocalStack SQS, compose sets CELERY_BROKER_TRANSPORT_OPTIONS.
+    # validation_alias bypasses the UGLYFOX_ prefix so compose can share one
+    # variable across both services.
+    celery_broker_transport_options: Optional[str] = Field(
+        default=None,
+        validation_alias="CELERY_BROKER_TRANSPORT_OPTIONS",
+        description=(
+            "JSON string of kombu SQS transport options "
+            "(region, endpoint_url, predefined_queues, …)."
+        ),
     )
 
     # Cloud provider configuration
@@ -137,6 +160,29 @@ class UglyFoxSettings(BaseSettings):
             },
         }
 
+        # Broker transport options — required for SQS/LocalStack to set region
+        # and endpoint_url.  Prefer the JSON from env; fall back to a sensible
+        # LocalStack-dev default so the worker starts without extra env vars.
+        if self.celery_broker_transport_options:
+            config["broker_transport_options"] = json.loads(
+                self.celery_broker_transport_options
+            )
+        elif self.celery_broker_url.startswith("sqs://"):
+            config["broker_transport_options"] = {
+                "region": os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+                "endpoint_url": "http://localstack:4566",
+                "predefined_queues": {
+                    self.uglyfox_queue_name: {
+                        "url": (
+                            f"http://localstack:4566/000000000000/"
+                            f"{self.uglyfox_queue_name}"
+                        ),
+                    },
+                },
+            }
+
+        # SQS is not a suitable result backend; omit the key entirely so Celery
+        # uses its default (no backend).  Explicit opt-in via celery_result_backend.
         if self.celery_result_backend:
             config["result_backend"] = self.celery_result_backend
 

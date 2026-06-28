@@ -53,7 +53,11 @@ class FlyParser:
             if manager.active_binary_path:
                 return manager.active_binary_path
 
-        except (RuntimeError, ImportError):
+        except (
+            RuntimeError,
+            ImportError,
+            AttributeError,
+        ):  # pylint: disable=broad-except
             # Manager not initialized or not available, fall back to env var
             pass
 

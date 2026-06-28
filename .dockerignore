@@ -1,0 +1,102 @@
+# .dockerignore — Polar-Gosling-Backends repo root
+#
+# The `seed` service build context is the entire repo root (`../` relative to
+# compose/). This file restricts what Docker sends to the daemon so that only
+# the paths actually referenced by compose/seed/Dockerfile are included:
+#
+#   FROM  pg-stack/mothergoose          (pre-built image, no COPY needed)
+#   COPY  compose/seed/seed.py          /app/seed.py
+#   COPY  compose/seed/fixtures/        /app/fixtures/
+#
+# The nest-git build context is compose/ (not the repo root), so this file
+# does not affect that build.
+
+# ---------------------------------------------------------------------------
+# Exclude everything by default, then whitelist what each Dockerfile needs.
+# ---------------------------------------------------------------------------
+*
+
+# Keep top-level Dockerfiles accessible (Dockerfile.mtg, Dockerfile.uf, etc.)
+!Dockerfile.*
+
+# Keep MotherGoose service sources (needed by Dockerfile.mtg)
+!mothergoose/pyproject.toml
+!mothergoose/uv.lock
+!mothergoose/src/
+
+# Keep UglyFox service sources (needed by Dockerfile.uf)
+!uglyfox/pyproject.toml
+!uglyfox/uv.lock
+!uglyfox/src/
+
+# Keep the seed service sources
+!compose/
+compose/*
+!compose/seed/
+compose/seed/*
+!compose/seed/Dockerfile
+!compose/seed/seed.py
+!compose/seed/fixtures/
+compose/seed/fixtures/*
+!compose/seed/fixtures/*.json
+!compose/seed/fixtures/.gitkeep
+!compose/seed/artifacts/
+compose/seed/artifacts/*
+!compose/seed/artifacts/.gitkeep
+
+# Keep nest-git build sources (context is compose/, but allow the directory)
+!compose/nest-git/
+!compose/nest/
+!compose/nest-git/Dockerfile
+
+# ---------------------------------------------------------------------------
+# Explicit denials — belt-and-suspenders for the wildcard above.
+# These would already be excluded by `*` but are listed for clarity.
+# ---------------------------------------------------------------------------
+
+# Version control
+.git/
+.gitmodules
+
+# Python artefacts
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.venv*/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Type / test caches
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
+
+# Node
+node_modules/
+.npm/
+
+# Lock files (large, not needed in image)
+uv.lock
+poetry.lock
+package-lock.json
+yarn.lock
+
+# CI / editor artefacts
+.github/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test directories at repo root
+tests/
+test/
+
+# Compiled assets / coverage
+htmlcov/
+.coverage
+coverage.xml
+*.log

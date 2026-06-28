@@ -236,20 +236,6 @@ endef
 .PHONY: compose-up compose-down compose-reset compose-logs compose-ps compose-smoke compose-clean compose-seed compose-config compose-check
 
 # ------------------------------------------------------------------------------
-# compose-up: Start Cloud_Stack in detached mode, wait for healthy (180s max).
-# On failure, reports mothergoose-api's last observed health status.
-# Requirements: 10.1, 10.2, 14.1, 14.2
-# ------------------------------------------------------------------------------
-compose-up:
-	$(_preflight)
-	@echo "Starting Cloud Stack (detached, waiting up to 180s for healthy)..."
-	$(COMPOSE) $(PROFILES_UP) up -d --wait --wait-timeout 180 || \
-		{ \
-			echo "ERROR: compose-up failed. mothergoose-api last health: $$(docker inspect --format='{{.State.Health.Status}}' pg-stack-mothergoose-api 2>/dev/null || echo 'unknown')"; \
-			exit 1; \
-		}
-
-# ------------------------------------------------------------------------------
 # compose-down: Stop and remove containers, preserve volumes.
 # Requirements: 10.3, 14.3
 # ------------------------------------------------------------------------------

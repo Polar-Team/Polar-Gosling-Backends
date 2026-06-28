@@ -396,6 +396,7 @@ class GitSyncService:  # pylint: disable=too-few-public-methods
                 config=base_schema.config,
                 model=model,
                 default_table=None,
+                version=get_ydb_schema().version,
             )
 
             connection = AsyncYDBOperations(

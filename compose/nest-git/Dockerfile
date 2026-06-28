@@ -26,7 +26,7 @@ COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 USER root
 
 RUN mkdir -p /git-repos && \
-    git init --bare /git-repos/nest.git
+  git init --bare /git-repos/nest.git
 
 # Seed the bare repo from the nest source tree
 # Build context is compose/, so 'nest/' maps to compose/nest/

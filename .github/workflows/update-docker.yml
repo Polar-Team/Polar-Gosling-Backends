@@ -1,0 +1,275 @@
+name: Scheduled Dockerfile Updater
+
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Every Monday at 8:00 AM UTC
+  workflow_dispatch:
+
+env:
+  # Base images used in Dockerfiles — single source of truth for version queries
+  BUILDER_IMAGE: "ghcr.io/astral-sh/uv:0.11-python3.13-trixie-slim"
+  RUNTIME_IMAGE: "python:3.13-slim-trixie"
+
+  # Packages per Dockerfile stage
+  # Dockerfile.mtg builder
+  MTG_BUILD_PACKAGES: "build-essential git"
+  # Dockerfile.mtg runtime
+  MTG_RUNTIME_PACKAGES: "ca-certificates curl git procps tini"
+  # Dockerfile.uf builder
+  UF_BUILD_PACKAGES: "build-essential git"
+  # Dockerfile.uf runtime
+  UF_RUNTIME_PACKAGES: "ca-certificates procps tini"
+
+jobs:
+  dockerfile-update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # ── Step 1: Resolve latest versions from upstream ──────────────────────
+
+      - name: Resolve latest versions for Dockerfile.mtg and Dockerfile.uf
+        id: versions
+        run: |
+          set -euo pipefail
+
+          # Helper: query apt-cache inside a container and return "package=version" lines
+          resolve_versions() {
+            local image="$1"
+            shift
+            local packages=("$@")
+
+            docker run --rm "${image}" bash -c "
+              apt-get update -qq >/dev/null 2>&1
+              for pkg in ${packages[*]}; do
+                version=\$(apt-cache policy \"\$pkg\" | grep 'Candidate:' | awk '{print \$2}')
+                echo \"\${pkg}=\${version}\"
+              done
+            "
+          }
+
+          echo "::group::Resolving builder image versions"
+          echo "Image: ${BUILDER_IMAGE}"
+
+          # MTG and UF currently share the same build-stage packages. Resolve the
+          # union once against BUILDER_IMAGE — stays correct (and still a single
+          # docker run) even if the two lists diverge later.
+          build_packages_union=$(printf '%s\n' ${MTG_BUILD_PACKAGES} ${UF_BUILD_PACKAGES} | sort -u | tr '\n' ' ')
+          mapfile -t build_resolved < <(resolve_versions "${BUILDER_IMAGE}" ${build_packages_union})
+          for line in "${build_resolved[@]}"; do
+            echo "  ${line}"
+          done
+          echo "::endgroup::"
+
+          echo "::group::Resolving runtime image versions"
+          echo "Image: ${RUNTIME_IMAGE}"
+
+          # UF's runtime packages are a subset of MTG's. Resolve the union once
+          # against RUNTIME_IMAGE instead of running apt-cache twice for the same image.
+          runtime_packages_union=$(printf '%s\n' ${MTG_RUNTIME_PACKAGES} ${UF_RUNTIME_PACKAGES} | sort -u | tr '\n' ' ')
+          mapfile -t runtime_resolved < <(resolve_versions "${RUNTIME_IMAGE}" ${runtime_packages_union})
+          for line in "${runtime_resolved[@]}"; do
+            echo "  ${line}"
+          done
+          echo "::endgroup::"
+
+          # Parse resolved arrays into individual outputs
+          # Format: package=version → extract version by cutting on '='
+          extract_version() {
+            local pkg="$1"
+            shift
+            local lines=("$@")
+            for line in "${lines[@]}"; do
+              if [[ "${line}" == "${pkg}="* ]]; then
+                echo "${line#*=}"
+                return
+              fi
+            done
+            echo "NOTFOUND"
+          }
+
+          # MTG builder (resolved from the shared build_resolved array)
+          mtg_build_essential=$(extract_version "build-essential" "${build_resolved[@]}")
+          mtg_git_build=$(extract_version "git" "${build_resolved[@]}")
+
+          # MTG runtime (resolved from the shared runtime_resolved array)
+          mtg_ca_certificates=$(extract_version "ca-certificates" "${runtime_resolved[@]}")
+          mtg_curl=$(extract_version "curl" "${runtime_resolved[@]}")
+          mtg_git_runtime=$(extract_version "git" "${runtime_resolved[@]}")
+          mtg_procps=$(extract_version "procps" "${runtime_resolved[@]}")
+          mtg_tini=$(extract_version "tini" "${runtime_resolved[@]}")
+
+          # UF builder (same resolved array — no separate docker run)
+          uf_build_essential=$(extract_version "build-essential" "${build_resolved[@]}")
+          uf_git_build=$(extract_version "git" "${build_resolved[@]}")
+
+          # UF runtime (same resolved array — no separate docker run)
+          uf_ca_certificates=$(extract_version "ca-certificates" "${runtime_resolved[@]}")
+          uf_procps=$(extract_version "procps" "${runtime_resolved[@]}")
+          uf_tini=$(extract_version "tini" "${runtime_resolved[@]}")
+
+          # Fail fast if any version was not found
+          for var in mtg_build_essential mtg_git_build mtg_ca_certificates mtg_curl \
+                     mtg_git_runtime mtg_procps mtg_tini uf_build_essential \
+                     uf_git_build uf_ca_certificates uf_procps uf_tini; do
+            if [[ "${!var}" == "NOTFOUND" ]]; then
+              echo "::error::Failed to resolve version for: ${var}"
+              exit 1
+            fi
+          done
+
+          # Export to GITHUB_OUTPUT
+          {
+            echo "mtg_build_essential=${mtg_build_essential}"
+            echo "mtg_git_build=${mtg_git_build}"
+            echo "mtg_ca_certificates=${mtg_ca_certificates}"
+            echo "mtg_curl=${mtg_curl}"
+            echo "mtg_git_runtime=${mtg_git_runtime}"
+            echo "mtg_procps=${mtg_procps}"
+            echo "mtg_tini=${mtg_tini}"
+            echo "uf_build_essential=${uf_build_essential}"
+            echo "uf_git_build=${uf_git_build}"
+            echo "uf_ca_certificates=${uf_ca_certificates}"
+            echo "uf_procps=${uf_procps}"
+            echo "uf_tini=${uf_tini}"
+          } >> "${GITHUB_OUTPUT}"
+
+          echo "::notice::All versions resolved successfully"
+
+      # ── Step 2: Update Dockerfile.mtg ──────────────────────────────────────
+
+      - name: Update Dockerfile.mtg with pinned versions
+        env:
+          BUILD_ESSENTIAL: ${{ steps.versions.outputs.mtg_build_essential }}
+          GIT_BUILD: ${{ steps.versions.outputs.mtg_git_build }}
+          CA_CERTIFICATES: ${{ steps.versions.outputs.mtg_ca_certificates }}
+          CURL: ${{ steps.versions.outputs.mtg_curl }}
+          GIT_RUNTIME: ${{ steps.versions.outputs.mtg_git_runtime }}
+          PROCPS: ${{ steps.versions.outputs.mtg_procps }}
+          TINI: ${{ steps.versions.outputs.mtg_tini }}
+        run: |
+          set -euo pipefail
+          FILE="Dockerfile.mtg"
+
+          echo "Updating ${FILE} ARG defaults with resolved versions..."
+
+          sed -i -E "s|^(ARG BUILD_ESSENTIAL_VERSION=)\"[^\"]*\"|\1\"${BUILD_ESSENTIAL}\"|" "${FILE}"
+          sed -i -E "s|^(ARG GIT_VERSION_BUILD=)\"[^\"]*\"|\1\"${GIT_BUILD}\"|" "${FILE}"
+          sed -i -E "s|^(ARG CA_CERTIFICATES_VERSION=)\"[^\"]*\"|\1\"${CA_CERTIFICATES}\"|" "${FILE}"
+          sed -i -E "s|^(ARG CURL_VERSION=)\"[^\"]*\"|\1\"${CURL}\"|" "${FILE}"
+          sed -i -E "s|^(ARG GIT_VERSION_RUNTIME=)\"[^\"]*\"|\1\"${GIT_RUNTIME}\"|" "${FILE}"
+          sed -i -E "s|^(ARG PROCPS_VERSION=)\"[^\"]*\"|\1\"${PROCPS}\"|" "${FILE}"
+          sed -i -E "s|^(ARG TINI_VERSION=)\"[^\"]*\"|\1\"${TINI}\"|" "${FILE}"
+
+          echo "✅ ${FILE} updated"
+          grep "^ARG" "${FILE}"
+
+      # ── Step 3: Test - Updated Dockerfile.mtg build ────────────────────────
+
+      - name: Test Dockerfile.mtg with local build.
+        run: |
+
+          echo "::group::Testing Dockerfile.mtg new package versions build."
+
+          make mg-docker-local
+
+          echo "::endgroup::"
+
+      # ── Step 4: Update Dockerfile.uf ───────────────────────────────────────
+      - name: Update Dockerfile.uf with pinned versions
+        env:
+          BUILD_ESSENTIAL: ${{ steps.versions.outputs.uf_build_essential }}
+          GIT_BUILD: ${{ steps.versions.outputs.uf_git_build }}
+          CA_CERTIFICATES: ${{ steps.versions.outputs.uf_ca_certificates }}
+          PROCPS: ${{ steps.versions.outputs.uf_procps }}
+          TINI: ${{ steps.versions.outputs.uf_tini }}
+        run: |
+          set -euo pipefail
+          FILE="Dockerfile.uf"
+
+          echo "Updating ${FILE} ARG defaults with resolved versions..."
+
+          sed -i -E "s|^(ARG BUILD_ESSENTIAL_VERSION=)\"[^\"]*\"|\1\"${BUILD_ESSENTIAL}\"|" "${FILE}"
+          sed -i -E "s|^(ARG GIT_VERSION_BUILD=)\"[^\"]*\"|\1\"${GIT_BUILD}\"|" "${FILE}"
+          sed -i -E "s|^(ARG CA_CERTIFICATES_VERSION=)\"[^\"]*\"|\1\"${CA_CERTIFICATES}\"|" "${FILE}"
+          sed -i -E "s|^(ARG PROCPS_VERSION=)\"[^\"]*\"|\1\"${PROCPS}\"|" "${FILE}"
+          sed -i -E "s|^(ARG TINI_VERSION=)\"[^\"]*\"|\1\"${TINI}\"|" "${FILE}"
+
+          echo "✅ ${FILE} updated"
+          grep "^ARG" "${FILE}"
+
+      # ── Step 5: Test - Updated Dockerfile.uf build ────────────────────────
+
+      - name: Test Dockerfile.uf with local build.
+        run: |
+
+          echo "::group::Testing Dockerfile.uf new package versions build."
+
+          make uf-docker-local
+
+          echo "::endgroup::"
+
+      # ── Step 6: Create PR if anything changed ──────────────────────────────
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            echo "::warning::Not a git repository — skipping diff check (expected in act --bind)"
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if git diff --quiet; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::No version changes detected — Dockerfiles are up to date"
+          else
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+            echo "::notice::Version changes detected — creating PR"
+            git diff --stat
+          fi
+
+      - name: Create Pull Request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: chore/dockerfile-apt-pin-update
+          delete-branch: true
+          commit-message: "chore(docker): pin apt packages to latest versions"
+          title: "chore(docker): update pinned apt package versions"
+          body: |
+            ## Automated Dockerfile apt version update
+
+            Updated pinned package versions resolved from upstream Debian Trixie repositories.
+
+            ### MotherGoose (`Dockerfile.mtg`)
+            | Package | Version |
+            |---------|---------|
+            | `build-essential` | `${{ steps.versions.outputs.mtg_build_essential }}` |
+            | `git` (builder) | `${{ steps.versions.outputs.mtg_git_build }}` |
+            | `ca-certificates` | `${{ steps.versions.outputs.mtg_ca_certificates }}` |
+            | `curl` | `${{ steps.versions.outputs.mtg_curl }}` |
+            | `git` (runtime) | `${{ steps.versions.outputs.mtg_git_runtime }}` |
+            | `procps` | `${{ steps.versions.outputs.mtg_procps }}` |
+            | `tini` | `${{ steps.versions.outputs.mtg_tini }}` |
+
+            ### UglyFox (`Dockerfile.uf`)
+            | Package | Version |
+            |---------|---------|
+            | `build-essential` | `${{ steps.versions.outputs.uf_build_essential }}` |
+            | `git` | `${{ steps.versions.outputs.uf_git_build }}` |
+            | `ca-certificates` | `${{ steps.versions.outputs.uf_ca_certificates }}` |
+            | `procps` | `${{ steps.versions.outputs.uf_procps }}` |
+            | `tini` | `${{ steps.versions.outputs.uf_tini }}` |
+
+            ---
+            _Generated by [Scheduled Dockerfile Updater](.github/workflows/update-docker.yml)_
+          labels: |
+            dependencies
+            docker

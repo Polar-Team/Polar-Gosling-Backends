@@ -2,10 +2,21 @@
 # Multi-stage UV-optimized build for production
 # Supports multi-platform: linux/amd64, linux/arm64
 
+ARG UV_VERSION="0.11"
+
+# --- Pinned apt package versions (Debian Trixie / 13) ---
+# Builder stage
+ARG BUILD_ESSENTIAL_VERSION="12.12"
+ARG GIT_VERSION_BUILD="1:2.47.3-0+deb13u1"
+# Runtime stage
+ARG CA_CERTIFICATES_VERSION="20250419"
+ARG PROCPS_VERSION="2:4.0.4-9"
+ARG TINI_VERSION="0.19.0-3+b7"
+
 # ---------------------------------------------------------------------------
 # Stage 1: Build — install dependencies in an isolated venv using uv
 # ---------------------------------------------------------------------------
-FROM ghcr.io/astral-sh/uv:0.11-python3.13-trixie-slim AS builder
+FROM ghcr.io/astral-sh/uv:${UV_VERSION}-python3.13-trixie-slim AS builder
 
 WORKDIR /app
 
@@ -14,9 +25,11 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
 # Install system build dependencies (grpcio, etc.)
+ARG BUILD_ESSENTIAL_VERSION
+ARG GIT_VERSION_BUILD
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    git \
+    build-essential=${BUILD_ESSENTIAL_VERSION} \
+    git=${GIT_VERSION_BUILD} \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifests first — maximises Docker layer cache hits
@@ -41,10 +54,13 @@ FROM python:3.13-slim-trixie AS runtime
 WORKDIR /app
 
 # Install only the runtime system packages we need
+ARG CA_CERTIFICATES_VERSION
+ARG PROCPS_VERSION
+ARG TINI_VERSION
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    procps \
-    tini \
+    ca-certificates=${CA_CERTIFICATES_VERSION} \
+    procps=${PROCPS_VERSION} \
+    tini=${TINI_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

@@ -10,9 +10,11 @@
 #     `app` package (used by seed.py for shared schema definitions and models)
 #   - The non-root `mothergoose` user (uid/gid 1000) and `WORKDIR /app`
 #
-# Pulling the base by digest is not possible here because the image is built
-# locally by Compose (`build: ../`, `image: pg-stack/mothergoose:${MG_IMAGE_TAG}`)
-# rather than fetched from a registry; the tag is therefore parameterised.
+# Base image source:
+#   - In production / local dev: pulled from ghcr.io/polar-team/mothergoose:<tag>
+#   - In CI compose-tests: built from source as `ghcr.io/polar-team/mothergoose:pr-<sha>`
+#     by the tests.yml workflow (never pulled from the registry for PRs).
+# The tag is parameterised via the MG_IMAGE_TAG build arg.
 ARG MG_IMAGE_TAG=dev
 FROM ghcr.io/polar-team/mothergoose:${MG_IMAGE_TAG}
 

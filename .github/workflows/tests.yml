@@ -101,37 +101,58 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          # Use the 'docker' driver so built images land directly in the local
+          # daemon store and are immediately available as FROM bases for
+          # downstream builds (seed Dockerfile).
+          driver: docker
+
+      - name: Build MotherGoose image from source
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.mtg
+          load: true
+          tags: ghcr.io/polar-team/mothergoose:pr-${{ github.sha }}
+
+      - name: Build UglyFox image from source
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.uf
+          load: true
+          tags: ghcr.io/polar-team/uglyfox:pr-${{ github.sha }}
+
       - name: Render CI .env
         run: |
-          MG_VERSION=$(grep -m1 '^version' mothergoose/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
-          UF_VERSION=$(grep -m1 '^version' uglyfox/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
+          PR_TAG="pr-${{ github.sha }}"
           cp compose/.env.example compose/.env
           sed -i 's/^YDB_IMAGE_TAG=.*/YDB_IMAGE_TAG=25.4.1/' compose/.env
           sed -i 's/^LOCALSTACK_IMAGE_TAG=.*/LOCALSTACK_IMAGE_TAG=3.8.1/' compose/.env
           sed -i 's/^LOCALSTACK_AUTH_TOKEN=.*/LOCALSTACK_AUTH_TOKEN=${{ secrets.LOCALSTACK_AUTH_TOKEN }}/' compose/.env
           sed -i 's/^INTERNAL_SYNC_TOKEN=.*/INTERNAL_SYNC_TOKEN=ci-smoke-test-token-12345678/' compose/.env
-          sed -i "s/^MG_IMAGE_TAG=.*/MG_IMAGE_TAG=${MG_VERSION}/" compose/.env
-          sed -i "s/^UF_IMAGE_TAG=.*/UF_IMAGE_TAG=${UF_VERSION}/" compose/.env
+          sed -i "s/^MG_IMAGE_TAG=.*/MG_IMAGE_TAG=${PR_TAG}/" compose/.env
+          sed -i "s/^UF_IMAGE_TAG=.*/UF_IMAGE_TAG=${PR_TAG}/" compose/.env
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull service images
+      - name: Verify locally-built images are available
         run: |
-          MG_VERSION=$(grep -m1 '^version' mothergoose/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
-          UF_VERSION=$(grep -m1 '^version' uglyfox/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
-          docker pull ghcr.io/polar-team/mothergoose:${MG_VERSION}
-          docker pull ghcr.io/polar-team/uglyfox:${UF_VERSION}
+          docker image inspect ghcr.io/polar-team/mothergoose:pr-${{ github.sha }} > /dev/null
+          docker image inspect ghcr.io/polar-team/uglyfox:pr-${{ github.sha }} > /dev/null
 
       - name: Build remaining compose images
         run: |
+          PR_TAG="pr-${{ github.sha }}"
           docker compose -f compose/docker-compose.yml build nest-git
-          docker compose -f compose/docker-compose.yml build seed
           docker compose -f compose/docker-compose.yml build trigger-emulator
+          # seed: its FROM references the locally-built mothergoose image.
+          # Build directly (not via compose) so we can skip pulling the base.
+          docker build \
+            --build-arg "MG_IMAGE_TAG=${PR_TAG}" \
+            -t "pg-stack/seed:${PR_TAG}" \
+            -f compose/seed/Dockerfile \
+            .
 
       - name: Start all services
         run: make compose-up-all

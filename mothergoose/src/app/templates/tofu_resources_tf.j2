@@ -1,5 +1,5 @@
 resource "tls_private_key" "key" {
-  algorithm = "{{ touf_vm_key_algorithm }}"
+  algorithm = "{{ tofu_vm_key_algorithm }}"
   rsa_bits  = {{ tofu_vm_key_rsa_bits }}
 }
 

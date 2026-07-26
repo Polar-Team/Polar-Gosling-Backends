@@ -3,10 +3,10 @@ terraform {
     bucket = "{{ tofu_s3_bucket }}"
     key    = "{{ tofu_s3_key }}"
     region = "{{ tofu_s3_region }}"
-    {% if tofu_s3_profile is defined and tofu_s3_profile|length > 0 %}profile = "{{ tofu_s3_profile }}"{% endif %}
-    {% if tofu_s3_endpoint is defined and tofu_s3_endpoint|length > 0 %}endpoint = "{{ tofu_s3_endpoint }}"{% endif %}
-    {% if tofu_s3_role_arn is defined and tofu_s3_role_arn|length > 0 %}role_arn = "{{ tofu_s3_role_arn }}"{% endif %}
-    {% if tofu_s3_dynamodb_table is defined and tofu_s3_dynamodb_table|d('')|length > 0 %}dynamodb_table = "{{ tofu_s3_dynamodb_table }}"{% endif %}
+    {% if tofu_s3_profile is defined and tofu_s3_profile|d('', true)|length > 0 %}profile = "{{ tofu_s3_profile }}"{% endif %}
+    {% if tofu_s3_endpoint is defined and tofu_s3_endpoint|d('', true)|length > 0 %}endpoint = "{{ tofu_s3_endpoint }}"{% endif %}
+    {% if tofu_s3_role_arn is defined and tofu_s3_role_arn|d('', true)|length > 0 %}role_arn = "{{ tofu_s3_role_arn }}"{% endif %}
+    {% if tofu_s3_dynamodb_table is defined and tofu_s3_dynamodb_table|d('', true)|length > 0 %}dynamodb_table = "{{ tofu_s3_dynamodb_table }}"{% endif %}
   }
   required_version = {% if tofu_version is defined or tofu_version|d('')|length > 0 %}"{{ tofu_version }}"{% else %}">= 1.3.6"{% endif %}
   required_providers {
@@ -27,7 +27,7 @@ terraform {
       source  = "{{ provider.source }}"
       version = "{{ provider.version }}"
     }
-{% endfor %
+{% endfor %}
   }
 }
 

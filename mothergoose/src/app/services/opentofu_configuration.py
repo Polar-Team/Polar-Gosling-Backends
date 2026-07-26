@@ -21,11 +21,22 @@ from .s3_artifact_cache import S3ArtifactCache
 
 @dataclass
 class TofuModuleSource:
-    """Source configuration for an OpenTofu module."""
+    """Source configuration for an OpenTofu module.
+
+    Attributes:
+        url (str): Module source URL (git repository URL or registry address).
+        version (str): Module version or git ref to pin to.
+        type (str): Source kind, either "git" or "registry".
+        cloud_provider (str): Cloud-provider subdirectory selector used to
+            build the `modules/<cloud_provider>` path segment for git-hosted
+            module sources (e.g. "aws", "yandex"). Only meaningful when
+            `type == "git"`; ignored for "registry" sources.
+    """
 
     url: str
     version: str
     type: str = "git"  # "git" or "registry"
+    cloud_provider: str = ""
 
 
 @dataclass
@@ -302,9 +313,10 @@ class OpenTofuConfiguration:
         if self.tofu_settings.worker_module_source:
             resources_template = template_env.get_template("tofu_resources_tf.j2")
             resources_tf_output = resources_template.render(
-                touf_vm_key_algorithm=self.tofu_settings.vm_key_algorithm,
+                tofu_vm_key_algorithm=self.tofu_settings.vm_key_algorithm,
                 tofu_vm_key_rsa_bits=self.tofu_settings.vm_key_rsa_bits,
                 tofu_worker_module_source=self.tofu_settings.worker_module_source,
+                tofu_cloud_provider=self.tofu_settings.worker_module_source.cloud_provider,
                 tofu_rift_module_source=self.tofu_settings.rift_module_source,
                 tofu_rift_required=self.tofu_settings.tofu_rift_required,
                 tofu_worker_module_extra_variables=(

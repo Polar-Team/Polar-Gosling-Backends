@@ -8,6 +8,7 @@ provider_installation {
     exclude = {{ mirror.exclude }}
 {% endif %}
   }
+{% endfor %}
 {% if direct_exclude is defined and direct_exclude == true %}
  direct {
     exclude = ["registry.terraform.io/*/*"]

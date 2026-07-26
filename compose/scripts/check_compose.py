@@ -36,6 +36,10 @@ _SEMVER_TAG_RE = re.compile(r"^\d{1,4}\.\d{1,4}(\.\d{1,4})?$")
 # are intentionally non-numeric (e.g. ``pg-stack/mothergoose:dev``).
 _KNOWN_LOCAL_TAGS: frozenset[str] = frozenset({"dev"})
 
+# Tag prefixes used by CI-built images (e.g. ``pr-abc123def``). These are
+# non-numeric and should not be validated against the semver pattern.
+_KNOWN_LOCAL_TAG_PREFIXES: tuple[str, ...] = ("pr-",)
+
 
 # --- Helpers ------------------------------------------------------------------
 
@@ -107,7 +111,7 @@ def _check_images(services: dict[str, object]) -> list[str]:
 
         # Invariant 2: if the tag is env-driven (numeric), it must match semver pattern.
         tag = image.rsplit(":", 1)[1]
-        if tag in _KNOWN_LOCAL_TAGS:
+        if tag in _KNOWN_LOCAL_TAGS or any(tag.startswith(p) for p in _KNOWN_LOCAL_TAG_PREFIXES):
             # Skip locally-built dev images — they are not env-driven semver tags.
             continue
         if _is_numeric_prefix(tag) and not _SEMVER_TAG_RE.match(tag):

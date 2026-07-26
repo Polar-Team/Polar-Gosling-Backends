@@ -101,31 +101,39 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build MotherGoose image from source
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.mtg
+          load: true
+          tags: ghcr.io/polar-team/mothergoose:pr-${{ github.sha }}
+          cache-from: type=gha,scope=mothergoose-ci
+          cache-to: type=gha,mode=max,scope=mothergoose-ci
+
+      - name: Build UglyFox image from source
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.uf
+          load: true
+          tags: ghcr.io/polar-team/uglyfox:pr-${{ github.sha }}
+          cache-from: type=gha,scope=uglyfox-ci
+          cache-to: type=gha,mode=max,scope=uglyfox-ci
+
       - name: Render CI .env
         run: |
-          MG_VERSION=$(grep -m1 '^version' mothergoose/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
-          UF_VERSION=$(grep -m1 '^version' uglyfox/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
+          PR_TAG="pr-${{ github.sha }}"
           cp compose/.env.example compose/.env
           sed -i 's/^YDB_IMAGE_TAG=.*/YDB_IMAGE_TAG=25.4.1/' compose/.env
           sed -i 's/^LOCALSTACK_IMAGE_TAG=.*/LOCALSTACK_IMAGE_TAG=3.8.1/' compose/.env
           sed -i 's/^LOCALSTACK_AUTH_TOKEN=.*/LOCALSTACK_AUTH_TOKEN=${{ secrets.LOCALSTACK_AUTH_TOKEN }}/' compose/.env
           sed -i 's/^INTERNAL_SYNC_TOKEN=.*/INTERNAL_SYNC_TOKEN=ci-smoke-test-token-12345678/' compose/.env
-          sed -i "s/^MG_IMAGE_TAG=.*/MG_IMAGE_TAG=${MG_VERSION}/" compose/.env
-          sed -i "s/^UF_IMAGE_TAG=.*/UF_IMAGE_TAG=${UF_VERSION}/" compose/.env
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull service images
-        run: |
-          MG_VERSION=$(grep -m1 '^version' mothergoose/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
-          UF_VERSION=$(grep -m1 '^version' uglyfox/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
-          docker pull ghcr.io/polar-team/mothergoose:${MG_VERSION}
-          docker pull ghcr.io/polar-team/uglyfox:${UF_VERSION}
+          sed -i "s/^MG_IMAGE_TAG=.*/MG_IMAGE_TAG=${PR_TAG}/" compose/.env
+          sed -i "s/^UF_IMAGE_TAG=.*/UF_IMAGE_TAG=${PR_TAG}/" compose/.env
 
       - name: Build remaining compose images
         run: |

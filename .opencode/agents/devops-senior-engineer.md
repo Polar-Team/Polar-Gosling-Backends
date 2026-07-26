@@ -1,6 +1,7 @@
 ---
 description: Senior DevOps engineer specializing in Docker, Docker Compose (DRY manifests with YAML anchors/x-services), hadolint, and GitHub Actions for this project
 mode: subagent
+hidden: true
 temperature: 0.2
 permission:
   read:

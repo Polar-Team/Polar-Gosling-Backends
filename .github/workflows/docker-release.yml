@@ -16,12 +16,17 @@ on:
           - uglyfox
           - both
 
+concurrency:
+  group: docker-release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write
 
 env:
   REGISTRY: ghcr.io/polar-team
+  DIVE_VERSION: "0.13.1"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -74,6 +79,16 @@ jobs:
           VERSION=$(grep -m1 '^version' ${{ matrix.context_dir }}/pyproject.toml | sed 's/.*"\(.*\)"/\1/')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Detected ${{ matrix.service }} version: $VERSION"
+
+      - name: Verify git tag matches pyproject version
+        if: github.event_name == 'push'
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PYPROJECT_VERSION="${{ steps.version.outputs.version }}"
+          if [[ "$TAG_VERSION" != "$PYPROJECT_VERSION" ]]; then
+            echo "::error::Git tag '${GITHUB_REF_NAME}' (version ${TAG_VERSION}) does not match ${{ matrix.context_dir }}/pyproject.toml version (${PYPROJECT_VERSION})"
+            exit 1
+          fi
 
       - name: Resolve image tags
         id: tags
@@ -128,7 +143,6 @@ jobs:
 
       - name: Install dive and run efficiency check
         run: |
-          DIVE_VERSION=$(curl -fsSL https://api.github.com/repos/wagoodman/dive/releases/latest | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/')
           echo "Using dive v${DIVE_VERSION}"
           curl -fsSL "https://github.com/wagoodman/dive/releases/download/v${DIVE_VERSION}/dive_${DIVE_VERSION}_linux_amd64.tar.gz" | tar xz
           chmod +x dive

@@ -9,9 +9,9 @@ ARG UV_VERSION="0.11"
 ARG BUILD_ESSENTIAL_VERSION="12.12"
 ARG GIT_VERSION_BUILD="1:2.47.3-0+deb13u1"
 # Runtime stage
-ARG CA_CERTIFICATES_VERSION="20250419"
+ARG CA_CERTIFICATES_VERSION="20250419+deb13u1"
 ARG PROCPS_VERSION="2:4.0.4-9"
-ARG TINI_VERSION="0.19.0-3+b7"
+ARG TINI_VERSION="0.19.0-3+b8"
 
 # ---------------------------------------------------------------------------
 # Stage 1: Build — install dependencies in an isolated venv using uv
